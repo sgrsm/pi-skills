@@ -1,0 +1,14 @@
+{
+  "name": "hide-tool-output",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi extension package to hide tool output in the conversation UI",
+  "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

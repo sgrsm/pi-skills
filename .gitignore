@@ -1,0 +1,49 @@
+# Track only shareable Pi customizations under agent/
+# Local runtime/config files at agent root stay ignored unless explicitly re-included below.
+/agent/*
+!/agent/agents/
+!/agent/agents/**
+!/agent/extensions/
+!/agent/extensions/**
+!/agent/skills/
+!/agent/skills/**
+!/agent/skills-disabled/
+!/agent/skills-disabled/**
+
+# Optional shared example configs at agent root
+!/agent/*.example.json
+!/agent/*.example.yaml
+!/agent/*.example.yml
+
+# Local Pi runtime / history
+/conversations/
+/handoff/
+
+# Dependencies / build / cache junk
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+**/.turbo/
+**/*.tsbuildinfo
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.venv/
+**/venv/
+
+# Env / local secrets
+.env
+.env.*
+*.local
+*.log
+
+# Editor / OS junk
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+._*
