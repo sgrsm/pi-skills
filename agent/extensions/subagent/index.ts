@@ -44,6 +44,7 @@ import {
 	resetSubagentExecutionSettings,
 	saveSubagentExecutionSettings,
 	type LoadedSubagentExecutionSettings,
+	type SubagentDelegationApprovalScope,
 	type SubagentExecutionSettings,
 } from "./settingsState.ts";
 import {
@@ -71,6 +72,7 @@ const SUBAGENT_STATUS_KEY = "0-subagents";
 const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
 const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
+const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
@@ -113,7 +115,7 @@ type SubagentPolicyDecision = {
 	reason: string;
 };
 
-type DelegationApprovalScope = "none" | "read-only" | "all";
+type DelegationApprovalScope = SubagentDelegationApprovalScope;
 
 type SubagentSessionApprovalState = {
 	askModeApproved: boolean;
@@ -284,6 +286,19 @@ function createAgentDiscoveryResolver(
 	};
 }
 
+function normalizeAgentNameForScopeLookup(agentName: string): string {
+	return agentName.trim().toLowerCase();
+}
+
+function resolveInheritedApprovalScopeForAgent(
+	defaultScope: DelegationApprovalScope,
+	agentName: string,
+	executionSettings: LoadedSubagentExecutionSettings,
+): DelegationApprovalScope {
+	const configuredScope = executionSettings.inheritedApprovalScopes[normalizeAgentNameForScopeLookup(agentName)];
+	return configuredScope ?? defaultScope;
+}
+
 function isWriteCapableAgent(agent: AgentConfig | undefined): boolean {
 	if (!agent?.tools || agent.tools.length === 0) return true;
 	return agent.tools.includes("edit") || agent.tools.includes("write");
@@ -380,6 +395,33 @@ function hasParentEscalationRelay(): boolean {
 	return value === "1" || value === "true" || value === "yes";
 }
 
+function getCurrentSubagentDepth(): number {
+	const rawDepth = process.env[SUBAGENT_DEPTH_ENV]?.trim();
+	if (!rawDepth || !/^\d+$/.test(rawDepth)) return 0;
+	const parsed = Number(rawDepth);
+	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function formatMaxDelegationDepth(maxDelegationDepth: number | null): string {
+	return maxDelegationDepth === null ? "unlimited" : String(maxDelegationDepth);
+}
+
+function getRemainingDelegationDepth(currentDepth: number, maxDelegationDepth: number | null): number | null {
+	if (maxDelegationDepth === null) return null;
+	return Math.max(0, maxDelegationDepth - currentDepth);
+}
+
+function canDelegateWithinDepthLimit(currentDepth: number, maxDelegationDepth: number | null): boolean {
+	return maxDelegationDepth === null || currentDepth < maxDelegationDepth;
+}
+
+function canUseSubagentToolInSession(
+	mode: SubagentPolicyMode,
+	executionSettings: LoadedSubagentExecutionSettings,
+): boolean {
+	return mode !== "off" && canDelegateWithinDepthLimit(getCurrentSubagentDepth(), executionSettings.limits.maxDelegationDepth);
+}
+
 function hasSessionSubagentApproval(ctx: ExtensionContext): boolean {
 	let approved = false;
 	for (const entry of ctx.sessionManager.getBranch()) {
@@ -429,7 +471,8 @@ function buildSelectableValues(choices: readonly number[], current: number): str
 function hasProjectLimitOverride(executionSettings: LoadedSubagentExecutionSettings): boolean {
 	return (
 		executionSettings.sources.maxConcurrency === "project" ||
-		executionSettings.sources.maxParallelTasks === "project"
+		executionSettings.sources.maxParallelTasks === "project" ||
+		executionSettings.sources.maxDelegationDepth === "project"
 	);
 }
 
@@ -440,11 +483,12 @@ function updateSubagentStatus(
 	executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd),
 ): void {
 	if (!ctx.hasUI) return;
+	const currentDepth = getCurrentSubagentDepth();
 	ctx.ui.setStatus(
 		SUBAGENT_STATUS_KEY,
 		ctx.ui.theme.fg(
 			"dim",
-			`subagents: ${formatSubagentStatusLabel(mode, sessionApproval)} • c${executionSettings.limits.maxConcurrency}/t${executionSettings.limits.maxParallelTasks} •`,
+			`subagents: ${formatSubagentStatusLabel(mode, sessionApproval)} • c${executionSettings.limits.maxConcurrency}/t${executionSettings.limits.maxParallelTasks} • d${currentDepth}/${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} •`,
 		),
 	);
 }
@@ -453,15 +497,19 @@ function mergeSubagentExecutionSettings(settings: LoadedSubagentExecutionSetting
 	if (settings.length === 0) return loadSubagentExecutionSettings(process.cwd());
 	if (settings.length === 1) return settings[0];
 
-	const sourceFor = (key: "maxConcurrency" | "maxParallelTasks") => {
+	const sourceFor = (key: "maxConcurrency" | "maxParallelTasks" | "maxDelegationDepth") => {
 		if (settings.some((item) => item.sources[key] === "project")) return "project" as const;
 		if (settings.some((item) => item.sources[key] === "global")) return "global" as const;
 		return "default" as const;
 	};
 
+	const configuredDelegationDepths = settings
+		.map((item) => item.limits.maxDelegationDepth)
+		.filter((depth): depth is number => depth !== null);
 	const limits = {
 		maxParallelTasks: Math.min(...settings.map((item) => item.limits.maxParallelTasks)),
 		maxConcurrency: Math.min(...settings.map((item) => item.limits.maxConcurrency)),
+		maxDelegationDepth: configuredDelegationDepths.length > 0 ? Math.min(...configuredDelegationDepths) : null,
 	};
 	if (limits.maxConcurrency > limits.maxParallelTasks) limits.maxConcurrency = limits.maxParallelTasks;
 
@@ -470,28 +518,36 @@ function mergeSubagentExecutionSettings(settings: LoadedSubagentExecutionSetting
 		sources: {
 			maxParallelTasks: sourceFor("maxParallelTasks"),
 			maxConcurrency: sourceFor("maxConcurrency"),
+			maxDelegationDepth: sourceFor("maxDelegationDepth"),
 		},
+		inheritedApprovalScopes: Object.assign({}, ...settings.map((item) => item.inheritedApprovalScopes)),
 		warnings: Array.from(new Set(settings.flatMap((item) => item.warnings))),
 		paths: settings[0].paths,
 	};
 }
 
+function loadSubagentExecutionSettingsForRequestedCwd(
+	defaultCwd: string,
+	requestedCwd: string | undefined,
+): LoadedSubagentExecutionSettings {
+	const executionCwd = resolveExecutionCwd(defaultCwd, requestedCwd);
+	try {
+		return loadSubagentExecutionSettings(executionCwd);
+	} catch (error) {
+		const fallback = loadSubagentExecutionSettings(defaultCwd);
+		return {
+			...fallback,
+			warnings: [
+				...fallback.warnings,
+				`Warning (subagent settings for ${executionCwd}): ${error instanceof Error ? error.message : String(error)}`,
+			],
+		};
+	}
+}
+
 function loadSubagentExecutionSettingsForCwds(cwds: string[], fallbackCwd: string): LoadedSubagentExecutionSettings {
 	const uniqueCwds = Array.from(new Set(cwds));
-	const settings = uniqueCwds.map((cwd) => {
-		try {
-			return loadSubagentExecutionSettings(cwd);
-		} catch (error) {
-			const fallback = loadSubagentExecutionSettings(fallbackCwd);
-			return {
-				...fallback,
-				warnings: [
-					...fallback.warnings,
-					`Warning (subagent settings for ${cwd}): ${error instanceof Error ? error.message : String(error)}`,
-				],
-			};
-		}
-	});
+	const settings = uniqueCwds.map((cwd) => loadSubagentExecutionSettingsForRequestedCwd(fallbackCwd, cwd));
 	return mergeSubagentExecutionSettings(settings);
 }
 
@@ -505,6 +561,7 @@ function buildSubagentUsageText(): string {
 		`/subagents max-tasks <n>|default — set max parallel tasks per call (1-${SUBAGENT_MAX_PARALLEL_TASKS_LIMIT})`,
 		"/subagents reset-limits — remove global subagent limit overrides from settings.json",
 		"/subagents cancel-session-approval — stop auto-approving ask-mode requests in this session",
+		'Manual settings.json keys: "subagents.maxDelegationDepth" and "subagents.inheritedApprovalScopes.<agent>"',
 	].join("\n");
 }
 
@@ -513,29 +570,48 @@ function buildSubagentSummaryText(
 	sessionApproval: boolean,
 	executionSettings: LoadedSubagentExecutionSettings,
 ): string {
+	const currentDepth = getCurrentSubagentDepth();
+	const remainingDelegationDepth = getRemainingDelegationDepth(
+		currentDepth,
+		executionSettings.limits.maxDelegationDepth,
+	);
+	const configuredInheritedScopes = Object.entries(executionSettings.inheritedApprovalScopes)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([agent, scope]) => `${agent}=${scope}`);
+
 	const lines = [
 		`subagents mode: ${formatSubagentStatusLabel(mode, sessionApproval)}`,
+		`current session delegation depth: ${currentDepth}`,
+		`max delegation depth: ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
+		`remaining delegation generations in this session: ${remainingDelegationDepth === null ? "unlimited" : remainingDelegationDepth}`,
 		`max concurrent subagents: ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)})`,
 		`max parallel tasks per call: ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)})`,
+		`nested inherited approval overrides: ${configuredInheritedScopes.length > 0 ? configuredInheritedScopes.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
 		"- manual: only explicit user requests may use subagents",
 		"- ask: explicit requests run immediately; otherwise Pi asks first (Allow once / Allow for current session / Deny)",
 		`- auto: Pi may auto-use read-only multi-agent delegation within guardrails (max ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} agents; write-capable agents require an explicit request)`,
 		"- /subagents ui opens interactive config",
-		'- settings.json keys: "subagents.maxConcurrency" and "subagents.maxParallelTasks"',
-		"- limits save to ~/.pi/agent/settings.json by default; manual .pi/settings.json overrides still apply",
-		"- delegated child sessions inherit read-only nested delegation approval by default",
+		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", and "subagents.inheritedApprovalScopes.<agent>"',
+		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
+		"- maxDelegationDepth and inherited approval overrides are currently edited manually in settings.json",
+		"- concurrency/max-tasks overrides save to ~/.pi/agent/settings.json by default; manual .pi/settings.json overrides still apply to the effective subagent settings for the current project",
+		"- delegated child sessions inherit read-only nested delegation approval by default unless overridden per child agent in settings.json",
 		`- delegated child sessions can use ${PARENT_ESCALATION_TOOL_NAME} to ask the parent agent for user input or broader approval`,
 		"- policy mode is still stored in ~/.pi/agent/subagent-policy.json",
 	];
 
 	if (mode === "ask" && sessionApproval) {
 		lines.splice(
-			3,
+			4,
 			0,
 			"- current session approval: subsequent ask-mode subagent requests are auto-approved in this session",
 			"- cancel it with /subagents cancel-session-approval",
 		);
+	}
+
+	if (remainingDelegationDepth === 0) {
+		lines.splice(4, 0, "- current session has reached the delegation depth cap; this session cannot spawn more subagents");
 	}
 
 	if (hasProjectLimitOverride(executionSettings)) {
@@ -557,11 +633,25 @@ function buildSubagentPolicyPrompt(
 	executionSettings: LoadedSubagentExecutionSettings,
 	parentEscalationAvailable: boolean,
 ): string {
+	const currentDepth = getCurrentSubagentDepth();
+	const maxDelegationDepth = executionSettings.limits.maxDelegationDepth;
+	const remainingDelegationDepth = getRemainingDelegationDepth(currentDepth, maxDelegationDepth);
+	const depthLimitReached = !canDelegateWithinDepthLimit(currentDepth, maxDelegationDepth);
 	const lines = [
 		"Subagent policy:",
 		`- Current subagent mode is ${formatSubagentPolicyMode(mode)}.`,
 		`- Current parallel limits: ${executionSettings.limits.maxParallelTasks} task(s) per call, with up to ${executionSettings.limits.maxConcurrency} subagent(s) running at once.`,
+		`- Current delegation depth is ${currentDepth}.`,
+		`- Max delegation depth for this session is ${formatMaxDelegationDepth(maxDelegationDepth)}.`,
 	];
+
+	if (remainingDelegationDepth === null) {
+		lines.push("- This session is not depth-limited.");
+	} else if (remainingDelegationDepth > 0) {
+		lines.push(`- This session may spawn ${remainingDelegationDepth} more subagent generation(s).`);
+	} else {
+		lines.push("- Max delegation depth has been reached in this session.");
+	}
 
 	if (inheritedApprovalScope === "all" && mode !== "off") {
 		lines.push("- This session inherits broad user approval for nested subagent use from an ancestor agent session.");
@@ -576,6 +666,16 @@ function buildSubagentPolicyPrompt(
 		lines.push("- Interactive clarification and approval requests from this delegated session do not reach the top-level user directly.");
 		lines.push(`- If you need the parent agent to ask the user a question or request broader approval, use ${PARENT_ESCALATION_TOOL_NAME}.`);
 		lines.push(`- After calling ${PARENT_ESCALATION_TOOL_NAME}, stop and let the parent agent continue.`);
+	}
+
+	if (depthLimitReached) {
+		lines.push("- The subagent tool is disabled in this session because the maximum delegation depth has already been reached.");
+		lines.push("- Handle the remaining work directly in this session.");
+		if (parentEscalationAvailable) {
+			lines.push(`- If deeper orchestration is required, use ${PARENT_ESCALATION_TOOL_NAME} instead of attempting further delegation.`);
+		}
+		lines.push("- After any subagent run, you must reconcile, de-duplicate, and merge the results into one final answer.");
+		return lines.join("\n");
 	}
 
 	if (mode === "off") {
@@ -1534,8 +1634,10 @@ async function runSingleAgent(
 		const promptInput = `Task: ${task}`;
 		const executionCwd = resolveExecutionCwd(defaultCwd, cwd);
 		let wasAborted = false;
+		const childDepth = getCurrentSubagentDepth() + 1;
 		const childEnv = {
 			...process.env,
+			[SUBAGENT_DEPTH_ENV]: String(childDepth),
 			[SUBAGENT_INHERITED_APPROVAL_ENV]: inheritSubagentApprovalScope !== "none" ? "1" : "0",
 			[SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV]: inheritSubagentApprovalScope,
 			[SUBAGENT_PARENT_ESCALATION_ENV]: "1",
@@ -1766,7 +1868,7 @@ async function runSingleAgent(
 
 const TaskItem = Type.Object({
 	agent: Type.String({
-		description: "Name of the agent to invoke. Common built-in agents: scout, planner, reviewer, worker.",
+		description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 	}),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
@@ -1774,7 +1876,7 @@ const TaskItem = Type.Object({
 
 const ChainItem = Type.Object({
 	agent: Type.String({
-		description: "Name of the agent to invoke. Common built-in agents: scout, planner, reviewer, worker.",
+		description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 	}),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
@@ -1832,7 +1934,7 @@ const ParentEscalationParams = Type.Object({
 const SubagentParams = Type.Object({
 	agent: Type.Optional(
 		Type.String({
-			description: "Name of the agent to invoke for single mode. Common built-in agents: scout, planner, reviewer, worker.",
+			description: "Name of the agent to invoke for single mode. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 		}),
 	),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
@@ -1860,6 +1962,15 @@ export default function (pi: ExtensionAPI) {
 		return "none";
 	}
 
+	function syncSubagentSessionState(
+		ctx: ExtensionContext,
+		executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd),
+	): LoadedSubagentExecutionSettings {
+		setSubagentToolEnabled(pi, canUseSubagentToolInSession(policyState.mode, executionSettings));
+		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
+		return executionSettings;
+	}
+
 	function parseRequestedLimit(raw: string, hardMax: number): number | undefined {
 		const normalized = raw.trim();
 		if (!/^\d+$/.test(normalized)) return undefined;
@@ -1871,11 +1982,7 @@ export default function (pi: ExtensionAPI) {
 	async function setPolicyMode(nextMode: SubagentPolicyMode, ctx: ExtensionContext): Promise<LoadedSubagentExecutionSettings> {
 		policyState = { mode: nextMode };
 		await saveSubagentPolicyState(policyState);
-		if (nextMode === "off") setSubagentToolEnabled(pi, false);
-		else setSubagentToolEnabled(pi, true);
-		const executionSettings = loadSubagentExecutionSettings(ctx.cwd);
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
-		return executionSettings;
+		return syncSubagentSessionState(ctx);
 	}
 
 	async function saveGlobalExecutionSettings(
@@ -1883,8 +1990,7 @@ export default function (pi: ExtensionAPI) {
 		updates: Partial<SubagentExecutionSettings>,
 	): Promise<LoadedSubagentExecutionSettings> {
 		const executionSettings = await saveSubagentExecutionSettings(ctx.cwd, updates);
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
-		return executionSettings;
+		return syncSubagentSessionState(ctx, executionSettings);
 	}
 
 	async function resetGlobalExecutionSettings(
@@ -1892,8 +1998,7 @@ export default function (pi: ExtensionAPI) {
 		keys: Array<keyof SubagentExecutionSettings>,
 	): Promise<LoadedSubagentExecutionSettings> {
 		const executionSettings = await resetSubagentExecutionSettings(ctx.cwd, keys);
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
-		return executionSettings;
+		return syncSubagentSessionState(ctx, executionSettings);
 	}
 
 	async function showSubagentConfigUi(ctx: ExtensionCommandContext): Promise<void> {
@@ -1908,7 +2013,7 @@ export default function (pi: ExtensionAPI) {
 			const footerText = new Text(
 				theme.fg(
 					"dim",
-					"Use /subagents concurrency <n>|default or /subagents max-tasks <n>|default for exact values.",
+					"Use /subagents concurrency <n>|default or /subagents max-tasks <n>|default for exact values. maxDelegationDepth and inheritedApprovalScopes are manual settings.json keys.",
 				),
 				1,
 				0,
@@ -1947,7 +2052,7 @@ export default function (pi: ExtensionAPI) {
 				effectiveText.setText(
 					theme.fg(
 						"muted",
-						`Effective limits: concurrency ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)}) • tasks ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)})`,
+						`Effective limits: concurrency ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)}) • tasks ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)}) • depth ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
 					),
 				);
 				noteText.setText(
@@ -1955,7 +2060,7 @@ export default function (pi: ExtensionAPI) {
 						? theme.fg("warning", "Project .pi/settings.json overrides one or more current limit values. UI saves global defaults only.")
 						: theme.fg(
 								"dim",
-								"Mode saves to ~/.pi/agent/subagent-policy.json. Limit overrides save to ~/.pi/agent/settings.json.",
+								"Mode saves to ~/.pi/agent/subagent-policy.json. Concurrency/max-tasks overrides save to ~/.pi/agent/settings.json. maxDelegationDepth and inheritedApprovalScopes remain manual settings.json keys.",
 							),
 				);
 				warningText.setText(
@@ -2117,15 +2222,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		policyState = loadSubagentPolicyState();
-		if (policyState.mode === "off") setSubagentToolEnabled(pi, false);
-		else setSubagentToolEnabled(pi, true);
 		setParentEscalationToolEnabled(pi, hasParentEscalationRelay());
-		const executionSettings = loadSubagentExecutionSettings(ctx.cwd);
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
+		syncSubagentSessionState(ctx);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx));
+		syncSubagentSessionState(ctx);
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -2151,6 +2253,17 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 		if (event.toolName !== "subagent" || !isRecord(event.input)) return undefined;
+
+		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
+		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd);
+		const currentDepth = getCurrentSubagentDepth();
+		if (!canDelegateWithinDepthLimit(currentDepth, executionSettings.limits.maxDelegationDepth)) {
+			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			return {
+				block: true,
+				reason: `Blocked by subagent depth policy: current depth ${currentDepth} has reached maxDelegationDepth ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)}. This session may not spawn more subagents.`,
+			};
+		}
 
 		const requestedScope: AgentScope =
 			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
@@ -2444,7 +2557,7 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			"Built-in agents typically available: scout, planner, reviewer, worker.",
+			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 			"Default policy mode is ask: explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
 			'Default agent scope is "user" (from ~/.pi/agent/agents).',
 			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
@@ -2456,7 +2569,7 @@ export default function (pi: ExtensionAPI) {
 			"Use subagent with the tasks parameter when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
 			"If a delegated child requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
-			"Prefer subagent agent scout for codebase discovery, planner for planning, reviewer for review, and worker for general implementation or analysis.",
+			"Prefer scout for codebase discovery, planner for saved Markdown plan artifacts, planner-readonly for read-only nested planning, reviewer for writable report workflows, reviewer-readonly for read-only nested review, worker for general implementation, and consolidator for synthesis/report artifacts.",
 			"Use subagent agentScope set to both only when project-local agents under .pi/agents are needed and the repository is trusted.",
 		],
 		parameters: SubagentParams,
@@ -2582,7 +2695,11 @@ export default function (pi: ExtensionAPI) {
 						i + 1,
 						signal,
 						chainUpdate,
-						inheritedDelegationApproval,
+						resolveInheritedApprovalScopeForAgent(
+							inheritedDelegationApproval,
+							step.agent,
+							loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, step.cwd),
+						),
 						makeDetails("chain"),
 					);
 					results.push(result);
@@ -2670,7 +2787,11 @@ export default function (pi: ExtensionAPI) {
 									emitParallelUpdate();
 								}
 							},
-							inheritedDelegationApproval,
+							resolveInheritedApprovalScopeForAgent(
+								inheritedDelegationApproval,
+								t.agent,
+								loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, t.cwd),
+							),
 							makeDetails("parallel"),
 						);
 						allResults[index] = result;
@@ -2714,7 +2835,11 @@ export default function (pi: ExtensionAPI) {
 					undefined,
 					signal,
 					onUpdate,
-					inheritedDelegationApproval,
+					resolveInheritedApprovalScopeForAgent(
+						inheritedDelegationApproval,
+						params.agent,
+						loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, params.cwd),
+					),
 					makeDetails("single"),
 				);
 				if (hasParentEscalations(result)) {

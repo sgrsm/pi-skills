@@ -46,7 +46,17 @@ Effective parallel execution limits now come from merged Pi settings under the c
 {
   "subagents": {
     "maxConcurrency": 8,
-    "maxParallelTasks": 16
+    "maxParallelTasks": 16,
+    "maxDelegationDepth": 2,
+    "inheritedApprovalScopes": {
+      "consolidator": "read-only",
+      "planner": "read-only",
+      "planner-readonly": "read-only",
+      "reviewer": "read-only",
+      "reviewer-readonly": "read-only",
+      "scout": "read-only",
+      "worker": "read-only"
+    }
   }
 }
 ```
@@ -55,6 +65,8 @@ Where:
 
 - `maxConcurrency` = how many subagent processes may run at the same time
 - `maxParallelTasks` = how many tasks a single parallel `subagent` call may request
+- `maxDelegationDepth` = max delegated child depth below the root session; `2` means `root -> first -> second`
+- `inheritedApprovalScopes.<agent>` = override the nested delegation scope inherited by that child agent (`none`, `read-only`, or `all`)
 
 Settings are read from the normal Pi locations:
 
@@ -64,7 +76,8 @@ Settings are read from the normal Pi locations:
 Notes:
 
 - `/subagents ui`, `/subagents concurrency ...`, and `/subagents max-tasks ...` save global defaults to `~/.pi/agent/settings.json`
-- project `.pi/settings.json` values still override the effective limits for that project
+- `subagents.maxDelegationDepth` and `subagents.inheritedApprovalScopes` are currently edited manually in settings.json
+- project `.pi/settings.json` values still override the effective subagent settings for that project
 
 Guardrails:
 
@@ -72,17 +85,21 @@ Guardrails:
 - non-explicit auto mode is capped at 3 agents
 - write-capable agents are not auto-approved without an explicit user request
 - project-local agents require confirmation by default
-- delegated child sessions inherit only read-only nested delegation approval by default
+- delegated child sessions inherit only read-only nested delegation approval by default, unless `subagents.inheritedApprovalScopes` overrides a child agent's scope
+- delegated child sessions can be capped with `subagents.maxDelegationDepth`; for example, `2` allows `root -> first -> second` and blocks a third nested generation
 - delegated child sessions can use `escalate_to_parent` to ask the parent agent to obtain clarification or broader approval
 
 ## Built-in agents
 
 Global agent prompts live in `~/.pi/agent/agents/`:
 
-- `scout` - fast codebase discovery
-- `planner` - implementation planning, with optional Markdown plan output
-- `reviewer` - review / correctness / security analysis, with optional Markdown report output, subagent delegation, and parent escalation
-- `worker` - general-purpose implementation and analysis
+- `scout` - fast codebase discovery, with optional read-only helper delegation when depth allows
+- `planner` - implementation planning, with optional Markdown plan output and read-only helper delegation
+- `planner-readonly` - read-only planning and decomposition
+- `reviewer` - review / correctness / security analysis, with optional Markdown report output, read-only helper delegation, and parent escalation
+- `reviewer-readonly` - read-only review specialist for nested analysis
+- `worker` - general-purpose implementation and analysis, with read-only nested delegation
+- `consolidator` - synthesis/final report writing, with optional read-only helper delegation
 
 You can also add project-local agents in `.pi/agents/` inside a repo and opt into them with `agentScope: "both"`.
 
@@ -95,6 +112,9 @@ You can also add project-local agents in `.pi/agents/` inside a repo and opt int
 - `Ask a reviewer to fan out into focused subreviews, then merge them into one report.`
 - `If a delegated reviewer needs a user decision, have it escalate the question back to the parent agent.`
 - `Delegate discovery to a scout, then create a plan, then have a worker implement it.`
+- `Use a top-level scout to map this package, and let it delegate once to scout or planner-readonly for focused read-only follow-up if needed.`
+- `Use planner-readonly as the top-level agent for a read-only implementation plan, and let it delegate once to scout for discovery or reviewer-readonly for validation.`
+- `Have reviewer write reports/review.md, but keep any delegated children read-only: scout, planner-readonly, or reviewer-readonly.`
 
 ## Notes
 
@@ -103,4 +123,5 @@ You can also add project-local agents in `.pi/agents/` inside a repo and opt int
 - Nested clarification and approval do not bubble to the user automatically. Delegated children should use `escalate_to_parent`, and the parent agent should ask the user at the top level before continuing.
 - When `escalate_to_parent` uses `requestType: "clarify"`, Pi prefers the top-level interactive clarify UI when it is available; otherwise the parent still surfaces the request in text.
 - `escalate_to_parent` is only active inside delegated child sessions, not in the top-level assistant session.
-- Broader nested delegation beyond the inherited read-only scope should be approved or handled by the parent agent explicitly.
+- Broader nested delegation beyond the inherited read-only scope should be approved or handled by the parent agent explicitly, unless you intentionally configured a broader child scope via `subagents.inheritedApprovalScopes`.
+- With `maxDelegationDepth = 2`, read-only top-level subagents such as `scout`, `planner-readonly`, or `reviewer-readonly` may still delegate once, but their children are leaves.
