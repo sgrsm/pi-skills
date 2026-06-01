@@ -2,9 +2,13 @@
 
 These rules are intentionally practical and opinionated. They are inspired by ideas commonly associated with Robert C. Martin's *Clean Code* and Martin Fowler's *Refactoring*, but they are paraphrased and condensed for code-audit use.
 
-Examples are intentionally tiny. Real code may need a more nuanced trade-off.
+Examples are intentionally tiny. Real code may need a more nuanced trade-off. For most audits, prefer the compact `clean-code-checklist.md`; use this file when examples or deeper calibration are useful.
 
 Scope note: this file focuses on local code readability, method and class cleanliness, common smells, and safe refactoring moves. Use the sibling `java-clean-solid` skill for explicit SOLID analysis.
+
+Pragmatism note: use these as heuristics, not slogans. Do not recommend extraction, wrappers, `Optional`, value objects, or indirection unless the observed code shows readability, correctness, testability, or change-safety cost.
+
+Java/framework note: respect the project Java version and framework constraints. Be careful with JPA entities, proxies, transactions, reflection, serialization, and framework-required constructors.
 
 ## Naming
 
@@ -135,33 +139,42 @@ class Address {
 
 ### 8. Keep methods small
 
-- **Why:** Small methods are easier to read, test, and reuse.
+- **Why:** Small methods are easier to read, test, and reuse when extraction reveals concepts instead of hiding flow.
 - **Labels:** `readability`, `maintenance`, `testability`
+
+Do not flag a method solely because it has several calls. A clear orchestration method can be fine. Flag it when low-level details, phases, or responsibilities obscure the main behavior.
 
 **Bad**
 ```java
 void process(Order order) {
-    validate(order);
-    calculateTotals(order);
-    persist(order);
-    publishEvent(order);
-    sendEmail(order);
+    if (order == null || order.lines().isEmpty()) {
+        throw new IllegalArgumentException("empty order");
+    }
+    BigDecimal total = order.lines().stream()
+        .map(line -> line.price().multiply(BigDecimal.valueOf(line.quantity())))
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    order.markPriced(total);
+    repository.save(order);
+    mailer.send("Processed " + order.id() + " for " + total);
 }
 ```
 
 **Good**
 ```java
 void process(Order order) {
-    validate(order);
-    Order processed = finalizeOrder(order);
-    notifyCompletion(processed);
+    validator.validate(order);
+    Order priced = pricingService.price(order);
+    repository.save(priced);
+    receiptMailer.sendFor(priced);
 }
 ```
 
-### 9. Make each method do one thing
+### 9. Make each method do one coherent thing
 
 - **Why:** Mixed responsibilities create hidden coupling and make changes risky.
 - **Labels:** `cohesion`, `maintenance`, `testability`
+
+A method may orchestrate one use case, but it should not bury unrelated responsibilities or hide important side effects behind vague helpers.
 
 **Bad**
 ```java
@@ -177,9 +190,10 @@ User register(String email) {
 **Good**
 ```java
 User register(String email) {
-    validateEmail(email);
-    User user = repository.save(new User(email));
-    afterRegistration(user);
+    EmailAddress address = EmailAddress.parse(email);
+    User user = userCreator.create(address);
+    registrationAudit.recordRegistered(user);
+    welcomeMailer.sendTo(user);
     return user;
 }
 ```
@@ -259,12 +273,14 @@ sendFinalReport(report);
 
 ### 14. Separate commands from queries
 
-- **Why:** A method should either change state or answer a question, not both.
+- **Why:** A query-looking method that mutates state surprises callers and complicates tests.
 - **Labels:** `correctness`, `readability`, `testability`
+
+A command may return a value. Flag the code when the name or contract hides mutation, not merely because a method both does work and returns a result. `getOrCreate` can be valid if command semantics, transaction boundary, and concurrency behavior are explicit.
 
 **Bad**
 ```java
-User getOrCreateUser(String email) {
+User findUser(String email) {
     return repository.findByEmail(email)
         .orElseGet(() -> repository.save(new User(email)));
 }
@@ -276,8 +292,8 @@ Optional<User> findUser(String email) {
     return repository.findByEmail(email);
 }
 
-User createUser(String email) {
-    return repository.save(new User(email));
+User getOrCreateUser(String email) {
+    return userRegistration.findExistingOrCreate(email);
 }
 ```
 
@@ -302,6 +318,8 @@ invoice.markCalculated(total);
 - **Why:** Early exits flatten code and keep the main path visible.
 - **Labels:** `readability`, `maintenance`, `correctness`
 
+Use no-op guard returns only when the method contract makes no-op valid. For invalid input, fail fast instead of silently hiding bugs.
+
 **Bad**
 ```java
 void ship(Order order) {
@@ -318,7 +336,8 @@ void ship(Order order) {
 **Good**
 ```java
 void ship(Order order) {
-    if (order == null || !order.isPaid() || order.isCancelled()) {
+    Objects.requireNonNull(order, "order");
+    if (!order.isPaid() || order.isCancelled()) {
         return;
     }
     warehouse.ship(order);
@@ -708,14 +727,16 @@ String city = order.customerCity();
 
 ### 36. Remove feature envy by moving behavior
 
-- **Why:** If a method mostly uses another object's data, it probably belongs there.
+- **Why:** If a method mostly uses another object's data, it may belong closer to that data.
 - **Labels:** `cohesion`, `coupling`, `maintenance`
+
+Move behavior to the owning type only when it is domain behavior. Keep presentation formatting, serialization, persistence mapping, and infrastructure concerns at boundaries.
 
 **Bad**
 ```java
-class InvoicePrinter {
-    String print(Invoice invoice) {
-        return invoice.getCustomerName() + ": " + invoice.getTotal();
+class InvoiceService {
+    boolean isOverdue(Invoice invoice, LocalDate today) {
+        return !invoice.isPaid() && invoice.dueDate().isBefore(today);
     }
 }
 ```
@@ -723,8 +744,8 @@ class InvoicePrinter {
 **Good**
 ```java
 class Invoice {
-    String printableSummary() {
-        return customerName + ": " + total;
+    boolean isOverdue(LocalDate today) {
+        return !paid && dueDate.isBefore(today);
     }
 }
 ```
@@ -927,10 +948,12 @@ throw new SQLException(ex);
 throw new CustomerRepositoryException(customerId, ex);
 ```
 
-### 47. Wrap third-party APIs behind your own interface
+### 47. Wrap third-party APIs behind your own interface when useful
 
-- **Why:** Wrappers reduce blast radius when vendors or frameworks change.
+- **Why:** Wrappers reduce blast radius when vendors or frameworks change, and make volatile boundaries easier to test.
 - **Labels:** `coupling`, `testability`, `maintenance`
+
+Wrap external APIs when they are volatile, hard to test, vendor-specific, or leaking into core logic. Do not wrap stable standard-library or simple framework APIs by default.
 
 **Bad**
 ```java
@@ -1076,10 +1099,12 @@ void preserves_current_whitespace_trimming_behavior() { ... }
 // 4. move dependency behind interface
 ```
 
-### 55. Replace long parameter lists with parameter objects
+### 55. Introduce parameter objects for repeated meaningful clusters
 
-- **Why:** A cluster of parameters often hides a concept.
+- **Why:** A repeated cluster of parameters often hides a concept and is easy to pass incorrectly.
 - **Labels:** `readability`, `maintenance`, `testability`, `cohesion`
+
+This is the usual refactoring for rule 12. Do not introduce a parameter object for a one-off call unless it names a real concept or prevents misuse.
 
 **Bad**
 ```java

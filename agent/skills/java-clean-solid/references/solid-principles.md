@@ -1,6 +1,6 @@
 # SOLID Principles
 
-These are the classic SOLID principles used as a design lens during a Java audit. Apply them pragmatically. A tiny class or module does not need ceremony just to satisfy a slogan.
+These are the classic SOLID principles used as a design lens during a Java audit. Apply them pragmatically. A tiny class or module does not need ceremony just to satisfy a slogan. For most audits, prefer the compact `solid-checklist.md`; use this file when examples or deeper principle calibration are useful.
 
 Scope note: this file focuses on class and interface design. Use the sibling `java-clean-code` skill for line-level smells and refactoring mechanics.
 
@@ -207,6 +207,15 @@ class CheckoutService {
     }
 }
 ```
+
+## False-positive guards
+
+- **SRP:** An application service may validly orchestrate several collaborators if it owns one cohesive use case.
+- **OCP:** Do not introduce strategies or plugin points for one unlikely variation.
+- **LSP:** Check the base contract before flagging a subtype; different behavior is only a problem when it violates caller expectations.
+- **ISP:** Do not split an interface if all real clients genuinely use all operations.
+- **DIP:** Do not create an interface for every class; prefer abstractions at volatile, external, cross-module, or test-sensitive boundaries.
+- **General:** Do not recommend abstraction when the current design is simple, stable, readable, and easy to test.
 
 ## Using SOLID during an audit
 

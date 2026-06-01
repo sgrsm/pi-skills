@@ -71,6 +71,14 @@ Determine whether the user wants a review of:
 
 If scope is unclear, infer from the files given and state the assumption.
 
+Use scope tiers to avoid over-reading:
+
+- **Single file or diff:** inspect only the changed file, immediate collaborators, and relevant tests needed to validate a finding.
+- **Package or module:** inspect build files, package structure, representative entry points, key collaborators, and tests.
+- **Whole repository:** map modules, hotspots, common abstractions, dependency boundaries, and representative flows before ranking findings.
+
+Do not map the full project or trace unrelated flows for a narrow review unless the evidence requires it.
+
 ### 2. Map the project structure
 
 Inspect:
