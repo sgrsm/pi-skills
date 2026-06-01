@@ -275,17 +275,17 @@ function knownConnectorText(manager: McpManager): string {
 
 function statusDisplayName(connector: McpConnectorRuntime): string {
 	const name = connector.displayName.trim().replace(/\s+MCP$/i, "").trim();
-	return name || connector.name;
+	return (name || connector.name).toLowerCase();
 }
 
 function updateMcpStatus(manager: McpManager, ctx: McpStatusContext): void {
 	const connectors = connectorNames(manager).map((name) => manager.connectors.get(name)!);
 	if (connectors.length === 0) {
-		ctx.ui.setStatus(MCP_STATUS_KEY, ctx.ui.theme.fg("dim", "MCP: none"));
+		ctx.ui.setStatus(MCP_STATUS_KEY, ctx.ui.theme.fg("dim", "mcp: none"));
 		return;
 	}
 
-	let text = ctx.ui.theme.fg("dim", "MCP: ");
+	let text = ctx.ui.theme.fg("dim", "mcp: ");
 	for (const [index, connector] of connectors.entries()) {
 		if (index > 0) {
 			text += ctx.ui.theme.fg("dim", ENABLED_MCP_SEPARATOR);

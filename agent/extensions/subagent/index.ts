@@ -403,7 +403,7 @@ function getCurrentSubagentDepth(): number {
 }
 
 function formatMaxDelegationDepth(maxDelegationDepth: number | null): string {
-	return maxDelegationDepth === null ? "unlimited" : String(maxDelegationDepth);
+	return maxDelegationDepth === null ? "∞" : String(maxDelegationDepth);
 }
 
 function getRemainingDelegationDepth(currentDepth: number, maxDelegationDepth: number | null): number | null {
@@ -488,7 +488,7 @@ function updateSubagentStatus(
 		SUBAGENT_STATUS_KEY,
 		ctx.ui.theme.fg(
 			"dim",
-			`subagents: ${formatSubagentStatusLabel(mode, sessionApproval)} • c${executionSettings.limits.maxConcurrency}/t${executionSettings.limits.maxParallelTasks} • d${currentDepth}/${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} •`,
+			`subagents: ${formatSubagentStatusLabel(mode, sessionApproval)} • c:${executionSettings.limits.maxConcurrency}|t:${executionSettings.limits.maxParallelTasks} • d:${currentDepth}|${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} •`,
 		),
 	);
 }
@@ -583,7 +583,7 @@ function buildSubagentSummaryText(
 		`subagents mode: ${formatSubagentStatusLabel(mode, sessionApproval)}`,
 		`current session delegation depth: ${currentDepth}`,
 		`max delegation depth: ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
-		`remaining delegation generations in this session: ${remainingDelegationDepth === null ? "unlimited" : remainingDelegationDepth}`,
+		`remaining delegation generations in this session: ${remainingDelegationDepth === null ? "∞" : remainingDelegationDepth}`,
 		`max concurrent subagents: ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)})`,
 		`max parallel tasks per call: ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)})`,
 		`nested inherited approval overrides: ${configuredInheritedScopes.length > 0 ? configuredInheritedScopes.join(", ") : "none"}`,
