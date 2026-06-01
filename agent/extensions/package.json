@@ -5,6 +5,9 @@
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.78.0",
+    "@earendil-works/pi-ai": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "typebox": "^1.1.24"
   }
