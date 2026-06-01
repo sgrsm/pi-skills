@@ -116,12 +116,19 @@ type EditorLike = {
 	setAutocompleteMaxVisible?(maxVisible: number): void
 	focused?: boolean
 	wantsKeyRelease?: boolean
+	actionHandlers?: Map<string, () => void>
+	onEscape?: () => void
+	onCtrlD?: () => void
+	onPasteImage?: () => void
+	onExtensionShortcut?: (data: string) => boolean
+	onAction?(action: string, handler: () => void): void
 }
 
 class ContinueWarningEditor {
 	private readonly base: EditorLike
 	private readonly originalOnSubmit?: (text: string) => void
 	private readonly originalOnChange?: (text: string) => void
+	private readonly fallbackActionHandlers = new Map<string, () => void>()
 	private outerOnSubmit?: (text: string) => void
 	private outerOnChange?: (text: string) => void
 
@@ -144,6 +151,42 @@ class ContinueWarningEditor {
 
 	get wantsKeyRelease(): boolean | undefined {
 		return this.base.wantsKeyRelease
+	}
+
+	get actionHandlers(): Map<string, () => void> {
+		return this.base.actionHandlers ?? this.fallbackActionHandlers
+	}
+
+	get onEscape(): (() => void) | undefined {
+		return this.base.onEscape
+	}
+
+	set onEscape(handler: (() => void) | undefined) {
+		this.base.onEscape = handler
+	}
+
+	get onCtrlD(): (() => void) | undefined {
+		return this.base.onCtrlD
+	}
+
+	set onCtrlD(handler: (() => void) | undefined) {
+		this.base.onCtrlD = handler
+	}
+
+	get onPasteImage(): (() => void) | undefined {
+		return this.base.onPasteImage
+	}
+
+	set onPasteImage(handler: (() => void) | undefined) {
+		this.base.onPasteImage = handler
+	}
+
+	get onExtensionShortcut(): ((data: string) => boolean) | undefined {
+		return this.base.onExtensionShortcut
+	}
+
+	set onExtensionShortcut(handler: ((data: string) => boolean) | undefined) {
+		this.base.onExtensionShortcut = handler
 	}
 
 	get focused(): boolean {
@@ -176,6 +219,14 @@ class ContinueWarningEditor {
 
 	set borderColor(handler: ((str: string) => string) | undefined) {
 		this.base.borderColor = handler
+	}
+
+	onAction(action: string, handler: () => void): void {
+		if (this.base.onAction) {
+			this.base.onAction(action, handler)
+			return
+		}
+		this.actionHandlers.set(action, handler)
 	}
 
 	render(width: number): string[] {
