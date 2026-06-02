@@ -27,6 +27,7 @@ If the request is narrow, prefer a focused skill instead:
 For a full audit, read these before concluding:
 
 - [Shared audit playbook](../java-clean-shared/references/audit-playbook.md)
+- [Shared taxonomy](../java-clean-shared/references/taxonomy.md)
 - [Clean code checklist](../java-clean-code/references/clean-code-checklist.md)
 - [SOLID checklist](../java-clean-solid/references/solid-checklist.md)
 
@@ -43,6 +44,13 @@ Load detailed topic references only for hotspot areas where the compact checklis
 4. Prioritize findings by correctness, coupling, cohesion, maintenance, and testability impact.
 5. Recommend an incremental refactoring order.
 
+## Review stance
+
+- Prefer root-cause findings over symptom lists; do not report local symptoms separately when one design root cause explains them.
+- Do not recommend patterns, abstractions, wrappers, or value objects without concrete correctness, change-safety, or testability cost.
+- If evidence is incomplete, phrase the point as a risk or question, not a definite violation.
+- Do not treat framework annotations, Lombok, records, builders, mutable DTOs, JPA mechanics, or serialization hooks as issues without concrete coupling, lifecycle, invariant, or testing cost.
+
 ## Output
 
 Use the shortest report that fits the scope. Default to at most 10 findings for package/module audits and 15 for repo-wide audits unless the user asks for exhaustive output.
@@ -57,4 +65,4 @@ Default structure:
 Use neutral, professional language and focus on findings, impact, and next steps.
 Do not add praise-only sections or subjective compliments.
 If there are no material issues in scope, say so briefly and stop.
-Use labels from the shared audit playbook on each finding.
+Use severity, evidence strength, labels, and finding schema from the shared taxonomy.

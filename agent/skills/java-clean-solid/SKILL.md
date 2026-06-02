@@ -25,7 +25,7 @@ Use this skill when the user wants a Java review focused on SOLID and class-leve
 
 ## References to load
 
-- Always load [SOLID checklist](references/solid-checklist.md) before concluding.
+- Always load [SOLID checklist](references/solid-checklist.md) and [Shared taxonomy](../java-clean-shared/references/taxonomy.md) before concluding.
 - For package/module/repo audits or actionable refactoring plans, also load [Shared audit playbook](../java-clean-shared/references/audit-playbook.md).
 - Load [SOLID principles](references/solid-principles.md) only when the checklist is insufficient, the user asks for examples, or the audit is broad/exhaustive.
 - Do not load the sibling clean-code reference by default. Load `../java-clean-code/references/clean-code-checklist.md` only when local smells are needed to support a design finding.
@@ -46,6 +46,7 @@ Use this skill when the user wants a Java review focused on SOLID and class-leve
 - Do not add praise-only sections or subjective compliments.
 - Do not recommend abstraction unless it improves clarity, replaceability, testability, or change safety.
 - Do not call something a SOLID violation without evidence of cost or risk.
+- If evidence is incomplete, phrase the point as a risk or question, not a definite violation.
 
 ## Java/framework caveats
 
@@ -63,14 +64,6 @@ Use the shortest report that fits the scope. Omit empty sections.
 3. Impact on coupling, extensibility, and testability
 4. Smallest safe design refactoring order
 
-For each finding include:
-
-- Severity: Critical / Major / Moderate / Minor
-- Principle or design smell
-- Location
-- Evidence
-- Impact
-- Smallest safe refactor
-- Labels: 1-3 benefit labels
+For each finding, use the shared taxonomy schema: severity, principle/design smell, location, evidence, impact, smallest safe refactor, and 1-3 labels.
 
 Limit to the top material findings unless the user asks for an exhaustive review.

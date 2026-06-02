@@ -1,0 +1,22 @@
+diff --git a/src/main/java/example/LegacyReportService.java b/src/main/java/example/LegacyReportService.java
+index 1f2a3b4..5c6d7e8 100644
+--- a/src/main/java/example/LegacyReportService.java
++++ b/src/main/java/example/LegacyReportService.java
+@@ -1,7 +1,7 @@
+ package example;
+ 
+ import java.util.Locale;
+ 
+ class LegacyReportService {
+     // Pre-existing broad smells: mixed responsibilities, vague names, and long methods.
+     private final ReportRepository repository;
+@@ -88,7 +88,7 @@ class LegacyReportService {
+     }
+ 
+     String normalizeEmail(String email) {
+-        return email.trim().toLowerCase();
++        return email.trim().toLowerCase(Locale.ROOT);
+     }
+ 
+     void processEverything(ReportRequest request) {
+         // 180 lines of pre-existing validation, SQL mapping, CSV formatting, email, metrics, and cleanup.

@@ -4,16 +4,9 @@ Compact review checklist for Java SOLID and class-design audits. Use it as the d
 
 Use SOLID to explain concrete design cost, not to enforce ceremony.
 
-## Benefit labels
+## Taxonomy
 
-Use 1-3 labels per finding: `readability`, `simplicity`, `maintenance`, `testability`, `coupling`, `cohesion`, `modularity`, `encapsulation`, `extensibility`, `reusability`, `robustness`, `correctness`, `diagnostics`, `performance`, `concurrency`.
-
-## Severity guide
-
-- **Critical:** design can cause or hide production failures, broken invariants, unsafe concurrency, transaction bugs, or contract violations.
-- **Major:** design makes change expensive: god classes, deep coupling, brittle inheritance, repeated conditionals, hard-to-test boundaries.
-- **Moderate:** localized design smells: fat interfaces, unclear responsibility, needless abstraction, concrete dependency at a volatile boundary.
-- **Minor:** small design cleanup with low risk and low payoff.
+Use [shared taxonomy](../../java-clean-shared/references/taxonomy.md) for severity, evidence strength, benefit labels, and finding schema.
 
 ## Principle matrix
 
@@ -61,4 +54,4 @@ Do not report a SOLID violation solely because:
 
 ## Finding standard
 
-Each material finding should include: severity, principle/design smell, location, evidence, impact, smallest safe refactor, and 1-3 benefit labels.
+Use the finding schema from the shared taxonomy. For very short reviews, omit low-value fields only when there are no material findings.

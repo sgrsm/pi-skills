@@ -4,16 +4,9 @@ Compact review checklist for Java clean-code audits. Use it as the default refer
 
 The rules are practical heuristics inspired by *Clean Code*, *Refactoring*, and common Java practice. Apply them only when the observed code shows readability, correctness, testability, or change-safety cost.
 
-## Benefit labels
+## Taxonomy
 
-Use 1-3 labels per finding: `readability`, `simplicity`, `maintenance`, `testability`, `coupling`, `cohesion`, `modularity`, `encapsulation`, `extensibility`, `reusability`, `robustness`, `correctness`, `diagnostics`, `performance`, `concurrency`.
-
-## Severity guide
-
-- **Critical:** can cause or hide production failures, data corruption, broken invariants, unsafe concurrency, or transaction bugs.
-- **Major:** makes change expensive: god classes, deep coupling, repeated conditionals, hard-to-test design, large duplication.
-- **Moderate:** local smells: long methods, poor names, confusing comments, primitive obsession, nullable contracts, noisy abstractions.
-- **Minor:** small cleanup with low risk and low payoff.
+Use [shared taxonomy](../../java-clean-shared/references/taxonomy.md) for severity, evidence strength, benefit labels, and finding schema.
 
 ## Review matrix
 
@@ -63,4 +56,4 @@ Do not report a smell solely because:
 
 ## Finding standard
 
-Each material finding should include: severity, rule/smell, location, evidence, impact, smallest safe refactor, and 1-3 benefit labels.
+Use the finding schema from the shared taxonomy. For very short reviews, omit low-value fields only when there are no material findings.

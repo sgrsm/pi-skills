@@ -6,25 +6,7 @@ The reference rules in this skill are paraphrased and distilled from memory and 
 
 ## Goal
 
-Find the changes that will most improve:
-
-- readability
-- simplicity
-- maintenance
-- testability
-- coupling
-- cohesion
-- modularity
-- encapsulation
-- extensibility
-- reusability
-- robustness
-- correctness
-- diagnostics
-- performance
-- concurrency
-
-Use these terms as labels on findings. A finding may have multiple labels.
+Find the changes that most improve correctness, readability, maintenance, testability, cohesion, coupling, and change safety. Use [Java clean audit taxonomy](taxonomy.md) for severity, evidence strength, benefit labels, and finding schema.
 
 ## What to prioritize
 
@@ -37,23 +19,9 @@ Prioritize in roughly this order unless the user says otherwise:
 5. readability and naming issues
 6. formatting-only issues
 
-## Severity guide
+## Severity and evidence
 
-### Critical
-
-Use when the issue can cause or hide production failures, data corruption, broken invariants, unsafe concurrency, or transaction bugs.
-
-### Major
-
-Use for problems that make change expensive: god classes, deep coupling, repeated conditionals, hard-to-test design, serious SOLID violations, and large duplication.
-
-### Moderate
-
-Use for local smells: long methods, poor names, confusing comments, primitive obsession, message chains, nullable contracts, and noisy abstractions.
-
-### Minor
-
-Use for small cleanup opportunities with low risk and low payoff.
+Use [Java clean audit taxonomy](taxonomy.md) for severity definitions and evidence strength. If evidence is incomplete, phrase the point as a risk or question, not a definite violation.
 
 ## Audit workflow
 
@@ -149,17 +117,7 @@ Also check whether the production design makes testing unnecessarily hard.
 
 ### 6. Produce findings that are useful
 
-Each finding should be concrete.
-
-Prefer this structure:
-
-- **Severity:** Critical / Major / Moderate / Minor
-- **Rule / principle:** e.g. `Small methods`, `SRP`, `Hidden side effect`
-- **Location:** path and lines if available
-- **Labels:** list of benefit labels
-- **Evidence:** what the code currently does
-- **Why it matters:** maintenance cost, defect risk, coupling, etc.
-- **Suggested refactoring:** smallest safe next step
+Each finding should be concrete. Use the finding schema from [Java clean audit taxonomy](taxonomy.md): severity, rule/principle, location, evidence, impact, smallest safe refactor, and 1-3 labels.
 
 ## Review conventions
 
