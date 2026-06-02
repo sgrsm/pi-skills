@@ -28,8 +28,15 @@ Use this skill when the user wants a Java review focused on local code cleanline
 
 - Always load [Clean code checklist](references/clean-code-checklist.md) before concluding.
 - For package/module/repo audits or actionable refactoring plans, also load [Shared audit playbook](../java-clean-shared/references/audit-playbook.md).
-- Load [Detailed clean code and refactoring rules](references/clean-code-and-refactoring-rules.md) only when the checklist is insufficient, the user asks for examples, or the audit is broad/exhaustive.
+- Load [Detailed clean code and refactoring rules](references/clean-code-and-refactoring-rules.md) or its relevant topic files only when the checklist is insufficient, the user asks for examples, or the audit is broad/exhaustive.
 - Do not load the sibling SOLID reference by default. Load `../java-clean-solid/references/solid-checklist.md` only when the root issue is class or interface design.
+
+## Scope and brevity
+
+- For diff reviews, prioritize changed lines and directly affected collaborators. Do not report pre-existing unrelated smells unless they materially affect the changed code or refactoring safety.
+- Prefer root-cause findings over symptom lists. If many local smells stem from one class or boundary problem, report the root issue once and cite representative symptoms.
+- Default to at most 5 findings for narrow reviews and 10 findings for package/module reviews unless the user asks for exhaustive output.
+- If there are no material issues in scope, say so briefly and stop. Do not invent low-value findings.
 
 ## Review stance
 
@@ -45,6 +52,7 @@ Use this skill when the user wants a Java review focused on local code cleanline
 - Respect the project Java version before suggesting records, sealed classes, switch expressions, or pattern matching.
 - Do not treat Spring, JPA, serialization, or framework annotations as design problems unless they create concrete coupling, lifecycle, or testing cost.
 - Be careful with JPA entities, proxies, transactions, reflection, serialization, and framework-required constructors.
+- Do not flag Lombok, records, builders, or mutable DTOs by default. Flag them only when they obscure invariants, create framework/lifecycle risk, or make tests/refactoring harder.
 - Prefer `Optional` mainly for return values; do not mechanically replace every nullable field or parameter.
 
 ## Typical output

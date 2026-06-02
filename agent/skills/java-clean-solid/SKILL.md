@@ -30,6 +30,13 @@ Use this skill when the user wants a Java review focused on SOLID and class-leve
 - Load [SOLID principles](references/solid-principles.md) only when the checklist is insufficient, the user asks for examples, or the audit is broad/exhaustive.
 - Do not load the sibling clean-code reference by default. Load `../java-clean-code/references/clean-code-checklist.md` only when local smells are needed to support a design finding.
 
+## Scope and brevity
+
+- For diff reviews, prioritize changed lines and directly affected collaborators. Do not report pre-existing unrelated design issues unless they materially affect the changed code or refactoring safety.
+- Prefer root-cause findings over symptom lists. If many local smells stem from one responsibility or dependency boundary, report the root design issue once and cite representative symptoms.
+- Default to at most 5 findings for narrow reviews and 10 findings for package/module reviews unless the user asks for exhaustive output.
+- If there are no material issues in scope, say so briefly and stop. Do not invent low-value findings.
+
 ## Review stance
 
 - Use neutral, professional language.
@@ -45,6 +52,7 @@ Use this skill when the user wants a Java review focused on SOLID and class-leve
 - Respect the project Java version and framework constraints before suggesting records, sealed hierarchies, modules, or newer language features.
 - Do not treat Spring, JPA, serialization, or framework annotations as design problems unless they create concrete coupling, lifecycle, or testing cost.
 - Be careful with JPA entities, proxies, transactions, reflection, serialization, and framework-required constructors.
+- Do not flag Lombok, records, builders, or mutable DTOs by default. Flag them only when they obscure invariants, create framework/lifecycle risk, or make tests/refactoring harder.
 
 ## Typical output
 

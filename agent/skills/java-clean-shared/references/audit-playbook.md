@@ -73,7 +73,8 @@ If scope is unclear, infer from the files given and state the assumption.
 
 Use scope tiers to avoid over-reading:
 
-- **Single file or diff:** inspect only the changed file, immediate collaborators, and relevant tests needed to validate a finding.
+- **Diff review:** prioritize changed lines and directly affected collaborators/tests. Do not report pre-existing unrelated issues unless they materially affect the changed code or refactoring safety.
+- **Single file:** inspect the file, immediate collaborators, and relevant tests needed to validate a finding.
 - **Package or module:** inspect build files, package structure, representative entry points, key collaborators, and tests.
 - **Whole repository:** map modules, hotspots, common abstractions, dependency boundaries, and representative flows before ranking findings.
 
@@ -165,7 +166,8 @@ Prefer this structure:
 - Use neutral, professional language.
 - Avoid praise, blame, and emotional qualifiers.
 - Focus on evidence, impact, and recommended changes.
-- If there are no material issues in scope, state that briefly and stop.
+- Default to at most 5 findings for narrow reviews and 10 findings for package/module reviews unless the user asks for exhaustive output.
+- If there are no material issues in scope, state that briefly and stop. Do not invent low-value findings.
 
 ### Prefer evidence over preference
 

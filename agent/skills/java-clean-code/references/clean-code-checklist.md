@@ -1,6 +1,6 @@
 # Clean Code Checklist
 
-Compact review checklist for Java clean-code audits. Use it as the default reference; load the detailed rules file only when examples or deeper calibration are needed.
+Compact review checklist for Java clean-code audits. Use it as the default reference; load the detailed rule index or relevant topic file only when examples or deeper calibration are needed.
 
 The rules are practical heuristics inspired by *Clean Code*, *Refactoring*, and common Java practice. Apply them only when the observed code shows readability, correctness, testability, or change-safety cost.
 

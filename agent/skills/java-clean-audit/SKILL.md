@@ -24,10 +24,15 @@ If the request is narrow, prefer a focused skill instead:
 
 ## References to load
 
-For a full audit, read all of these before concluding:
+For a full audit, read these before concluding:
 
 - [Shared audit playbook](../java-clean-shared/references/audit-playbook.md)
-- [Clean code and refactoring rules](../java-clean-code/references/clean-code-and-refactoring-rules.md)
+- [Clean code checklist](../java-clean-code/references/clean-code-checklist.md)
+- [SOLID checklist](../java-clean-solid/references/solid-checklist.md)
+
+Load detailed topic references only for hotspot areas where the compact checklists are insufficient, the user asks for examples, or the audit is broad/exhaustive:
+
+- [Clean code and refactoring rule index](../java-clean-code/references/clean-code-and-refactoring-rules.md)
 - [SOLID principles](../java-clean-solid/references/solid-principles.md)
 
 ## Audit workflow
@@ -40,15 +45,16 @@ For a full audit, read all of these before concluding:
 
 ## Output
 
+Use the shortest report that fits the scope. Default to at most 10 findings for package/module audits and 15 for repo-wide audits unless the user asks for exhaustive output.
+
 Default structure:
 
 1. scope and assumptions
 2. summary of material risks
-3. high-priority findings
-4. medium-priority findings
-5. low-risk improvements
-6. suggested refactoring order
+3. findings ordered by severity and refactoring payoff
+4. suggested refactoring order
 
 Use neutral, professional language and focus on findings, impact, and next steps.
 Do not add praise-only sections or subjective compliments.
+If there are no material issues in scope, say so briefly and stop.
 Use labels from the shared audit playbook on each finding.
