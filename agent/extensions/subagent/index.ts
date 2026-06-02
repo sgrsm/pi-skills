@@ -56,6 +56,7 @@ import {
 import {
 	formatParentEscalationSummary as formatParentEscalationSummaryFromUx,
 	formatSubagentActivityTree as formatSubagentActivityTreeFromUx,
+	getMaxSubagentRelativeDepth as getMaxSubagentRelativeDepthFromUx,
 	getParentEscalationsFromMessage as getParentEscalationsFromMessageFromUx,
 	getSubagentCallLabel as getSubagentCallLabelFromUx,
 	resolveInteractiveParentClarifications as resolveInteractiveParentClarificationsFromUx,
@@ -75,6 +76,7 @@ const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
 const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
+const activeSubagentRelativeDepthByToolCallId = new Map<string, number>();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
 const APPROVAL_OPTION_DENY = "Deny";
@@ -483,7 +485,7 @@ function updateSubagentStatus(
 	executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd),
 ): void {
 	if (!ctx.hasUI) return;
-	const currentDepth = getCurrentSubagentDepth();
+	const currentDepth = getDisplayedSubagentDepth();
 	ctx.ui.setStatus(
 		SUBAGENT_STATUS_KEY,
 		ctx.ui.theme.fg(
@@ -1056,6 +1058,31 @@ function parseSubagentDetails(value: unknown): SubagentDetails | null {
 		results: value.results.filter(isRecord) as SingleResult[],
 		...(resolutions && resolutions.length > 0 ? { parentEscalationResolutions: resolutions } : {}),
 	};
+}
+
+function getActiveSubagentRelativeDepthFromResult(result: unknown): number {
+	if (!isRecord(result)) return 1;
+	const details = parseSubagentDetails(result.details);
+	return details ? getMaxSubagentRelativeDepthFromUx(details) : 1;
+}
+
+function setActiveSubagentRelativeDepth(toolCallId: string, relativeDepth: number): boolean {
+	const normalizedDepth = Math.max(1, Math.floor(relativeDepth));
+	if (activeSubagentRelativeDepthByToolCallId.get(toolCallId) === normalizedDepth) return false;
+	activeSubagentRelativeDepthByToolCallId.set(toolCallId, normalizedDepth);
+	return true;
+}
+
+function clearActiveSubagentRelativeDepth(toolCallId: string): boolean {
+	return activeSubagentRelativeDepthByToolCallId.delete(toolCallId);
+}
+
+function getDisplayedSubagentDepth(): number {
+	let activeRelativeDepth = 0;
+	for (const relativeDepth of activeSubagentRelativeDepthByToolCallId.values()) {
+		activeRelativeDepth = Math.max(activeRelativeDepth, relativeDepth);
+	}
+	return getCurrentSubagentDepth() + activeRelativeDepth;
 }
 
 function getParentEscalationKey(escalation: ParentEscalationDetails): string {
@@ -1971,6 +1998,16 @@ export default function (pi: ExtensionAPI) {
 		return executionSettings;
 	}
 
+	function refreshSubagentFooter(ctx: ExtensionContext): void {
+		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), loadSubagentExecutionSettings(ctx.cwd));
+	}
+
+	function markSubagentExecutionActive(toolCallId: string, ctx: ExtensionContext): void {
+		if (setActiveSubagentRelativeDepth(toolCallId, 1)) {
+			refreshSubagentFooter(ctx);
+		}
+	}
+
 	function parseRequestedLimit(raw: string, hardMax: number): number | undefined {
 		const normalized = raw.trim();
 		if (!/^\d+$/.test(normalized)) return undefined;
@@ -2222,6 +2259,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		policyState = loadSubagentPolicyState();
+		activeSubagentRelativeDepthByToolCallId.clear();
 		setParentEscalationToolEnabled(pi, hasParentEscalationRelay());
 		syncSubagentSessionState(ctx);
 	});
@@ -2243,6 +2281,13 @@ export default function (pi: ExtensionAPI) {
 				hasParentEscalationRelay(),
 			)}`,
 		};
+	});
+
+	pi.on("tool_execution_update", async (event, ctx) => {
+		if (event.toolName !== "subagent") return;
+		if (setActiveSubagentRelativeDepth(event.toolCallId, getActiveSubagentRelativeDepthFromResult(event.partialResult))) {
+			refreshSubagentFooter(ctx);
+		}
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -2289,6 +2334,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (decision.action === "allow") {
 			delegatedApprovalByToolCallId.set(event.toolCallId, delegatedApprovalScope);
+			markSubagentExecutionActive(event.toolCallId, ctx);
 			return undefined;
 		}
 		if (decision.action === "block") {
@@ -2310,6 +2356,7 @@ export default function (pi: ExtensionAPI) {
 			persistSessionSubagentApproval(pi, true);
 			updateSubagentStatus(ctx, policyState.mode, true);
 			delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
+			markSubagentExecutionActive(event.toolCallId, ctx);
 			return undefined;
 		}
 		if (choice !== APPROVAL_OPTION_ALLOW_ONCE) {
@@ -2317,12 +2364,16 @@ export default function (pi: ExtensionAPI) {
 			return { block: true, reason: `Blocked by user: ${decision.reason}` };
 		}
 		delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
+		markSubagentExecutionActive(event.toolCallId, ctx);
 		return undefined;
 	});
 
-	pi.on("tool_execution_end", async (event) => {
+	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
 		delegatedApprovalByToolCallId.delete(event.toolCallId);
+		if (clearActiveSubagentRelativeDepth(event.toolCallId)) {
+			refreshSubagentFooter(ctx);
+		}
 	});
 
 	pi.registerCommand("subagents", {

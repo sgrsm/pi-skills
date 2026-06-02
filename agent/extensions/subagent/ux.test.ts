@@ -3,6 +3,7 @@ import test from "node:test";
 import {
 	formatParentEscalationSummary,
 	formatSubagentActivityTree,
+	getMaxSubagentRelativeDepth,
 	getParentEscalationsFromMessage,
 	resolveInteractiveParentClarifications,
 	type MessageLike,
@@ -159,6 +160,90 @@ test("activity tree renders nested subagent hierarchy and escalation status", ()
 			"         └─ escalate_to_parent: Need parent decision [waiting on parent/user]",
 		].join("\n"),
 	);
+});
+
+test("max subagent relative depth counts pending nested subagent calls", () => {
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				exitCode: -1,
+				messages: [
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "nested-subagent",
+								name: "subagent",
+								arguments: { agent: "planner", task: "drill deeper" },
+							},
+						],
+					},
+				],
+			}),
+		],
+	};
+
+	assert.equal(getMaxSubagentRelativeDepth(details), 2);
+});
+
+test("max subagent relative depth follows the deepest completed nested branch", () => {
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				messages: [
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "nested-subagent",
+								name: "subagent",
+								arguments: { agent: "planner", task: "delegate again" },
+							},
+						],
+					},
+					{
+						role: "toolResult",
+						toolCallId: "nested-subagent",
+						toolName: "subagent",
+						details: {
+							mode: "single",
+							agentScope: "user",
+							projectAgentsDir: null,
+							results: [
+								makeResult({
+									agent: "planner",
+									task: "delegate again",
+									messages: [
+										{
+											role: "assistant",
+											content: [
+												{
+													type: "toolCall",
+													id: "deepest-subagent",
+													name: "subagent",
+													arguments: { agent: "scout", task: "one more level" },
+												},
+											],
+										},
+									],
+								}),
+							],
+						},
+					},
+				],
+			}),
+		],
+	};
+
+	assert.equal(getMaxSubagentRelativeDepth(details), 3);
 });
 
 test("interactive clarify resolutions use top-level select UI and feed the escalation summary", async () => {

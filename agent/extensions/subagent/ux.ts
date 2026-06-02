@@ -392,6 +392,38 @@ export function getSubagentCallLabel(args: Record<string, any>): string {
 	return "subagent";
 }
 
+function getMaxSubagentRelativeDepthFromMessages(messages: MessageLike[]): number {
+	const toolResults = getToolResultsByCallId(messages);
+	const seenToolCalls = new Set<string>();
+	let maxDepth = 0;
+
+	for (const message of messages) {
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (part.type !== "toolCall" || part.name !== "subagent") continue;
+			const callId = typeof part.id === "string" ? part.id : undefined;
+			if (callId) {
+				if (seenToolCalls.has(callId)) continue;
+				seenToolCalls.add(callId);
+			}
+
+			const resultMessage = callId ? toolResults.get(callId) : undefined;
+			const nestedDetails = resultMessage && isRecord(resultMessage) ? parseSubagentDetails(resultMessage.details) : null;
+			maxDepth = Math.max(maxDepth, nestedDetails ? getMaxSubagentRelativeDepth(nestedDetails) : 1);
+		}
+	}
+
+	return maxDepth;
+}
+
+export function getMaxSubagentRelativeDepth(details: SubagentDetailsLike): number {
+	if (!Array.isArray(details.results) || details.results.length === 0) return 1;
+	return Math.max(
+		1,
+		...details.results.map((result) => 1 + getMaxSubagentRelativeDepthFromMessages(Array.isArray(result.messages) ? result.messages : [])),
+	);
+}
+
 function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNode[] {
 	if (Array.isArray(args.chain) && args.chain.length > 0) {
 		return args.chain.filter(isRecord).map((step, index) => ({
