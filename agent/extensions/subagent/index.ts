@@ -74,12 +74,15 @@ const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
 const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
 const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
+const SUBAGENT_WORKFLOW_MODEL_ENV = "PI_SUBAGENT_WORKFLOW_MODEL";
+const SUBAGENT_WORKFLOW_THINKING_ENV = "PI_SUBAGENT_WORKFLOW_THINKING";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
 const activeSubagentRelativeDepthByToolCallId = new Map<string, number>();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
 const APPROVAL_OPTION_DENY = "Deny";
+const THINKING_LEVEL_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const EXPLICIT_SUBAGENT_PATTERNS = [
 	/\bsub-?agents?\b/i,
 	/\bmulti-agent\b/i,
@@ -94,12 +97,21 @@ const EXPLICIT_SUBAGENT_PATTERNS = [
 ];
 const SIMPLE_PR_REVIEW_PATTERN = /\b(review|reviewing|inspect|check|analyze)\b[\s\S]{0,120}\b(pr|pull request|diff|changes?)\b/i;
 
+type ThinkingLevel = (typeof THINKING_LEVEL_VALUES)[number];
+
 type SubagentRequestMode = "single" | "parallel" | "chain";
 
 type RequestedTask = {
 	agent: string;
 	task: string;
 	cwd?: string;
+	model?: string;
+	thinking?: ThinkingLevel;
+};
+
+type WorkflowModelLock = {
+	model?: string;
+	thinking?: ThinkingLevel;
 };
 
 interface SubagentRequestSummary {
@@ -155,6 +167,18 @@ function normalizeText(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.replace(/\s+/g, " ").trim();
 	return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim();
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim().toLowerCase();
+	return THINKING_LEVEL_VALUES.includes(normalized as ThinkingLevel) ? (normalized as ThinkingLevel) : undefined;
 }
 
 function normalizeEscalationOptions(value: unknown): EscalationOption[] {
@@ -228,14 +252,58 @@ function getLatestUserPromptText(ctx: ExtensionContext): string {
 	return "";
 }
 
+function formatRequestedTaskTarget(task: RequestedTask): string {
+	const overrides = [
+		task.model ? `model=${task.model}` : undefined,
+		task.thinking ? `thinking=${task.thinking}` : undefined,
+	].filter((value): value is string => Boolean(value));
+	return overrides.length > 0 ? `${task.agent} [${overrides.join(", ")}]` : task.agent;
+}
+
+function getInheritedWorkflowModelLock(): WorkflowModelLock {
+	const model = normalizeNonEmptyString(process.env[SUBAGENT_WORKFLOW_MODEL_ENV]);
+	if (!model) return {};
+	const thinking = normalizeThinkingLevel(process.env[SUBAGENT_WORKFLOW_THINKING_ENV]);
+	return thinking ? { model, thinking } : { model };
+}
+
+function resolveWorkflowModelLock(ctx: ExtensionContext, currentThinkingLevel: ThinkingLevel): WorkflowModelLock {
+	const inherited = getInheritedWorkflowModelLock();
+	if (inherited.model) return inherited;
+	if (!ctx.model) return {};
+	return {
+		model: `${ctx.model.provider}/${ctx.model.id}`,
+		thinking: currentThinkingLevel,
+	};
+}
+
+function resolveEffectiveSubagentModelSelection(
+	request: RequestedTask,
+	agent: AgentConfig,
+	workflowModelLock: WorkflowModelLock,
+): WorkflowModelLock {
+	return {
+		model:
+			normalizeNonEmptyString(request.model) ??
+			normalizeNonEmptyString(agent.model) ??
+			normalizeNonEmptyString(workflowModelLock.model),
+		thinking:
+			normalizeThinkingLevel(request.thinking) ??
+			normalizeThinkingLevel(agent.thinking) ??
+			normalizeThinkingLevel(workflowModelLock.thinking),
+	};
+}
+
 function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
 	if (Array.isArray(params.chain)) {
 		return params.chain
 			.filter(isRecord)
 			.map((step) => ({
-				agent: typeof step.agent === "string" ? step.agent : "",
-				task: typeof step.task === "string" ? step.task : "",
-				cwd: typeof step.cwd === "string" ? step.cwd : undefined,
+				agent: normalizeNonEmptyString(step.agent) ?? "",
+				task: normalizeNonEmptyString(step.task) ?? "",
+				cwd: normalizeNonEmptyString(step.cwd),
+				model: normalizeNonEmptyString(step.model),
+				thinking: normalizeThinkingLevel(step.thinking),
 			}))
 			.filter((step) => step.agent && step.task);
 	}
@@ -243,14 +311,24 @@ function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
 		return params.tasks
 			.filter(isRecord)
 			.map((task) => ({
-				agent: typeof task.agent === "string" ? task.agent : "",
-				task: typeof task.task === "string" ? task.task : "",
-				cwd: typeof task.cwd === "string" ? task.cwd : undefined,
+				agent: normalizeNonEmptyString(task.agent) ?? "",
+				task: normalizeNonEmptyString(task.task) ?? "",
+				cwd: normalizeNonEmptyString(task.cwd),
+				model: normalizeNonEmptyString(task.model),
+				thinking: normalizeThinkingLevel(task.thinking),
 			}))
 			.filter((task) => task.agent && task.task);
 	}
 	if (typeof params.agent === "string" && typeof params.task === "string") {
-		return [{ agent: params.agent, task: params.task, cwd: typeof params.cwd === "string" ? params.cwd : undefined }];
+		return [
+			{
+				agent: normalizeNonEmptyString(params.agent) ?? "",
+				task: normalizeNonEmptyString(params.task) ?? "",
+				cwd: normalizeNonEmptyString(params.cwd),
+				model: normalizeNonEmptyString(params.model),
+				thinking: normalizeThinkingLevel(params.thinking),
+			},
+		].filter((task) => task.agent && task.task);
 	}
 	return [];
 }
@@ -853,7 +931,7 @@ function buildApprovalPrompt(
 ): string {
 	const taskLines = summary.requestedTasks
 		.slice(0, 6)
-		.map((task, index) => `${index + 1}. ${task.agent}: ${trimPreview(task.task, 110)}`);
+		.map((task, index) => `${index + 1}. ${formatRequestedTaskTarget(task)}: ${trimPreview(task.task, 110)}`);
 	if (summary.requestedTasks.length > taskLines.length) {
 		taskLines.push(`... +${summary.requestedTasks.length - taskLines.length} more task(s)`);
 	}
@@ -1595,15 +1673,17 @@ type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 async function runSingleAgent(
 	defaultCwd: string,
 	agents: AgentConfig[],
-	agentName: string,
-	task: string,
-	cwd: string | undefined,
+	request: RequestedTask,
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
+	workflowModelLock: WorkflowModelLock,
 	inheritSubagentApprovalScope: DelegationApprovalScope,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 ): Promise<SingleResult> {
+	const agentName = request.agent;
+	const task = request.task;
+	const cwd = request.cwd;
 	const agent = agents.find((a) => a.name === agentName);
 
 	if (!agent) {
@@ -1621,8 +1701,10 @@ async function runSingleAgent(
 		};
 	}
 
+	const effectiveModelSelection = resolveEffectiveSubagentModelSelection(request, agent, workflowModelLock);
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) args.push("--model", agent.model);
+	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
+	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 
 	let tmpPromptDir: string | null = null;
@@ -1637,7 +1719,7 @@ async function runSingleAgent(
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		parentEscalations: [],
-		model: agent.model,
+		model: effectiveModelSelection.model,
 		step,
 	};
 
@@ -1662,13 +1744,17 @@ async function runSingleAgent(
 		const executionCwd = resolveExecutionCwd(defaultCwd, cwd);
 		let wasAborted = false;
 		const childDepth = getCurrentSubagentDepth() + 1;
-		const childEnv = {
+		const childEnv: NodeJS.ProcessEnv = {
 			...process.env,
 			[SUBAGENT_DEPTH_ENV]: String(childDepth),
 			[SUBAGENT_INHERITED_APPROVAL_ENV]: inheritSubagentApprovalScope !== "none" ? "1" : "0",
 			[SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV]: inheritSubagentApprovalScope,
 			[SUBAGENT_PARENT_ESCALATION_ENV]: "1",
 		};
+		if (workflowModelLock.model) childEnv[SUBAGENT_WORKFLOW_MODEL_ENV] = workflowModelLock.model;
+		else delete childEnv[SUBAGENT_WORKFLOW_MODEL_ENV];
+		if (workflowModelLock.thinking) childEnv[SUBAGENT_WORKFLOW_THINKING_ENV] = workflowModelLock.thinking;
+		else delete childEnv[SUBAGENT_WORKFLOW_THINKING_ENV];
 
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
@@ -1764,7 +1850,7 @@ async function runSingleAgent(
 							currentResult.usage.cost += usage.cost?.total || 0;
 							currentResult.usage.contextTokens = usage.totalTokens || 0;
 						}
-						if (!currentResult.model && msg.model) currentResult.model = msg.model;
+						if (msg.model) currentResult.model = msg.model;
 						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
 						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
 					}
@@ -1899,6 +1985,18 @@ const TaskItem = Type.Object({
 	}),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Optional model override for this subagent. Accepts the same values as pi --model, such as provider/id or a model alias.",
+		}),
+	),
+	thinking: Type.Optional(
+		StringEnum(THINKING_LEVEL_VALUES, {
+			description:
+				"Optional thinking level override for this subagent. Defaults to the workflow lock unless overridden here or in agent frontmatter.",
+		}),
+	),
 });
 
 const ChainItem = Type.Object({
@@ -1907,11 +2005,28 @@ const ChainItem = Type.Object({
 	}),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Optional model override for this step. Accepts the same values as pi --model, such as provider/id or a model alias.",
+		}),
+	),
+	thinking: Type.Optional(
+		StringEnum(THINKING_LEVEL_VALUES, {
+			description:
+				"Optional thinking level override for this step. Defaults to the workflow lock unless overridden here or in agent frontmatter.",
+		}),
+	),
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
 	default: "user",
+});
+
+const ThinkingLevelSchema = StringEnum(THINKING_LEVEL_VALUES, {
+	description:
+		"Optional thinking level override. Defaults to the workflow-start thinking level unless overridden here or in agent frontmatter.",
 });
 
 const EscalationOptionSchema = Type.Object({
@@ -1965,6 +2080,13 @@ const SubagentParams = Type.Object({
 		}),
 	),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Optional model override for single mode. Accepts the same values as pi --model, such as provider/id or a model alias.",
+		}),
+	),
+	thinking: Type.Optional(ThinkingLevelSchema),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
@@ -2608,6 +2730,7 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
+			"Per-subagent model and thinking overrides are supported; otherwise child sessions inherit the workflow-start model and thinking level.",
 			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 			"Default policy mode is ask: explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
 			'Default agent scope is "user" (from ~/.pi/agent/agents).',
@@ -2618,6 +2741,7 @@ export default function (pi: ExtensionAPI) {
 			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when large decomposable work clearly benefits from multi-agent fan-out under the current policy mode.",
 			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for multi-agent review.",
 			"Use subagent with the tasks parameter when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
+			"When the user specifies different speed, cost, or reasoning expectations per subagent, pass model and thinking overrides in the subagent call instead of relying on the current global /model setting.",
 			"If a delegated child requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
 			"Prefer scout for codebase discovery, planner for saved Markdown plan artifacts, planner-readonly for read-only nested planning, reviewer for writable report workflows, reviewer-readonly for read-only nested review, worker for general implementation, and consolidator for synthesis/report artifacts.",
@@ -2643,6 +2767,7 @@ export default function (pi: ExtensionAPI) {
 			const inheritedDelegationApproval =
 				delegatedApprovalByToolCallId.get(toolCallId) ?? getInheritedSubagentApprovalScope();
 			const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd);
+			const workflowModelLock = resolveWorkflowModelLock(ctx, pi.getThinkingLevel());
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
@@ -2740,12 +2865,17 @@ export default function (pi: ExtensionAPI) {
 					const result = await runSingleAgent(
 						ctx.cwd,
 						stepDiscovery.agents,
-						step.agent,
-						taskWithContext,
-						step.cwd,
+						{
+							agent: step.agent,
+							task: taskWithContext,
+							cwd: step.cwd,
+							model: step.model,
+							thinking: step.thinking,
+						},
 						i + 1,
 						signal,
 						chainUpdate,
+						workflowModelLock,
 						resolveInheritedApprovalScopeForAgent(
 							inheritedDelegationApproval,
 							step.agent,
@@ -2826,9 +2956,13 @@ export default function (pi: ExtensionAPI) {
 						const result = await runSingleAgent(
 							ctx.cwd,
 							taskDiscovery.agents,
-							t.agent,
-							t.task,
-							t.cwd,
+							{
+								agent: t.agent,
+								task: t.task,
+								cwd: t.cwd,
+								model: t.model,
+								thinking: t.thinking,
+							},
 							undefined,
 							signal,
 							// Per-task update callback
@@ -2838,6 +2972,7 @@ export default function (pi: ExtensionAPI) {
 									emitParallelUpdate();
 								}
 							},
+							workflowModelLock,
 							resolveInheritedApprovalScopeForAgent(
 								inheritedDelegationApproval,
 								t.agent,
@@ -2880,12 +3015,17 @@ export default function (pi: ExtensionAPI) {
 				const result = await runSingleAgent(
 					ctx.cwd,
 					taskDiscovery.agents,
-					params.agent,
-					params.task,
-					params.cwd,
+					{
+						agent: params.agent,
+						task: params.task,
+						cwd: params.cwd,
+						model: params.model,
+						thinking: params.thinking,
+					},
 					undefined,
 					signal,
 					onUpdate,
+					workflowModelLock,
 					resolveInheritedApprovalScopeForAgent(
 						inheritedDelegationApproval,
 						params.agent,

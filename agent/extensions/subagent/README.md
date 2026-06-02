@@ -6,6 +6,7 @@ Adds multi-agent delegation to Pi via a `subagent` tool.
 
 - Spawns isolated child `pi` processes as sub-agents
 - Supports single, parallel, and chained delegation modes
+- Locks each delegated workflow to the parent session's current model/thinking unless explicitly overridden
 - Streams progress/results back to the parent agent
 - Lets delegated child sessions escalate user questions or broader approval needs back to the parent agent
 - Lets the main agent act as orchestrator and merge sub-agent outputs
@@ -89,6 +90,36 @@ Guardrails:
 - delegated child sessions can be capped with `subagents.maxDelegationDepth`; for example, `2` allows `root -> first -> second` and blocks a third nested generation
 - delegated child sessions can use `escalate_to_parent` to ask the parent agent to obtain clarification or broader approval
 
+## Model selection
+
+Each top-level `subagent` tool call snapshots the parent session's current model and thinking level, then passes that lock to every child `pi` process in the delegated workflow. This prevents unrelated `/model` changes in other sessions from changing models mid-workflow.
+
+Per-subagent selection precedence:
+
+1. task-level `model` / `thinking` override
+2. agent frontmatter `model` / `thinking` default
+3. inherited workflow-start model / thinking lock
+
+Supported override fields:
+
+- single mode: `{ agent, task, model?, thinking?, cwd? }`
+- parallel mode: `tasks: [{ agent, task, model?, thinking?, cwd? }, ...]`
+- chain mode: `chain: [{ agent, task, model?, thinking?, cwd? }, ...]`
+
+Notes:
+
+- `model` accepts the same values as `pi --model`, such as `anthropic/claude-sonnet-4-5` or a model alias/pattern.
+- `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
+- If you override only `thinking`, the subagent keeps its inherited or agent-default model.
+- If you override only `model`, the subagent still inherits/defaults its thinking level via the precedence above.
+- Task or agent overrides affect that delegated child invocation. Descendants without their own override still inherit the workflow-start lock.
+
+Examples:
+
+- Single: `{ "agent": "scout", "task": "Map the auth code", "model": "anthropic/claude-haiku-4-5", "thinking": "off" }`
+- Parallel task: `{ "agent": "planner", "task": "Create a plan", "model": "anthropic/claude-sonnet-4-5", "thinking": "high" }`
+- Chain step: `{ "agent": "worker", "task": "Implement {previous}", "model": "anthropic/claude-sonnet-4-5", "thinking": "high" }`
+
 ## Built-in agents
 
 Global agent prompts live in `~/.pi/agent/agents/`:
@@ -102,6 +133,18 @@ Global agent prompts live in `~/.pi/agent/agents/`:
 - `consolidator` - synthesis/final report writing, with optional read-only helper delegation
 
 You can also add project-local agents in `.pi/agents/` inside a repo and opt into them with `agentScope: "both"`.
+
+Agent frontmatter can also set defaults for that named agent:
+
+```markdown
+---
+name: scout
+description: Fast recon
+tools: read, grep, find, ls
+model: anthropic/claude-haiku-4-5
+thinking: off
+---
+```
 
 ## Example prompts
 
