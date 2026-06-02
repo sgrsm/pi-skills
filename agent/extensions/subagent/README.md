@@ -77,7 +77,7 @@ Settings are read from the normal Pi locations:
 Notes:
 
 - `/subagents ui`, `/subagents concurrency ...`, and `/subagents max-tasks ...` save global defaults to `~/.pi/agent/settings.json`
-- `subagents.maxDelegationDepth` and `subagents.inheritedApprovalScopes` are currently edited manually in settings.json
+- `subagents.maxDelegationDepth`, `subagents.inheritedApprovalScopes`, and `subagents.agentDefaults` are currently edited manually in settings.json
 - project `.pi/settings.json` values still override the effective subagent settings for that project
 
 Guardrails:
@@ -97,8 +97,9 @@ Each top-level `subagent` tool call snapshots the parent session's current model
 Per-subagent selection precedence:
 
 1. task-level `model` / `thinking` override
-2. agent frontmatter `model` / `thinking` default
-3. inherited workflow-start model / thinking lock
+2. settings.json `subagents.agentDefaults.<agent>.{model,thinking}`
+3. agent frontmatter `model` / `thinking` default
+4. inherited workflow-start model / thinking lock
 
 Supported override fields:
 
@@ -112,7 +113,31 @@ Notes:
 - `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
 - If you override only `thinking`, the subagent keeps its inherited or agent-default model.
 - If you override only `model`, the subagent still inherits/defaults its thinking level via the precedence above.
+- Settings-based agent defaults override agent frontmatter, so you can change persistent defaults without editing the agent prompt files.
 - Task or agent overrides affect that delegated child invocation. Descendants without their own override still inherit the workflow-start lock.
+
+Example settings:
+
+```json
+{
+  "subagents": {
+    "agentDefaults": {
+      "scout": {
+        "model": "anthropic/claude-haiku-4-5",
+        "thinking": "off"
+      },
+      "planner": {
+        "model": "anthropic/claude-sonnet-4-5",
+        "thinking": "high"
+      },
+      "worker": {
+        "model": "anthropic/claude-sonnet-4-5",
+        "thinking": "high"
+      }
+    }
+  }
+}
+```
 
 Examples:
 

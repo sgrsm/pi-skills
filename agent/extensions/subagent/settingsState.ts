@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { SettingsManager, getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 export type SubagentSettingsScope = "global" | "project";
@@ -12,6 +13,11 @@ export type SubagentExecutionSettings = {
 	maxDelegationDepth: number | null;
 };
 
+export type SubagentAgentDefault = {
+	model?: string;
+	thinking?: ThinkingLevel;
+};
+
 export type LoadedSubagentExecutionSettings = {
 	limits: SubagentExecutionSettings;
 	sources: {
@@ -20,6 +26,7 @@ export type LoadedSubagentExecutionSettings = {
 		maxDelegationDepth: SubagentLimitSource;
 	};
 	inheritedApprovalScopes: Record<string, SubagentDelegationApprovalScope>;
+	agentDefaults: Record<string, SubagentAgentDefault>;
 	warnings: string[];
 	paths: {
 		global: string;
@@ -67,6 +74,20 @@ function normalizeDelegationApprovalScope(value: unknown): SubagentDelegationApp
 	return undefined;
 }
 
+function normalizeNonEmptyString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim();
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim().toLowerCase();
+	return ["off", "minimal", "low", "medium", "high", "xhigh"].includes(normalized)
+		? (normalized as ThinkingLevel)
+		: undefined;
+}
+
 export function extractSubagentInheritedApprovalScopes(
 	settings: unknown,
 ): Record<string, SubagentDelegationApprovalScope> {
@@ -83,6 +104,66 @@ export function extractSubagentInheritedApprovalScopes(
 	}
 
 	return inheritedApprovalScopes;
+}
+
+export function mergeSubagentAgentDefaults(
+	...records: Array<Record<string, SubagentAgentDefault>>
+): Record<string, SubagentAgentDefault> {
+	const merged: Record<string, SubagentAgentDefault> = {};
+	for (const record of records) {
+		for (const [agentName, agentDefault] of Object.entries(record)) {
+			if (!agentName.trim()) continue;
+			if (!(agentDefault.model || agentDefault.thinking)) {
+				delete merged[agentName];
+				continue;
+			}
+			const current = merged[agentName] ?? {};
+			const next: SubagentAgentDefault = {
+				...(current.model ? { model: current.model } : {}),
+				...(current.thinking ? { thinking: current.thinking } : {}),
+				...(agentDefault.model ? { model: agentDefault.model } : {}),
+				...(agentDefault.thinking ? { thinking: agentDefault.thinking } : {}),
+			};
+			merged[agentName] = next;
+		}
+	}
+	return merged;
+}
+
+export function extractSubagentAgentDefaults(settings: unknown): Record<string, SubagentAgentDefault> {
+	if (!isRecord(settings) || !isRecord(settings.subagents) || !isRecord(settings.subagents.agentDefaults)) {
+		return {};
+	}
+
+	const agentDefaults: Record<string, SubagentAgentDefault> = {};
+	for (const [agentName, rawDefault] of Object.entries(settings.subagents.agentDefaults)) {
+		const normalizedAgentName = agentName.trim().toLowerCase();
+		if (!normalizedAgentName) continue;
+
+		let model: string | undefined;
+		let thinking: ThinkingLevel | undefined;
+		if (rawDefault === null) {
+			agentDefaults[normalizedAgentName] = {};
+			continue;
+		}
+		if (typeof rawDefault === "string") {
+			model = normalizeNonEmptyString(rawDefault);
+			if (!model) continue;
+		} else if (isRecord(rawDefault)) {
+			if (!("model" in rawDefault) && !("thinking" in rawDefault)) continue;
+			model = normalizeNonEmptyString(rawDefault.model);
+			thinking = normalizeThinkingLevel(rawDefault.thinking);
+			if (!model && !thinking) continue;
+		} else {
+			continue;
+		}
+		agentDefaults[normalizedAgentName] = {
+			...(model ? { model } : {}),
+			...(thinking ? { thinking } : {}),
+		};
+	}
+
+	return agentDefaults;
 }
 
 function extractSubagentExecutionSettings(settings: unknown): Partial<SubagentExecutionSettings> {
@@ -126,6 +207,10 @@ function buildLoadedExecutionSettings(
 		...extractSubagentInheritedApprovalScopes(globalSettings),
 		...extractSubagentInheritedApprovalScopes(projectSettings),
 	};
+	const agentDefaults = mergeSubagentAgentDefaults(
+		extractSubagentAgentDefaults(globalSettings),
+		extractSubagentAgentDefaults(projectSettings),
+	);
 
 	const limits: SubagentExecutionSettings = {
 		...DEFAULT_SUBAGENT_EXECUTION_SETTINGS,
@@ -160,6 +245,7 @@ function buildLoadedExecutionSettings(
 						: "default",
 		},
 		inheritedApprovalScopes,
+		agentDefaults,
 		warnings,
 		paths: {
 			global: getGlobalSettingsPath(),

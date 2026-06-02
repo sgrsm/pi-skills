@@ -41,6 +41,7 @@ import {
 	SUBAGENT_MAX_PARALLEL_TASKS_LIMIT,
 	formatSubagentSettingsSource,
 	loadSubagentExecutionSettings,
+	mergeSubagentAgentDefaults,
 	resetSubagentExecutionSettings,
 	saveSubagentExecutionSettings,
 	type LoadedSubagentExecutionSettings,
@@ -280,15 +281,19 @@ function resolveWorkflowModelLock(ctx: ExtensionContext, currentThinkingLevel: T
 function resolveEffectiveSubagentModelSelection(
 	request: RequestedTask,
 	agent: AgentConfig,
+	executionSettings: LoadedSubagentExecutionSettings,
 	workflowModelLock: WorkflowModelLock,
 ): WorkflowModelLock {
+	const configuredDefault = executionSettings.agentDefaults[normalizeAgentNameForScopeLookup(request.agent)] ?? {};
 	return {
 		model:
 			normalizeNonEmptyString(request.model) ??
+			normalizeNonEmptyString(configuredDefault.model) ??
 			normalizeNonEmptyString(agent.model) ??
 			normalizeNonEmptyString(workflowModelLock.model),
 		thinking:
 			normalizeThinkingLevel(request.thinking) ??
+			normalizeThinkingLevel(configuredDefault.thinking) ??
 			normalizeThinkingLevel(agent.thinking) ??
 			normalizeThinkingLevel(workflowModelLock.thinking),
 	};
@@ -601,6 +606,7 @@ function mergeSubagentExecutionSettings(settings: LoadedSubagentExecutionSetting
 			maxDelegationDepth: sourceFor("maxDelegationDepth"),
 		},
 		inheritedApprovalScopes: Object.assign({}, ...settings.map((item) => item.inheritedApprovalScopes)),
+		agentDefaults: mergeSubagentAgentDefaults(...settings.map((item) => item.agentDefaults)),
 		warnings: Array.from(new Set(settings.flatMap((item) => item.warnings))),
 		paths: settings[0].paths,
 	};
@@ -631,6 +637,19 @@ function loadSubagentExecutionSettingsForCwds(cwds: string[], fallbackCwd: strin
 	return mergeSubagentExecutionSettings(settings);
 }
 
+function formatConfiguredAgentDefaults(executionSettings: LoadedSubagentExecutionSettings): string[] {
+	return Object.entries(executionSettings.agentDefaults)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([agent, config]) => {
+			const parts = [
+				config.model ? `model=${config.model}` : undefined,
+				config.thinking ? `thinking=${config.thinking}` : undefined,
+			].filter((value): value is string => Boolean(value));
+			return `${agent}(${parts.join(", ")})`;
+		})
+		.filter(Boolean);
+}
+
 function buildSubagentUsageText(): string {
 	return [
 		"Usage:",
@@ -641,7 +660,7 @@ function buildSubagentUsageText(): string {
 		`/subagents max-tasks <n>|default — set max parallel tasks per call (1-${SUBAGENT_MAX_PARALLEL_TASKS_LIMIT})`,
 		"/subagents reset-limits — remove global subagent limit overrides from settings.json",
 		"/subagents cancel-session-approval — stop auto-approving ask-mode requests in this session",
-		'Manual settings.json keys: "subagents.maxDelegationDepth" and "subagents.inheritedApprovalScopes.<agent>"',
+		'Manual settings.json keys: "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 	].join("\n");
 }
 
@@ -658,6 +677,7 @@ function buildSubagentSummaryText(
 	const configuredInheritedScopes = Object.entries(executionSettings.inheritedApprovalScopes)
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([agent, scope]) => `${agent}=${scope}`);
+	const configuredAgentDefaults = formatConfiguredAgentDefaults(executionSettings);
 
 	const lines = [
 		`subagents mode: ${formatSubagentStatusLabel(mode, sessionApproval)}`,
@@ -667,14 +687,15 @@ function buildSubagentSummaryText(
 		`max concurrent subagents: ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)})`,
 		`max parallel tasks per call: ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)})`,
 		`nested inherited approval overrides: ${configuredInheritedScopes.length > 0 ? configuredInheritedScopes.join(", ") : "none"}`,
+		`agent model/thinking defaults: ${configuredAgentDefaults.length > 0 ? configuredAgentDefaults.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
 		"- manual: only explicit user requests may use subagents",
 		"- ask: explicit requests run immediately; otherwise Pi asks first (Allow once / Allow for current session / Deny)",
 		`- auto: Pi may auto-use read-only multi-agent delegation within guardrails (max ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} agents; write-capable agents require an explicit request)`,
 		"- /subagents ui opens interactive config",
-		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", and "subagents.inheritedApprovalScopes.<agent>"',
+		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
-		"- maxDelegationDepth and inherited approval overrides are currently edited manually in settings.json",
+		"- maxDelegationDepth, inherited approval overrides, and per-agent model defaults are currently edited manually in settings.json",
 		"- concurrency/max-tasks overrides save to ~/.pi/agent/settings.json by default; manual .pi/settings.json overrides still apply to the effective subagent settings for the current project",
 		"- delegated child sessions inherit read-only nested delegation approval by default unless overridden per child agent in settings.json",
 		`- delegated child sessions can use ${PARENT_ESCALATION_TOOL_NAME} to ask the parent agent for user input or broader approval`,
@@ -1678,6 +1699,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	workflowModelLock: WorkflowModelLock,
+	executionSettings: LoadedSubagentExecutionSettings,
 	inheritSubagentApprovalScope: DelegationApprovalScope,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 ): Promise<SingleResult> {
@@ -1701,7 +1723,12 @@ async function runSingleAgent(
 		};
 	}
 
-	const effectiveModelSelection = resolveEffectiveSubagentModelSelection(request, agent, workflowModelLock);
+	const effectiveModelSelection = resolveEffectiveSubagentModelSelection(
+		request,
+		agent,
+		executionSettings,
+		workflowModelLock,
+	);
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
 	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
@@ -2172,7 +2199,7 @@ export default function (pi: ExtensionAPI) {
 			const footerText = new Text(
 				theme.fg(
 					"dim",
-					"Use /subagents concurrency <n>|default or /subagents max-tasks <n>|default for exact values. maxDelegationDepth and inheritedApprovalScopes are manual settings.json keys.",
+					"Use /subagents concurrency <n>|default or /subagents max-tasks <n>|default for exact values. maxDelegationDepth, inheritedApprovalScopes, and agentDefaults are manual settings.json keys.",
 				),
 				1,
 				0,
@@ -2219,7 +2246,7 @@ export default function (pi: ExtensionAPI) {
 						? theme.fg("warning", "Project .pi/settings.json overrides one or more current limit values. UI saves global defaults only.")
 						: theme.fg(
 								"dim",
-								"Mode saves to ~/.pi/agent/subagent-policy.json. Concurrency/max-tasks overrides save to ~/.pi/agent/settings.json. maxDelegationDepth and inheritedApprovalScopes remain manual settings.json keys.",
+								"Mode saves to ~/.pi/agent/subagent-policy.json. Concurrency/max-tasks overrides save to ~/.pi/agent/settings.json. maxDelegationDepth, inheritedApprovalScopes, and agentDefaults remain manual settings.json keys.",
 							),
 				);
 				warningText.setText(
@@ -2862,6 +2889,7 @@ export default function (pi: ExtensionAPI) {
 							}
 						: undefined;
 
+					const stepExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, step.cwd);
 					const result = await runSingleAgent(
 						ctx.cwd,
 						stepDiscovery.agents,
@@ -2876,10 +2904,11 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						workflowModelLock,
+						stepExecutionSettings,
 						resolveInheritedApprovalScopeForAgent(
 							inheritedDelegationApproval,
 							step.agent,
-							loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, step.cwd),
+							stepExecutionSettings,
 						),
 						makeDetails("chain"),
 					);
@@ -2953,6 +2982,7 @@ export default function (pi: ExtensionAPI) {
 					executionSettings.limits.maxConcurrency,
 					async (t, index) => {
 						const taskDiscovery = resolveDiscovery(t.cwd);
+						const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, t.cwd);
 						const result = await runSingleAgent(
 							ctx.cwd,
 							taskDiscovery.agents,
@@ -2973,10 +3003,11 @@ export default function (pi: ExtensionAPI) {
 								}
 							},
 							workflowModelLock,
+							taskExecutionSettings,
 							resolveInheritedApprovalScopeForAgent(
 								inheritedDelegationApproval,
 								t.agent,
-								loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, t.cwd),
+								taskExecutionSettings,
 							),
 							makeDetails("parallel"),
 						);
@@ -3012,6 +3043,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (params.agent && params.task) {
 				const taskDiscovery = resolveDiscovery(params.cwd);
+				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, params.cwd);
 				const result = await runSingleAgent(
 					ctx.cwd,
 					taskDiscovery.agents,
@@ -3026,10 +3058,11 @@ export default function (pi: ExtensionAPI) {
 					signal,
 					onUpdate,
 					workflowModelLock,
+					taskExecutionSettings,
 					resolveInheritedApprovalScopeForAgent(
 						inheritedDelegationApproval,
 						params.agent,
-						loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, params.cwd),
+						taskExecutionSettings,
 					),
 					makeDetails("single"),
 				);

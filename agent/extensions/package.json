@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts"
+    "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.78.0",
