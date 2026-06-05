@@ -21,6 +21,7 @@ import {
   renderSmartToolCall,
   renderSmartVisibleToolCall,
 } from "../short-paths/index.ts";
+import { getToolCallRenderStrategy } from "./renderStrategy.ts";
 
 type HideToolMode = "on" | "off";
 
@@ -65,7 +66,10 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
       ...tool,
       renderCall(args, theme, context) {
-        if (state.enabled) {
+        const fallback = new Text(theme.fg("toolTitle", theme.bold(tool.label ?? tool.name)), 0, 0);
+        const strategy = getToolCallRenderStrategy(tool.name, state.enabled, tool.renderShell);
+
+        if (strategy === "smartHidden") {
           return renderSmartToolCall(
             tool.name,
             tool.renderShell,
@@ -76,7 +80,7 @@ export default function (pi: ExtensionAPI) {
           );
         }
 
-        if (tool.renderShell !== "self") {
+        if (strategy === "smartVisible") {
           return renderSmartVisibleToolCall(
             tool.name,
             args,
@@ -88,9 +92,7 @@ export default function (pi: ExtensionAPI) {
           );
         }
 
-        return tool.renderCall
-          ? tool.renderCall(args, theme, context)
-          : new Text(theme.fg("toolTitle", theme.bold(tool.label ?? tool.name)), 0, 0);
+        return tool.renderCall ? tool.renderCall(args, theme, context) : fallback;
       },
       renderResult(result, options, theme, context) {
         if (state.enabled) return new Container();
