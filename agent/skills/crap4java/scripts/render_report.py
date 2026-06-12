@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report-file", required=True, help="Markdown report output path")
     parser.add_argument("--raw-file", required=True, help="Saved raw output path")
     parser.add_argument("--json-file", required=True, help="JSON summary output path")
+    parser.add_argument("--scan-exit-code", type=int, default=0, help="crap4java process exit code")
     parser.add_argument("--top", type=int, default=10, help="Number of worst offenders to include")
     parser.add_argument("--medium", type=float, default=10.0, help="Medium-risk threshold")
     parser.add_argument("--high", type=float, default=20.0, help="High-risk threshold")
@@ -162,6 +163,7 @@ def render_markdown(
     raw_file: str,
     json_file: str,
     scan_args: list[str],
+    scan_exit_code: int,
     thresholds: dict[str, float],
     rows: list[dict[str, Any]],
     summary: dict[str, Any],
@@ -179,6 +181,7 @@ def render_markdown(
     lines.append(f"- Generated: `{generated_at}`")
     lines.append(f"- Project root: `{project_root}`")
     lines.append(f"- Scan selection: {scan_selection(scan_args)}")
+    lines.append(f"- Scanner exit code: `{scan_exit_code}`")
     lines.append(f"- Thresholds: medium >= `{thresholds['medium']:g}`, high >= `{thresholds['high']:g}`, critical >= `{thresholds['critical']:g}`")
     lines.append(f"- Markdown report: `{report_file}`")
     lines.append(f"- JSON summary: `{json_file}`")
@@ -264,6 +267,7 @@ def main() -> int:
         "generatedAt": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "projectRoot": args.project_root,
         "scanArgs": args.scan_arg,
+        "scanExitCode": args.scan_exit_code,
         "selection": scan_selection(args.scan_arg),
         "thresholds": thresholds,
         "stats": summary["stats"],
@@ -285,6 +289,7 @@ def main() -> int:
         raw_file=args.raw_file,
         json_file=args.json_file,
         scan_args=args.scan_arg,
+        scan_exit_code=args.scan_exit_code,
         thresholds=thresholds,
         rows=rows,
         summary=summary,

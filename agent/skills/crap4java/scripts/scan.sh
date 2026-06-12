@@ -2,6 +2,7 @@
 set -euo pipefail
 
 JAR="${CRAP4JAVA_JAR:-/Users/sergey/dev/crap4java/target/crap4java-0.1.0-SNAPSHOT.jar}"
+JAVA_BIN="${CRAP4JAVA_JAVA:-java}"
 
 usage() {
 	cat <<'EOF'
@@ -21,7 +22,9 @@ Examples:
   scan.sh /path/to/repo module-a src/main/java/com/example/Foo.java
 
 Environment:
-  CRAP4JAVA_JAR  Override the default jar location.
+  CRAP4JAVA_JAR   Override the default jar location.
+  CRAP4JAVA_JAVA  Java 17+ executable used to launch the scanner.
+                  Defaults to "java" from PATH.
 EOF
 }
 
@@ -46,4 +49,4 @@ fi
 project_root=$(cd "$project_root" && pwd)
 cd "$project_root"
 
-exec java -jar "$JAR" "$@"
+exec "$JAVA_BIN" -jar "$JAR" "$@"

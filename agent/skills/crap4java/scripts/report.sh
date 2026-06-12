@@ -13,7 +13,9 @@ Usage:
   report.sh --help
 
 Runs crap4java, saves raw output, and renders a viewer-friendly Markdown summary
-with overall stats, threshold-based buckets, and a top-offenders table.
+with overall stats, threshold-based buckets, and a top-offenders table. If the
+scanner exits non-zero, this script still renders from the saved output and then
+exits with the scanner's status.
 
 Options:
   --output-dir <dir>    Directory for generated files.
@@ -28,6 +30,11 @@ Options:
   --critical <n>        Critical-risk CRAP threshold. Default: 30
   --changed             Pass through to crap4java for changed-file analysis.
   --                    End report options and pass remaining args to crap4java.
+
+Environment:
+  CRAP4JAVA_JAR   Override the default jar location.
+  CRAP4JAVA_JAVA  Java 17+ executable used to launch the scanner.
+                  Defaults to "java" from PATH.
 
 Examples:
   report.sh /path/to/repo
@@ -195,19 +202,13 @@ fi
 
 cp "$tmp_output" "$raw_file"
 
-if (( scan_exit != 0 )); then
-	echo "crap4java scan failed with exit code $scan_exit" >&2
-	echo "saved raw output to: $raw_file" >&2
-	cat "$tmp_output" >&2
-	exit "$scan_exit"
-fi
-
 render_args=(
 	--input "$raw_file"
 	--project-root "$project_root"
 	--report-file "$report_file"
 	--raw-file "$raw_file"
 	--json-file "$json_file"
+	--scan-exit-code "$scan_exit"
 	--top "$top_n"
 	--medium "$medium"
 	--high "$high"
@@ -222,3 +223,8 @@ fi
 python3 "$RENDER_PY" "${render_args[@]}" >"$report_file"
 cat "$report_file"
 printf '\nSaved files:\n- Report: %s\n- JSON: %s\n- Raw: %s\n' "$report_file" "$json_file" "$raw_file"
+
+if (( scan_exit != 0 )); then
+	echo "crap4java scan exited with code $scan_exit; rendered report from saved output." >&2
+	exit "$scan_exit"
+fi
