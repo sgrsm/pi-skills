@@ -55,9 +55,9 @@ export default function (pi: ExtensionAPI) {
 		pendingBranchCreations.clear();
 	});
 
-	pi.registerCommand("guardrails", {
+	pi.registerCommand("guard", {
 		description: "Show or clear current guardrail permission grants",
-		getArgumentCompletions: getGuardrailsArgumentCompletions,
+		getArgumentCompletions: getGuardArgumentCompletions,
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
 			if (action === "clear") {
@@ -569,7 +569,7 @@ function indent(value: string, prefix: string): string {
 		.join("\n");
 }
 
-export function getGuardrailsArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
+export function getGuardArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
 	const normalizedPrefix = prefix.trimStart().toLowerCase();
 	if (normalizedPrefix.includes(" ")) return null;
 	if (!"clear".startsWith(normalizedPrefix)) return null;
