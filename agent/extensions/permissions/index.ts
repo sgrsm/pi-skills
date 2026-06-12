@@ -24,15 +24,16 @@ import {
 	PermissionStore,
 	analyzeBashMutation,
 	buildFileMutationRequest,
-	type GuardOperation,
+	type FilePermissionOperation,
 	type PermissionGrant,
 	type PermissionRequest,
 } from "./permissions.ts";
 
-const STATUS_KEY = "3-guardrails";
+const STATUS_KEY = "3-permissions";
 const PERMISSION_CHOICES = ["Allow once", "Allow for current session", "Deny", "Custom instructions"];
 const AGENT_BRANCH_PREFIXES = ["pi/", "agent/", "codex/"];
-const AGENT_BRANCH_ENTRY_TYPE = "guardrails-agent-branch";
+const AGENT_BRANCH_ENTRY_TYPE = "permissions-agent-branch";
+const LEGACY_AGENT_BRANCH_ENTRY_TYPES = new Set([AGENT_BRANCH_ENTRY_TYPE, "guardrails-agent-branch"]);
 
 export default function (pi: ExtensionAPI) {
 	const filePermissions = new PermissionStore();
@@ -55,9 +56,9 @@ export default function (pi: ExtensionAPI) {
 		pendingBranchCreations.clear();
 	});
 
-	pi.registerCommand("guard", {
-		description: "Show or clear current guardrail permission grants",
-		getArgumentCompletions: getGuardArgumentCompletions,
+	pi.registerCommand("permissions", {
+		description: "Show or clear current permission grants",
+		getArgumentCompletions: getPermissionsArgumentCompletions,
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
 			if (action === "clear") {
@@ -65,7 +66,7 @@ export default function (pi: ExtensionAPI) {
 				gitPermissions.clear();
 				packagePermissions.clear();
 				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
-				ctx.ui.notify("Guardrail session permissions cleared.", "info");
+				ctx.ui.notify("Session permissions cleared.", "info");
 				return;
 			}
 
@@ -74,7 +75,7 @@ export default function (pi: ExtensionAPI) {
 			const packageGrants = packagePermissions.list();
 			const trackedBranches = agentBranches.listTracked();
 			if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
-				ctx.ui.notify("No active guardrail session permissions or tracked agent branches.", "info");
+				ctx.ui.notify("No active session permissions or tracked agent branches.", "info");
 				return;
 			}
 
@@ -86,7 +87,7 @@ export default function (pi: ExtensionAPI) {
 				gitPermissions.clear();
 				packagePermissions.clear();
 				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
-				ctx.ui.notify("Guardrail session permissions cleared. Agent branch tracking was kept.", "info");
+				ctx.ui.notify("Session permissions cleared. Agent branch tracking was kept.", "info");
 			}
 		},
 	});
@@ -183,7 +184,7 @@ function fileRequestForToolCall(event: { toolName: string; input: unknown }, cwd
 
 async function requestFilePermission(
 	request: PermissionRequest,
-	ctx: GuardrailPromptContext,
+	ctx: PermissionPromptContext,
 	permissions: PermissionStore,
 	refreshStatus: () => void,
 ): Promise<ToolCallBlock | undefined> {
@@ -209,7 +210,7 @@ async function requestFilePermission(
 
 async function requestGitPermission(
 	request: GitPermissionRequest,
-	ctx: GuardrailPromptContext,
+	ctx: PermissionPromptContext,
 	permissions: GitPermissionStore,
 	refreshStatus: () => void,
 ): Promise<ToolCallBlock | undefined> {
@@ -235,7 +236,7 @@ async function requestGitPermission(
 
 async function requestPackagePermission(
 	request: PackagePermissionRequest,
-	ctx: GuardrailPromptContext,
+	ctx: PermissionPromptContext,
 	permissions: PackagePermissionStore,
 	refreshStatus: () => void,
 ): Promise<ToolCallBlock | undefined> {
@@ -261,7 +262,7 @@ async function requestPackagePermission(
 
 async function handlePermissionChoice(options: {
 	choice: string | undefined;
-	ctx: GuardrailPromptContext;
+	ctx: PermissionPromptContext;
 	requestSummary: string;
 	scopeSummary: string;
 	onAllowSession(): void;
@@ -279,8 +280,8 @@ async function handlePermissionChoice(options: {
 
 	if (options.choice === "Custom instructions") {
 		const instructions = await options.ctx.ui.editor(
-			"Custom guardrail instructions",
-			`The guarded action was not allowed yet. Tell Pi how to proceed instead.\n\nRequested action:\n${options.requestSummary}\n\nInstructions:\n`,
+			"Custom permission instructions",
+			`The permission-gated action was not allowed yet. Tell Pi how to proceed instead.\n\nRequested action:\n${options.requestSummary}\n\nInstructions:\n`,
 		);
 		const trimmed = instructions?.trim();
 		if (trimmed) {
@@ -325,7 +326,7 @@ function restoreAgentBranches(ctx: { sessionManager: { getBranch(): unknown[] } 
 	agentBranches.clearTracked();
 	for (const entry of ctx.sessionManager.getBranch()) {
 		const maybeEntry = entry as { type?: string; customType?: string; data?: unknown };
-		if (maybeEntry.type !== "custom" || maybeEntry.customType !== AGENT_BRANCH_ENTRY_TYPE) continue;
+		if (maybeEntry.type !== "custom" || !LEGACY_AGENT_BRANCH_ENTRY_TYPES.has(maybeEntry.customType ?? "")) continue;
 		const data = maybeEntry.data as Partial<AgentBranchRecord> | undefined;
 		if (!data || typeof data.repoRoot !== "string" || typeof data.branch !== "string") continue;
 		agentBranches.add(data.repoRoot, data.branch, typeof data.createdAt === "number" ? data.createdAt : Date.now());
@@ -343,7 +344,7 @@ function updateStatus(
 	const gitCount = gitPermissions?.list().length ?? 0;
 	const packageCount = packagePermissions?.list().length ?? 0;
 	const count = fileCount + gitCount + packageCount;
-	ctx.ui.setStatus(STATUS_KEY, count > 0 ? `guardrails: ${count} grant${count === 1 ? "" : "s"}` : undefined);
+	ctx.ui.setStatus(STATUS_KEY, count > 0 ? `permissions: ${count} grant${count === 1 ? "" : "s"}` : undefined);
 }
 
 function formatFilePermissionPrompt(request: PermissionRequest, cwd: string): string {
@@ -410,7 +411,7 @@ function formatPackagePermissionPrompt(request: PackagePermissionRequest, cwd: s
 			`  reason: ${scope.reason}`,
 		]),
 		"",
-		"Maven and Gradle commands are intentionally excluded from this package guardrail.",
+		"Maven and Gradle commands are intentionally excluded from this package permission check.",
 		"Choose how to proceed:",
 	].join("\n");
 }
@@ -464,7 +465,7 @@ function formatGrants(
 	trackedBranches: AgentBranchRecord[],
 ): string {
 	return [
-		"Guardrail state:",
+		"Permission state:",
 		"",
 		"Active file/path session permissions:",
 		...(fileGrants.length > 0
@@ -505,7 +506,7 @@ function formatGrants(
 	].join("\n");
 }
 
-function operationLabel(operation: GuardOperation): string {
+function operationLabel(operation: FilePermissionOperation): string {
 	switch (operation) {
 		case "write":
 			return "write";
@@ -569,16 +570,16 @@ function indent(value: string, prefix: string): string {
 		.join("\n");
 }
 
-export function getGuardArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
+export function getPermissionsArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
 	const normalizedPrefix = prefix.trimStart().toLowerCase();
 	if (normalizedPrefix.includes(" ")) return null;
 	if (!"clear".startsWith(normalizedPrefix)) return null;
-	return [{ value: "clear", label: "clear", description: "Clear current session guardrail permission grants" }];
+	return [{ value: "clear", label: "clear", description: "Clear current session permission grants" }];
 }
 
 type ToolCallBlock = { block: true; reason?: string };
 
-type GuardrailPromptContext = {
+type PermissionPromptContext = {
 	cwd: string;
 	hasUI: boolean;
 	ui: {

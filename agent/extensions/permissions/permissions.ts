@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 
-export type GuardOperation = "write" | "edit" | "delete" | "bash-mutate";
+export type FilePermissionOperation = "write" | "edit" | "delete" | "bash-mutate";
 
 export interface PermissionTarget {
-	operation: GuardOperation;
+	operation: FilePermissionOperation;
 	path: string;
 	scopeDir: string;
 	reason: string;
@@ -18,7 +18,7 @@ export interface PermissionRequest {
 }
 
 export interface PermissionGrant {
-	operation: GuardOperation;
+	operation: FilePermissionOperation;
 	scopeDir: string;
 	grantedAt: number;
 }
@@ -283,7 +283,7 @@ function isPlainRelativePathCandidate(arg: string): boolean {
 
 function targetsFromArgs(
 	args: string[],
-	operation: GuardOperation,
+	operation: FilePermissionOperation,
 	reason: string,
 	resolveCwd: string,
 	guardCwd: string,

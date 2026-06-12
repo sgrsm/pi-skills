@@ -66,16 +66,16 @@ test("bash delete outside cwd is detected while delete inside cwd is ignored", (
 test("bash write-like mutations outside cwd are detected but read-only commands are ignored", () => {
 	assert.equal(analyzeBashMutation("ls /tmp", cwd), undefined);
 
-	const redirected = analyzeBashMutation("echo hello > /tmp/pi-guardrails/out.txt", cwd);
+	const redirected = analyzeBashMutation("echo hello > /tmp/pi-permissions/out.txt", cwd);
 	assert.ok(redirected);
 	assert.deepEqual(redirected.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
-		{ operation: "bash-mutate", path: "/tmp/pi-guardrails/out.txt", scopeDir: "/tmp/pi-guardrails/out.txt" },
+		{ operation: "bash-mutate", path: "/tmp/pi-permissions/out.txt", scopeDir: "/tmp/pi-permissions/out.txt" },
 	]);
 
-	const copied = analyzeBashMutation("cp package.json /tmp/pi-guardrails/package.json", cwd);
+	const copied = analyzeBashMutation("cp package.json /tmp/pi-permissions/package.json", cwd);
 	assert.ok(copied);
 	assert.deepEqual(copied.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
-		{ operation: "bash-mutate", path: "/tmp/pi-guardrails/package.json", scopeDir: "/tmp/pi-guardrails/package.json" },
+		{ operation: "bash-mutate", path: "/tmp/pi-permissions/package.json", scopeDir: "/tmp/pi-permissions/package.json" },
 	]);
 });
 
