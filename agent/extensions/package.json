@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:guardrails": "node --test guardrails/permissions.test.ts guardrails/git.test.ts guardrails/package.test.ts",
+    "test:guardrails": "node --test guardrails/permissions.test.ts guardrails/git.test.ts guardrails/package.test.ts guardrails/index.test.ts",
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts"
   },
   "dependencies": {

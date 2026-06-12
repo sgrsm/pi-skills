@@ -57,6 +57,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("guardrails", {
 		description: "Show or clear current guardrail permission grants",
+		getArgumentCompletions: getGuardrailsArgumentCompletions,
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
 			if (action === "clear") {
@@ -566,6 +567,13 @@ function indent(value: string, prefix: string): string {
 		.split("\n")
 		.map((line) => `${prefix}${line}`)
 		.join("\n");
+}
+
+export function getGuardrailsArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
+	const normalizedPrefix = prefix.trimStart().toLowerCase();
+	if (normalizedPrefix.includes(" ")) return null;
+	if (!"clear".startsWith(normalizedPrefix)) return null;
+	return [{ value: "clear", label: "clear", description: "Clear current session guardrail permission grants" }];
 }
 
 type ToolCallBlock = { block: true; reason?: string };
