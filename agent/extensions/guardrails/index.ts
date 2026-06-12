@@ -12,6 +12,15 @@ import {
 	type GitRepositoryStateProvider,
 } from "./git.ts";
 import {
+	PackagePermissionStore,
+	analyzePackageCommands,
+	buildPackagePermissionRequest,
+	type PackageOperation,
+	type PackagePermissionGrant,
+	type PackagePermissionRequest,
+	type PackageProjectResolver,
+} from "./package.ts";
+import {
 	PermissionStore,
 	analyzeBashMutation,
 	buildFileMutationRequest,
@@ -28,18 +37,21 @@ const AGENT_BRANCH_ENTRY_TYPE = "guardrails-agent-branch";
 export default function (pi: ExtensionAPI) {
 	const filePermissions = new PermissionStore();
 	const gitPermissions = new GitPermissionStore();
+	const packagePermissions = new PackagePermissionStore();
 	const agentBranches = new AgentBranchRegistry(AGENT_BRANCH_PREFIXES);
 	const pendingBranchCreations = new Map<string, AgentBranchRecord[]>();
 	const gitStateProvider = createGitStateProvider(pi);
+	const packageProjectResolver = createPackageProjectResolver(pi);
 
 	pi.on("session_start", (_event, ctx) => {
 		restoreAgentBranches(ctx, agentBranches);
-		updateStatus(ctx, filePermissions, gitPermissions);
+		updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
 	});
 
 	pi.on("session_shutdown", () => {
 		filePermissions.clear();
 		gitPermissions.clear();
+		packagePermissions.clear();
 		pendingBranchCreations.clear();
 	});
 
@@ -50,37 +62,39 @@ export default function (pi: ExtensionAPI) {
 			if (action === "clear") {
 				filePermissions.clear();
 				gitPermissions.clear();
-				updateStatus(ctx, filePermissions, gitPermissions);
+				packagePermissions.clear();
+				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
 				ctx.ui.notify("Guardrail session permissions cleared.", "info");
 				return;
 			}
 
 			const fileGrants = filePermissions.list();
 			const gitGrants = gitPermissions.list();
+			const packageGrants = packagePermissions.list();
 			const trackedBranches = agentBranches.listTracked();
-			if (fileGrants.length === 0 && gitGrants.length === 0 && trackedBranches.length === 0) {
+			if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
 				ctx.ui.notify("No active guardrail session permissions or tracked agent branches.", "info");
 				return;
 			}
 
 			const choice = ctx.hasUI
-				? await ctx.ui.select(formatGrants(fileGrants, gitGrants, trackedBranches), ["Keep", "Clear permissions"])
+				? await ctx.ui.select(formatGrants(fileGrants, gitGrants, packageGrants, trackedBranches), ["Keep", "Clear permissions"])
 				: undefined;
 			if (choice === "Clear permissions") {
 				filePermissions.clear();
 				gitPermissions.clear();
-				updateStatus(ctx, filePermissions, gitPermissions);
+				packagePermissions.clear();
+				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
 				ctx.ui.notify("Guardrail session permissions cleared. Agent branch tracking was kept.", "info");
 			}
 		},
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		const refreshStatus = () => updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
 		const fileRequest = fileRequestForToolCall(event, ctx.cwd);
 		if (fileRequest && !filePermissions.hasGrant(fileRequest)) {
-			const decision = await requestFilePermission(fileRequest, ctx, filePermissions, () =>
-				updateStatus(ctx, filePermissions, gitPermissions),
-			);
+			const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
 			if (decision) return decision;
 		}
 
@@ -98,9 +112,20 @@ export default function (pi: ExtensionAPI) {
 				agentBranches,
 			);
 			if (gitRequest && !gitPermissions.hasGrant(gitRequest)) {
-				const decision = await requestGitPermission(gitRequest, ctx, gitPermissions, () =>
-					updateStatus(ctx, filePermissions, gitPermissions),
-				);
+				const decision = await requestGitPermission(gitRequest, ctx, gitPermissions, refreshStatus);
+				if (decision) return decision;
+			}
+		}
+
+		const packageAnalysis = analyzePackageCommands(command, ctx.cwd);
+		if (packageAnalysis.actions.length > 0) {
+			const packageRequest = await buildPackagePermissionRequest(
+				packageAnalysis.actions,
+				command,
+				packageProjectResolver,
+			);
+			if (packageRequest && !packagePermissions.hasGrant(packageRequest)) {
+				const decision = await requestPackagePermission(packageRequest, ctx, packagePermissions, refreshStatus);
 				if (decision) return decision;
 			}
 		}
@@ -207,6 +232,32 @@ async function requestGitPermission(
 	});
 }
 
+async function requestPackagePermission(
+	request: PackagePermissionRequest,
+	ctx: GuardrailPromptContext,
+	permissions: PackagePermissionStore,
+	refreshStatus: () => void,
+): Promise<ToolCallBlock | undefined> {
+	if (!ctx.hasUI) {
+		return {
+			block: true,
+			reason: `${request.summary} requires permission, but this Pi mode has no interactive UI. ${formatPackageScopes(request)}`,
+		};
+	}
+
+	const choice = await ctx.ui.select(formatPackagePermissionPrompt(request, ctx.cwd), PERMISSION_CHOICES);
+	return handlePermissionChoice({
+		choice,
+		ctx,
+		requestSummary: formatPackageRequestSummary(request),
+		scopeSummary: formatPackageScopes(request),
+		onAllowSession: () => {
+			permissions.addSessionGrant(request);
+			refreshStatus();
+		},
+	});
+}
+
 async function handlePermissionChoice(options: {
 	choice: string | undefined;
 	ctx: GuardrailPromptContext;
@@ -259,6 +310,16 @@ function createGitStateProvider(pi: ExtensionAPI): GitRepositoryStateProvider {
 	};
 }
 
+function createPackageProjectResolver(pi: ExtensionAPI): PackageProjectResolver {
+	return {
+		async getProjectRoot(cwd: string) {
+			const result = await pi.exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+			if (result.code !== 0) return cwd;
+			return result.stdout.trim() || cwd;
+		},
+	};
+}
+
 function restoreAgentBranches(ctx: { sessionManager: { getBranch(): unknown[] } }, agentBranches: AgentBranchRegistry): void {
 	agentBranches.clearTracked();
 	for (const entry of ctx.sessionManager.getBranch()) {
@@ -274,11 +335,13 @@ function updateStatus(
 	ctx: { hasUI: boolean; ui: { setStatus(key: string, value: string | undefined): void } },
 	filePermissions: PermissionStore | undefined,
 	gitPermissions: GitPermissionStore | undefined,
+	packagePermissions: PackagePermissionStore | undefined,
 ): void {
 	if (!ctx.hasUI) return;
 	const fileCount = filePermissions?.list().length ?? 0;
 	const gitCount = gitPermissions?.list().length ?? 0;
-	const count = fileCount + gitCount;
+	const packageCount = packagePermissions?.list().length ?? 0;
+	const count = fileCount + gitCount + packageCount;
 	ctx.ui.setStatus(STATUS_KEY, count > 0 ? `guardrails: ${count} grant${count === 1 ? "" : "s"}` : undefined);
 }
 
@@ -326,6 +389,31 @@ function formatGitPermissionPrompt(request: GitPermissionRequest, cwd: string): 
 	].join("\n");
 }
 
+function formatPackagePermissionPrompt(request: PackagePermissionRequest, cwd: string): string {
+	return [
+		"Pi wants to run a guarded package/dependency acquisition command.",
+		"",
+		`Working directory: ${cwd}`,
+		`Tool: ${request.toolName}`,
+		`Action: ${request.summary}`,
+		"",
+		"Command:",
+		indent(truncate(request.command, 1600), "  "),
+		"",
+		"Permission scope(s):",
+		...request.scopes.flatMap((scope) => [
+			`- ${packageOperationLabel(scope.operation)} via ${scope.manager}`,
+			`  project root: ${scope.projectRoot}`,
+			`  command cwd: ${scope.cwd}`,
+			`  session scope: this package manager, operation class, and project root only`,
+			`  reason: ${scope.reason}`,
+		]),
+		"",
+		"Maven and Gradle commands are intentionally excluded from this package guardrail.",
+		"Choose how to proceed:",
+	].join("\n");
+}
+
 function formatFileRequestSummary(request: PermissionRequest): string {
 	return [
 		`Tool: ${request.toolName}`,
@@ -341,6 +429,15 @@ function formatGitRequestSummary(request: GitPermissionRequest): string {
 	);
 }
 
+function formatPackageRequestSummary(request: PackagePermissionRequest): string {
+	return [
+		`Tool: ${request.toolName}`,
+		`Action: ${request.summary}`,
+		`Command: ${truncate(request.command, 800)}`,
+		formatPackageScopes(request),
+	].join("\n");
+}
+
 function formatTargetScopes(request: PermissionRequest): string {
 	return `Target scope(s): ${request.targets
 		.map((target) => `${operationLabel(target.operation)} ${target.scopeDir}`)
@@ -353,7 +450,18 @@ function formatGitScopes(request: GitPermissionRequest): string {
 		.join(", ")}`;
 }
 
-function formatGrants(fileGrants: PermissionGrant[], gitGrants: GitPermissionGrant[], trackedBranches: AgentBranchRecord[]): string {
+function formatPackageScopes(request: PackagePermissionRequest): string {
+	return `Package scope(s): ${request.scopes
+		.map((scope) => `${packageOperationLabel(scope.operation)} ${scope.manager} in ${scope.projectRoot}`)
+		.join(", ")}`;
+}
+
+function formatGrants(
+	fileGrants: PermissionGrant[],
+	gitGrants: GitPermissionGrant[],
+	packageGrants: PackagePermissionGrant[],
+	trackedBranches: AgentBranchRecord[],
+): string {
 	return [
 		"Guardrail state:",
 		"",
@@ -372,6 +480,16 @@ function formatGrants(fileGrants: PermissionGrant[], gitGrants: GitPermissionGra
 			? gitGrants.map(
 					(grant) =>
 						`- ${gitOperationLabel(grant.operation)}: ${grant.repoRoot}#${grant.branch} (granted ${new Date(
+							grant.grantedAt,
+						).toLocaleTimeString()})`,
+				)
+			: ["- None"]),
+		"",
+		"Active package/dependency session permissions:",
+		...(packageGrants.length > 0
+			? packageGrants.map(
+					(grant) =>
+						`- ${packageOperationLabel(grant.operation)} via ${grant.manager}: ${grant.projectRoot} (granted ${new Date(
 							grant.grantedAt,
 						).toLocaleTimeString()})`,
 				)
@@ -423,6 +541,19 @@ function gitOperationLabel(operation: GitProtectedOperation): string {
 			return "git branch rename";
 		case "branch-force":
 			return "git branch force/reset";
+	}
+}
+
+function packageOperationLabel(operation: PackageOperation): string {
+	switch (operation) {
+		case "dependency-install":
+			return "dependency install/update";
+		case "global-install":
+			return "global/tool install";
+		case "package-execute":
+			return "package download/execute";
+		case "system-install":
+			return "system package install/update";
 	}
 }
 
