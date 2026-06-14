@@ -1914,11 +1914,6 @@ async function runSingleAgent(
 					upsertPartialToolResult(event.toolCallId, event.toolName, event.partialResult);
 					emitUpdate();
 				}
-
-				if (event.type === "tool_result_end" && event.message) {
-					appendMessage(event.message as Message);
-					emitUpdate();
-				}
 			};
 
 			let proc: ChildProcessWithoutNullStreams;
