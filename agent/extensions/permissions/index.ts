@@ -35,6 +35,10 @@ const AGENT_BRANCH_PREFIXES = ["pi/", "agent/", "codex/"];
 const AGENT_BRANCH_ENTRY_TYPE = "permissions-agent-branch";
 const LEGACY_AGENT_BRANCH_ENTRY_TYPES = new Set([AGENT_BRANCH_ENTRY_TYPE, "guardrails-agent-branch"]);
 
+type PermissionStatusTheme = {
+	fg(color: "dim" | "error" | "success", text: string): string;
+};
+
 export default function (pi: ExtensionAPI) {
 	const filePermissions = new PermissionStore();
 	const gitPermissions = new GitPermissionStore();
@@ -43,13 +47,15 @@ export default function (pi: ExtensionAPI) {
 	const pendingBranchCreations = new Map<string, AgentBranchRecord[]>();
 	const gitStateProvider = createGitStateProvider(pi);
 	const packageProjectResolver = createPackageProjectResolver(pi);
+	let permissionsEnabled = true;
 
 	pi.on("session_start", (_event, ctx) => {
 		restoreAgentBranches(ctx, agentBranches);
-		updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
+		updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 	});
 
 	pi.on("session_shutdown", () => {
+		permissionsEnabled = true;
 		filePermissions.clear();
 		gitPermissions.clear();
 		packagePermissions.clear();
@@ -57,16 +63,35 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("permissions", {
-		description: "Show or clear current permission grants",
+		description: "Show, enable, disable, or clear current permission state",
 		getArgumentCompletions: getPermissionsArgumentCompletions,
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
+			if (action === "on" || action === "off") {
+				const nextEnabled = action === "on";
+				if (permissionsEnabled === nextEnabled) {
+					updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
+					ctx.ui.notify(`Permission guards are already ${formatPermissionMode(permissionsEnabled)}.`, "info");
+					return;
+				}
+
+				permissionsEnabled = nextEnabled;
+				updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
+				ctx.ui.notify(`Permission guards ${permissionsEnabled ? "enabled" : "disabled"}.`, "info");
+				return;
+			}
+
 			if (action === "clear") {
 				filePermissions.clear();
 				gitPermissions.clear();
 				packagePermissions.clear();
-				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
+				updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 				ctx.ui.notify("Session permissions cleared.", "info");
+				return;
+			}
+
+			if (action) {
+				ctx.ui.notify(`Usage: /permissions [on|off|clear] (currently ${formatPermissionMode(permissionsEnabled)})`, "warning");
 				return;
 			}
 
@@ -75,29 +100,37 @@ export default function (pi: ExtensionAPI) {
 			const packageGrants = packagePermissions.list();
 			const trackedBranches = agentBranches.listTracked();
 			if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
-				ctx.ui.notify("No active session permissions or tracked agent branches.", "info");
+				ctx.ui.notify(
+					`Permission guards are ${formatPermissionMode(permissionsEnabled)}. No active session permissions or tracked agent branches.`,
+					"info",
+				);
 				return;
 			}
 
 			const choice = ctx.hasUI
-				? await ctx.ui.select(formatGrants(fileGrants, gitGrants, packageGrants, trackedBranches), ["Keep", "Clear permissions"])
+				? await ctx.ui.select(formatGrants(permissionsEnabled, fileGrants, gitGrants, packageGrants, trackedBranches), [
+						"Keep",
+						"Clear permissions",
+					])
 				: undefined;
 			if (choice === "Clear permissions") {
 				filePermissions.clear();
 				gitPermissions.clear();
 				packagePermissions.clear();
-				updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
+				updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 				ctx.ui.notify("Session permissions cleared. Agent branch tracking was kept.", "info");
 			}
 		},
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		const refreshStatus = () => updateStatus(ctx, filePermissions, gitPermissions, packagePermissions);
-		const fileRequest = fileRequestForToolCall(event, ctx.cwd);
-		if (fileRequest && !filePermissions.hasGrant(fileRequest)) {
-			const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
-			if (decision) return decision;
+		const refreshStatus = () => updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
+		if (permissionsEnabled) {
+			const fileRequest = fileRequestForToolCall(event, ctx.cwd);
+			if (fileRequest && !filePermissions.hasGrant(fileRequest)) {
+				const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
+				if (decision) return decision;
+			}
 		}
 
 		if (event.toolName !== "bash") return undefined;
@@ -106,7 +139,7 @@ export default function (pi: ExtensionAPI) {
 		if (typeof command !== "string") return undefined;
 
 		const gitAnalysis = analyzeGitCommands(command, ctx.cwd);
-		if (gitAnalysis.protectedActions.length > 0) {
+		if (permissionsEnabled && gitAnalysis.protectedActions.length > 0) {
 			const gitRequest = await buildGitPermissionRequest(
 				gitAnalysis.protectedActions,
 				command,
@@ -119,16 +152,18 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		const packageAnalysis = analyzePackageCommands(command, ctx.cwd);
-		if (packageAnalysis.actions.length > 0) {
-			const packageRequest = await buildPackagePermissionRequest(
-				packageAnalysis.actions,
-				command,
-				packageProjectResolver,
-			);
-			if (packageRequest && !packagePermissions.hasGrant(packageRequest)) {
-				const decision = await requestPackagePermission(packageRequest, ctx, packagePermissions, refreshStatus);
-				if (decision) return decision;
+		if (permissionsEnabled) {
+			const packageAnalysis = analyzePackageCommands(command, ctx.cwd);
+			if (packageAnalysis.actions.length > 0) {
+				const packageRequest = await buildPackagePermissionRequest(
+					packageAnalysis.actions,
+					command,
+					packageProjectResolver,
+				);
+				if (packageRequest && !packagePermissions.hasGrant(packageRequest)) {
+					const decision = await requestPackagePermission(packageRequest, ctx, packagePermissions, refreshStatus);
+					if (decision) return decision;
+				}
 			}
 		}
 
@@ -334,7 +369,8 @@ function restoreAgentBranches(ctx: { sessionManager: { getBranch(): unknown[] } 
 }
 
 function updateStatus(
-	ctx: { hasUI: boolean; ui: { setStatus(key: string, value: string | undefined): void } },
+	ctx: { hasUI: boolean; ui: { setStatus(key: string, value: string | undefined): void; theme: PermissionStatusTheme } },
+	enabled: boolean,
 	filePermissions: PermissionStore | undefined,
 	gitPermissions: GitPermissionStore | undefined,
 	packagePermissions: PackagePermissionStore | undefined,
@@ -344,7 +380,19 @@ function updateStatus(
 	const gitCount = gitPermissions?.list().length ?? 0;
 	const packageCount = packagePermissions?.list().length ?? 0;
 	const count = fileCount + gitCount + packageCount;
-	ctx.ui.setStatus(STATUS_KEY, count > 0 ? `permissions: ${count} grant${count === 1 ? "" : "s"}` : undefined);
+	ctx.ui.setStatus(STATUS_KEY, formatPermissionStatus({ enabled, grantCount: count, theme: ctx.ui.theme }));
+}
+
+function formatPermissionMode(enabled: boolean): "on" | "off" {
+	return enabled ? "on" : "off";
+}
+
+export function formatPermissionStatus(options: { enabled: boolean; grantCount: number; theme: PermissionStatusTheme }): string {
+	const prefix = options.theme.fg("dim", "permissions: ");
+	const separator = options.theme.fg("dim", " •");
+	if (!options.enabled) return prefix + options.theme.fg("error", "off") + separator;
+	if (options.grantCount > 0) return prefix + options.theme.fg("success", String(options.grantCount)) + separator;
+	return prefix + options.theme.fg("dim", "on") + separator;
 }
 
 function formatFilePermissionPrompt(request: PermissionRequest, cwd: string): string {
@@ -459,6 +507,7 @@ function formatPackageScopes(request: PackagePermissionRequest): string {
 }
 
 function formatGrants(
+	enabled: boolean,
 	fileGrants: PermissionGrant[],
 	gitGrants: GitPermissionGrant[],
 	packageGrants: PackagePermissionGrant[],
@@ -466,6 +515,7 @@ function formatGrants(
 ): string {
 	return [
 		"Permission state:",
+		`Permission guards: ${formatPermissionMode(enabled)}`,
 		"",
 		"Active file/path session permissions:",
 		...(fileGrants.length > 0
@@ -573,8 +623,13 @@ function indent(value: string, prefix: string): string {
 export function getPermissionsArgumentCompletions(prefix: string): Array<{ value: string; label: string; description?: string }> | null {
 	const normalizedPrefix = prefix.trimStart().toLowerCase();
 	if (normalizedPrefix.includes(" ")) return null;
-	if (!"clear".startsWith(normalizedPrefix)) return null;
-	return [{ value: "clear", label: "clear", description: "Clear current session permission grants" }];
+	const items = [
+		{ value: "on", label: "on", description: "Enable permissions guards" },
+		{ value: "off", label: "off", description: "Disable permissions guards" },
+		{ value: "clear", label: "clear", description: "Clear current session permission grants" },
+	];
+	const filtered = items.filter((item) => item.value.startsWith(normalizedPrefix));
+	return filtered.length > 0 ? filtered : null;
 }
 
 type ToolCallBlock = { block: true; reason?: string };
