@@ -578,7 +578,9 @@ function updateSubagentStatus(
 	ctx: ExtensionContext,
 	mode: SubagentPolicyMode,
 	sessionApproval: boolean,
-	executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd),
+	executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd, {
+		projectTrusted: ctx.isProjectTrusted(),
+	}),
 ): void {
 	if (!ctx.hasUI) return;
 	const currentDepth = getDisplayedSubagentDepth();
@@ -628,12 +630,13 @@ function mergeSubagentExecutionSettings(settings: LoadedSubagentExecutionSetting
 function loadSubagentExecutionSettingsForRequestedCwd(
 	defaultCwd: string,
 	requestedCwd: string | undefined,
+	options: { projectTrusted?: boolean } = {},
 ): LoadedSubagentExecutionSettings {
 	const executionCwd = resolveExecutionCwd(defaultCwd, requestedCwd);
 	try {
-		return loadSubagentExecutionSettings(executionCwd);
+		return loadSubagentExecutionSettings(executionCwd, options);
 	} catch (error) {
-		const fallback = loadSubagentExecutionSettings(defaultCwd);
+		const fallback = loadSubagentExecutionSettings(defaultCwd, options);
 		return {
 			...fallback,
 			warnings: [
@@ -644,9 +647,13 @@ function loadSubagentExecutionSettingsForRequestedCwd(
 	}
 }
 
-function loadSubagentExecutionSettingsForCwds(cwds: string[], fallbackCwd: string): LoadedSubagentExecutionSettings {
+function loadSubagentExecutionSettingsForCwds(
+	cwds: string[],
+	fallbackCwd: string,
+	options: { projectTrusted?: boolean } = {},
+): LoadedSubagentExecutionSettings {
 	const uniqueCwds = Array.from(new Set(cwds));
-	const settings = uniqueCwds.map((cwd) => loadSubagentExecutionSettingsForRequestedCwd(fallbackCwd, cwd));
+	const settings = uniqueCwds.map((cwd) => loadSubagentExecutionSettingsForRequestedCwd(fallbackCwd, cwd, options));
 	return mergeSubagentExecutionSettings(settings);
 }
 
@@ -709,7 +716,7 @@ function buildSubagentSummaryText(
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
 		"- maxDelegationDepth, inherited approval overrides, and per-agent model defaults are currently edited manually in settings.json",
-		"- concurrency/max-tasks overrides save to ~/.pi/agent/settings.json by default; manual .pi/settings.json overrides still apply to the effective subagent settings for the current project",
+		"- concurrency/max-tasks overrides save to ~/.pi/agent/settings.json by default; trusted project .pi/settings.json overrides still apply to the effective subagent settings for the current project",
 		"- delegated child sessions inherit read-only nested delegation approval by default unless overridden per child agent in settings.json",
 		`- delegated child sessions can use ${PARENT_ESCALATION_TOOL_NAME} to ask the parent agent for user input or broader approval`,
 		"- policy mode is still stored in ~/.pi/agent/subagent-policy.json",
@@ -2159,7 +2166,9 @@ export default function (pi: ExtensionAPI) {
 
 	function syncSubagentSessionState(
 		ctx: ExtensionContext,
-		executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd),
+		executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd, {
+			projectTrusted: ctx.isProjectTrusted(),
+		}),
 	): LoadedSubagentExecutionSettings {
 		setSubagentToolEnabled(pi, canUseSubagentToolInSession(policyState.mode, executionSettings));
 		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), executionSettings);
@@ -2167,7 +2176,12 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function refreshSubagentFooter(ctx: ExtensionContext): void {
-		updateSubagentStatus(ctx, policyState.mode, hasSessionSubagentApproval(ctx), loadSubagentExecutionSettings(ctx.cwd));
+		updateSubagentStatus(
+			ctx,
+			policyState.mode,
+			hasSessionSubagentApproval(ctx),
+			loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() }),
+		);
 	}
 
 	function markSubagentExecutionActive(toolCallId: string, ctx: ExtensionContext): void {
@@ -2194,7 +2208,9 @@ export default function (pi: ExtensionAPI) {
 		ctx: ExtensionContext,
 		updates: Partial<SubagentExecutionSettings>,
 	): Promise<LoadedSubagentExecutionSettings> {
-		const executionSettings = await saveSubagentExecutionSettings(ctx.cwd, updates);
+		const executionSettings = await saveSubagentExecutionSettings(ctx.cwd, updates, "global", {
+			projectTrusted: ctx.isProjectTrusted(),
+		});
 		return syncSubagentSessionState(ctx, executionSettings);
 	}
 
@@ -2202,7 +2218,9 @@ export default function (pi: ExtensionAPI) {
 		ctx: ExtensionContext,
 		keys: Array<keyof SubagentExecutionSettings>,
 	): Promise<LoadedSubagentExecutionSettings> {
-		const executionSettings = await resetSubagentExecutionSettings(ctx.cwd, keys);
+		const executionSettings = await resetSubagentExecutionSettings(ctx.cwd, keys, "global", {
+			projectTrusted: ctx.isProjectTrusted(),
+		});
 		return syncSubagentSessionState(ctx, executionSettings);
 	}
 
@@ -2216,7 +2234,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		let executionSettings = loadSubagentExecutionSettings(ctx.cwd);
+		let executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
 
 		await ctx.ui.custom((tui, theme, _kb, done) => {
 			const container = new Container();
@@ -2285,7 +2303,7 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			const restoreEffectiveSettings = () => {
-				executionSettings = loadSubagentExecutionSettings(ctx.cwd);
+				executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
 				syncUi();
 			};
 
@@ -2441,7 +2459,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!pi.getActiveTools().includes("subagent") && !pi.getActiveTools().includes(PARENT_ESCALATION_TOOL_NAME)) return undefined;
-		const executionSettings = loadSubagentExecutionSettings(ctx.cwd);
+		const executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${buildSubagentPolicyPrompt(
 				policyState.mode,
@@ -2472,9 +2490,10 @@ export default function (pi: ExtensionAPI) {
 
 		const requestedScope: AgentScope =
 			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
+		const projectTrusted = ctx.isProjectTrusted();
 		const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
 			requestedScope,
-			requestedScope === "user" ? true : ctx.isProjectTrusted(),
+			requestedScope === "user" ? true : projectTrusted,
 		);
 		if (projectAgentTrustBlockReason) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
@@ -2482,7 +2501,9 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
-		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd);
+		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd, {
+			projectTrusted,
+		});
 		const currentDepth = getCurrentSubagentDepth();
 		if (!canDelegateWithinDepthLimit(currentDepth, executionSettings.limits.maxDelegationDepth)) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
@@ -2626,7 +2647,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			const raw = args.trim();
-			let executionSettings = loadSubagentExecutionSettings(ctx.cwd);
+			let executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
 			const sessionApproval = hasSessionSubagentApproval(ctx);
 
 			if (!raw || raw === "show") {
@@ -2813,9 +2834,11 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+			const projectTrusted = ctx.isProjectTrusted();
+			const settingsLoadOptions = { projectTrusted };
 			const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
 				agentScope,
-				agentScope === "user" ? true : ctx.isProjectTrusted(),
+				agentScope === "user" ? true : projectTrusted,
 			);
 			if (projectAgentTrustBlockReason) throw new Error(projectAgentTrustBlockReason);
 			const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, agentScope);
@@ -2833,7 +2856,11 @@ export default function (pi: ExtensionAPI) {
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 			const inheritedDelegationApproval =
 				delegatedApprovalByToolCallId.get(toolCallId) ?? getInheritedSubagentApprovalScope();
-			const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd);
+			const executionSettings = loadSubagentExecutionSettingsForCwds(
+				requestedExecutionCwds,
+				ctx.cwd,
+				settingsLoadOptions,
+			);
 			const workflowModelLock = resolveWorkflowModelLock(ctx, pi.getThinkingLevel());
 
 			const hasChain = (params.chain?.length ?? 0) > 0;
@@ -2922,7 +2949,11 @@ export default function (pi: ExtensionAPI) {
 							}
 						: undefined;
 
-					const stepExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, step.cwd);
+					const stepExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+						ctx.cwd,
+						step.cwd,
+						settingsLoadOptions,
+					);
 					const result = await runSingleAgent(
 						ctx.cwd,
 						stepDiscovery.agents,
@@ -3011,7 +3042,11 @@ export default function (pi: ExtensionAPI) {
 					executionSettings.limits.maxConcurrency,
 					async (t, index) => {
 						const taskDiscovery = resolveDiscovery(t.cwd);
-						const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, t.cwd);
+						const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+							ctx.cwd,
+							t.cwd,
+							settingsLoadOptions,
+						);
 						const result = await runSingleAgent(
 							ctx.cwd,
 							taskDiscovery.agents,
@@ -3072,7 +3107,11 @@ export default function (pi: ExtensionAPI) {
 
 			if (params.agent && params.task) {
 				const taskDiscovery = resolveDiscovery(params.cwd);
-				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(ctx.cwd, params.cwd);
+				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+					ctx.cwd,
+					params.cwd,
+					settingsLoadOptions,
+				);
 				const result = await runSingleAgent(
 					ctx.cwd,
 					taskDiscovery.agents,

@@ -1,9 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import subagentExtension, { getProjectAgentTrustBlockReason } from "./index.ts";
+
+const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
+
+function writeJson(filePath: string, value: unknown): void {
+	mkdirSync(path.dirname(filePath), { recursive: true });
+	writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+}
+
+async function withIsolatedSettingsFiles<T>(fn: (paths: { agentDir: string; cwd: string }) => T | Promise<T>): Promise<T> {
+	const root = mkdtempSync(path.join(tmpdir(), "pi-subagent-project-trust-settings-"));
+	const previousAgentDir = process.env[PI_AGENT_DIR_ENV];
+	const agentDir = path.join(root, "agent");
+	const cwd = path.join(root, "project");
+	mkdirSync(agentDir, { recursive: true });
+	mkdirSync(cwd, { recursive: true });
+	process.env[PI_AGENT_DIR_ENV] = agentDir;
+	try {
+		return await fn({ agentDir, cwd });
+	} finally {
+		if (previousAgentDir === undefined) delete process.env[PI_AGENT_DIR_ENV];
+		else process.env[PI_AGENT_DIR_ENV] = previousAgentDir;
+		rmSync(root, { recursive: true, force: true });
+	}
+}
 
 function registerSubagentTool() {
 	const tools = new Map<string, any>();
@@ -57,6 +81,36 @@ function createCtx(cwd: string, trusted: boolean) {
 		},
 	};
 }
+
+test("before_agent_start ignores project subagent settings unless the context is trusted", async () => {
+	await withIsolatedSettingsFiles(async ({ cwd }) => {
+		writeJson(path.join(cwd, ".pi", "settings.json"), {
+			subagents: {
+				maxParallelTasks: 2,
+				maxConcurrency: 1,
+				maxDelegationDepth: 0,
+			},
+		});
+
+		const { handlers } = registerSubagentTool();
+		const [beforeAgentStart] = handlers.get("before_agent_start") ?? [];
+		assert.ok(beforeAgentStart, "before_agent_start handler should be registered");
+
+		const untrustedResult = await beforeAgentStart({ systemPrompt: "Base prompt" }, createCtx(cwd, false).ctx);
+		assert.match(
+			untrustedResult?.systemPrompt ?? "",
+			/Current parallel limits: 8 task\(s\) per call, with up to 5 subagent\(s\) running at once\./,
+		);
+		assert.match(untrustedResult?.systemPrompt ?? "", /Max delegation depth for this session is ∞\./);
+
+		const trustedResult = await beforeAgentStart({ systemPrompt: "Base prompt" }, createCtx(cwd, true).ctx);
+		assert.match(
+			trustedResult?.systemPrompt ?? "",
+			/Current parallel limits: 2 task\(s\) per call, with up to 1 subagent\(s\) running at once\./,
+		);
+		assert.match(trustedResult?.systemPrompt ?? "", /Max delegation depth for this session is 0\./);
+	});
+});
 
 test("project-local agent scopes are blocked when the project is not trusted", async () => {
 	const { tool } = registerSubagentTool();

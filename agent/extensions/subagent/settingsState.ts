@@ -34,6 +34,14 @@ export type LoadedSubagentExecutionSettings = {
 	};
 };
 
+export type SubagentSettingsLoadOptions = {
+	/**
+	 * Whether project-local .pi/settings.json may be read into effective subagent settings.
+	 * Defaults to false so callers without an ExtensionContext fail closed.
+	 */
+	projectTrusted?: boolean;
+};
+
 export const DEFAULT_SUBAGENT_EXECUTION_SETTINGS: SubagentExecutionSettings = {
 	maxParallelTasks: 8,
 	maxConcurrency: 5,
@@ -254,8 +262,11 @@ function buildLoadedExecutionSettings(
 	};
 }
 
-export function loadSubagentExecutionSettings(cwd: string): LoadedSubagentExecutionSettings {
-	const settingsManager = SettingsManager.create(cwd, getAgentDir());
+export function loadSubagentExecutionSettings(
+	cwd: string,
+	{ projectTrusted = false }: SubagentSettingsLoadOptions = {},
+): LoadedSubagentExecutionSettings {
+	const settingsManager = SettingsManager.create(cwd, getAgentDir(), { projectTrusted });
 	const warnings = settingsManager
 		.drainErrors()
 		.map(({ scope, error }) => `Warning (${scope} settings): ${error.message}`);
@@ -312,6 +323,7 @@ export async function saveSubagentExecutionSettings(
 	cwd: string,
 	updates: Partial<SubagentExecutionSettings>,
 	scope: SubagentSettingsScope = "global",
+	options: SubagentSettingsLoadOptions = {},
 ): Promise<LoadedSubagentExecutionSettings> {
 	const filePath = scope === "global" ? getGlobalSettingsPath() : getProjectSettingsPath(cwd);
 	await mutateSubagentSettingsFile(filePath, (subagents) => {
@@ -335,13 +347,14 @@ export async function saveSubagentExecutionSettings(
 			subagents.maxDelegationDepth = maxDelegationDepth;
 		}
 	});
-	return loadSubagentExecutionSettings(cwd);
+	return loadSubagentExecutionSettings(cwd, options);
 }
 
 export async function resetSubagentExecutionSettings(
 	cwd: string,
 	keys: Array<keyof SubagentExecutionSettings>,
 	scope: SubagentSettingsScope = "global",
+	options: SubagentSettingsLoadOptions = {},
 ): Promise<LoadedSubagentExecutionSettings> {
 	const filePath = scope === "global" ? getGlobalSettingsPath() : getProjectSettingsPath(cwd);
 	await mutateSubagentSettingsFile(filePath, (subagents) => {
@@ -349,5 +362,5 @@ export async function resetSubagentExecutionSettings(
 			delete subagents[key];
 		}
 	});
-	return loadSubagentExecutionSettings(cwd);
+	return loadSubagentExecutionSettings(cwd, options);
 }
