@@ -15,3 +15,5 @@
 - exceptions: docs, comments, formatting, simple config changes, and purely mechanical refactors do not require test-first work.
 
 - if test-first is impractical, explain why and use another validation method.
+
+- for local extension dependency maintenance, see `agent/extensions/maintenance.md`.
