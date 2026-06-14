@@ -28,8 +28,9 @@ import {
 	type PermissionGrant,
 	type PermissionRequest,
 } from "./permissions.ts";
+import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 
-const STATUS_KEY = "3-permissions";
+const STATUS_KEY = FOOTER_STATUS_KEYS.permissions;
 const PERMISSION_CHOICES = ["Allow once", "Allow for current session", "Deny", "Custom instructions"];
 const AGENT_BRANCH_PREFIXES = ["pi/", "agent/", "codex/"];
 const AGENT_BRANCH_ENTRY_TYPE = "permissions-agent-branch";
@@ -383,6 +384,7 @@ function updateStatus(
 	packagePermissions: PackagePermissionStore | undefined,
 ): void {
 	if (!ctx.hasUI) return;
+	clearLegacyFooterStatus(ctx, "permissions");
 	const fileCount = filePermissions?.list().length ?? 0;
 	const gitCount = gitPermissions?.list().length ?? 0;
 	const packageCount = packagePermissions?.list().length ?? 0;

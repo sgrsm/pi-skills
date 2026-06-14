@@ -29,6 +29,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text, type AutocompleteItem, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "./agents.ts";
 import {
 	loadSubagentPolicyState,
@@ -70,7 +71,7 @@ const PER_TASK_OUTPUT_CAP = 50 * 1024;
 const SUBAGENT_TERMINATION_GRACE_MS = 5000;
 const AUTO_MODE_MAX_NON_EXPLICIT_AGENTS = 3;
 const AUTO_MODE_ALLOW_WRITE_CAPABLE_AGENTS = false;
-const SUBAGENT_STATUS_KEY = "0-subagents";
+const SUBAGENT_STATUS_KEY = FOOTER_STATUS_KEYS.subagents;
 const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
 const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
@@ -583,6 +584,7 @@ function updateSubagentStatus(
 	}),
 ): void {
 	if (!ctx.hasUI) return;
+	clearLegacyFooterStatus(ctx, "subagents");
 	const currentDepth = getDisplayedSubagentDepth();
 	ctx.ui.setStatus(
 		SUBAGENT_STATUS_KEY,

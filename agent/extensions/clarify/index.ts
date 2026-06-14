@@ -14,6 +14,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 
 interface ClarifyOption {
 	label: string;
@@ -37,7 +38,7 @@ type ClarifyModeState = {
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const CLARIFY_TOOL_NAME = "clarify";
-const CLARIFY_STATUS_KEY = "2-clarify";
+const CLARIFY_STATUS_KEY = FOOTER_STATUS_KEYS.clarify;
 const CLARIFY_MODE_STATE_PATH = join(AGENT_DIR, "clarify.json");
 const CLARIFY_LEGACY_MODE_STATE_PATH = join(AGENT_DIR, "clarify-choice.json");
 
@@ -446,6 +447,7 @@ function updateClarifyStatus(ctx: {
 	};
 }, enabled: boolean): void {
 	if (!ctx.hasUI) return;
+	clearLegacyFooterStatus(ctx, "clarify");
 	ctx.ui.setStatus(CLARIFY_STATUS_KEY, ctx.ui.theme.fg("dim", `clarify: ${formatClarifyMode(enabled)} •`));
 }
 

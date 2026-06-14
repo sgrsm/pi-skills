@@ -13,6 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Type } from "typebox";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { isHideToolOutputEnabled } from "../shared/hideToolOutputState.ts";
 
 export type McpConfig = {
@@ -89,7 +90,7 @@ type McpSessionState = { connectorName: string; enabled: boolean };
 type McpSessionStateEntry = { type?: string; customType?: string; data?: unknown };
 type McpSessionStateContext = McpStatusContext & { sessionManager: { getBranch: () => McpSessionStateEntry[] } };
 
-const MCP_STATUS_KEY = "mcp";
+const MCP_STATUS_KEY = FOOTER_STATUS_KEYS.mcp;
 const ENABLED_MCP_SEPARATOR = " · ";
 const MCP_SESSION_STATE_CUSTOM_TYPE = "mcp-connector-state";
 
@@ -347,6 +348,7 @@ function statusDisplayName(connector: McpConnectorRuntime): string {
 }
 
 function updateMcpStatus(manager: McpManager, ctx: McpStatusContext): void {
+	clearLegacyFooterStatus(ctx, "mcp");
 	const connectors = connectorNames(manager).map((name) => manager.connectors.get(name)!);
 	if (connectors.length === 0) {
 		ctx.ui.setStatus(MCP_STATUS_KEY, ctx.ui.theme.fg("dim", "mcp: none"));

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import permissionsExtension, { formatPermissionStatus, getPermissionsArgumentCompletions } from "./index.ts";
+import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 
 const markerTheme = {
 	fg(color: string, text: string) {
@@ -50,19 +51,21 @@ test("permission status is always visible and reflects mode or granted count det
 test("permissions off disables guards without clearing existing command behavior", async () => {
 	const harness = createPermissionsHarness();
 	const ctx = createContext("Deny");
+	ctx.statuses.set("3-permissions", "legacy status");
 
 	await harness.emit("session_start", {}, ctx);
-	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><dim>on</dim><dim> •</dim>");
+	assert.equal(ctx.statuses.has("3-permissions"), false);
+	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><dim>on</dim><dim> •</dim>");
 
 	await harness.commands.get("permissions")?.handler("off", ctx);
-	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><error>off</error><dim> •</dim>");
+	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><error>off</error><dim> •</dim>");
 
 	const disabledResult = await harness.emitFirst("tool_call", { toolName: "write", input: { path: "/tmp/out.txt" } }, ctx);
 	assert.equal(disabledResult, undefined);
 	assert.equal(ctx.selectCalls, 0);
 
 	await harness.commands.get("permissions")?.handler("on", ctx);
-	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><dim>on</dim><dim> •</dim>");
+	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><dim>on</dim><dim> •</dim>");
 
 	const enabledResult = await harness.emitFirst("tool_call", { toolName: "write", input: { path: "/tmp/out.txt" } }, ctx);
 	assert.deepEqual(enabledResult, { block: true, reason: "Blocked by user. Target scope(s): write /tmp" });
@@ -76,7 +79,7 @@ test("session permission grants update the visible granted count", async () => {
 	await harness.emit("session_start", {}, ctx);
 	await harness.emitFirst("tool_call", { toolName: "write", input: { path: "/tmp/out.txt" } }, ctx);
 
-	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><syntaxComment><bold>1</bold></syntaxComment><dim> (fs)</dim><dim> •</dim>");
+	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><syntaxComment><bold>1</bold></syntaxComment><dim> (fs)</dim><dim> •</dim>");
 });
 
 function createPermissionsHarness() {
