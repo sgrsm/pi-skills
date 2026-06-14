@@ -503,7 +503,7 @@ export function renderSmartToolCall(
 
   if (renderShell === "self") {
     const bg = getSelfShellBg(theme, !!context.isPartial, !!context.isError)
-    const box = context.lastComponent instanceof Box ? (context.lastComponent as SmartSummaryBox) : new Box(1, 1, bg)
+    const box = context.lastComponent instanceof Box ? (context.lastComponent as SmartSummaryBox) : (new Box(1, 1, bg) as SmartSummaryBox)
     box.setBgFn(bg)
     box.clear()
 

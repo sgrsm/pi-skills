@@ -63,16 +63,19 @@ export default function (pi: ExtensionAPI) {
   ];
 
   for (const tool of tools) {
+    // Built-in tool definitions are heterogeneous generics; this wrapper preserves
+    // each tool at runtime while using a dynamic type for shared render overrides.
+    const wrappedTool = tool as any;
     pi.registerTool({
-      ...tool,
-      renderCall(args, theme, context) {
-        const fallback = new Text(theme.fg("toolTitle", theme.bold(tool.label ?? tool.name)), 0, 0);
-        const strategy = getToolCallRenderStrategy(tool.name, state.enabled, tool.renderShell);
+      ...wrappedTool,
+      renderCall(args: any, theme: any, context: any) {
+        const fallback = new Text(theme.fg("toolTitle", theme.bold(wrappedTool.label ?? wrappedTool.name)), 0, 0);
+        const strategy = getToolCallRenderStrategy(wrappedTool.name, state.enabled, wrappedTool.renderShell);
 
         if (strategy === "smartHidden") {
           return renderSmartToolCall(
-            tool.name,
-            tool.renderShell,
+            wrappedTool.name,
+            wrappedTool.renderShell,
             args,
             theme,
             context,
@@ -82,25 +85,25 @@ export default function (pi: ExtensionAPI) {
 
         if (strategy === "smartVisible") {
           return renderSmartVisibleToolCall(
-            tool.name,
+            wrappedTool.name,
             args,
             theme,
             context,
-            tool.renderCall,
-            tool.label ?? tool.name,
+            wrappedTool.renderCall,
+            wrappedTool.label ?? wrappedTool.name,
             shortPathsState.enabled,
           );
         }
 
-        return tool.renderCall ? tool.renderCall(args, theme, context) : fallback;
+        return wrappedTool.renderCall ? wrappedTool.renderCall(args, theme, context) : fallback;
       },
-      renderResult(result, options, theme, context) {
+      renderResult(result: any, options: any, theme: any, context: any) {
         if (state.enabled) return new Container();
-        return tool.renderResult
-          ? tool.renderResult(result, options, theme, context)
+        return wrappedTool.renderResult
+          ? wrappedTool.renderResult(result, options, theme, context)
           : new Container();
       },
-    });
+    } as any);
   }
 
   pi.registerCommand("hide-tool", {

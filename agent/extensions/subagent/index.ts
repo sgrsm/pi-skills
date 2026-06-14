@@ -17,7 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
@@ -1248,7 +1248,7 @@ function getParentEscalationsFromMessage(message: Message): ParentEscalationDeta
 function getAssistantText(message: Message): string {
 	if (!Array.isArray(message.content)) return "";
 	return message.content
-		.filter((part) => part.type === "text" && typeof part.text === "string")
+		.filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof (part as any).text === "string")
 		.map((part) => part.text)
 		.join("");
 }
@@ -1552,13 +1552,19 @@ function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNod
 	return [];
 }
 
-function getToolResultsByCallId(messages: Message[]): Map<string, Message> {
-	const toolResults = new Map<string, Message>();
+function getToolResultsByCallId(messages: Message[]): Map<string, ToolResultMessage> {
+	const toolResults = new Map<string, ToolResultMessage>();
 	for (const message of messages) {
-		if (!isRecord(message) || message.role !== "toolResult" || typeof message.toolCallId !== "string") continue;
+		if (message.role !== "toolResult" || typeof message.toolCallId !== "string") continue;
 		toolResults.set(message.toolCallId, message);
 	}
 	return toolResults;
+}
+
+function getErrorCode(error: unknown): string | undefined {
+	return isRecord(error) && typeof (error as { code?: unknown }).code === "string"
+		? (error as { code: string }).code
+		: undefined;
 }
 
 function buildResultActivityNode(result: SingleResult): ActivityNode {
@@ -1806,8 +1812,8 @@ async function runSingleAgent(
 
 			const formatProcessError = (prefix: string, error: unknown) => {
 				const message = error instanceof Error ? error.message : String(error);
-				const code = isRecord(error) && typeof error.code === "string" ? ` (${error.code})` : "";
-				return `${prefix}${code}: ${message}`;
+				const code = getErrorCode(error);
+				return `${prefix}${code ? ` (${code})` : ""}: ${message}`;
 			};
 			const appendDiagnostic = (text: string) => {
 				if (!text) return;
@@ -1937,7 +1943,7 @@ async function runSingleAgent(
 			});
 
 			proc.stdin.on("error", (error) => {
-				const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+				const code = getErrorCode(error);
 				if (!settled && code !== "EPIPE") appendDiagnostic(formatProcessError("Failed to write subagent prompt", error));
 			});
 

@@ -6,32 +6,32 @@ import { buildCurrentSessionContext } from "./index.ts";
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
-function userEntry(id: string, parentId: string | null, text: string) {
+function userEntry(id: string, parentId: string | null, text: string): any {
 	return {
-		type: "message",
+		type: "message" as const,
 		id,
 		parentId,
 		timestamp,
 		message: {
-			role: "user",
+			role: "user" as const,
 			content: text,
 			timestamp: Date.parse(timestamp),
 		},
 	};
 }
 
-function assistantEntry(id: string, parentId: string | null, text: string) {
+function assistantEntry(id: string, parentId: string | null, text: string): any {
 	return {
-		type: "message",
+		type: "message" as const,
 		id,
 		parentId,
 		timestamp,
 		message: {
-			role: "assistant",
-			content: [{ type: "text", text }],
+			role: "assistant" as const,
+			content: [{ type: "text" as const, text }],
 			provider: "test-provider",
 			model: "test-model",
-			stopReason: "stop",
+			stopReason: "stop" as const,
 			timestamp: Date.parse(timestamp),
 		},
 	};

@@ -4,6 +4,7 @@
   "scripts": {
     "all-tests": "node --test $(find . -path './node_modules' -prune -o -name '*.test.ts' -print | sort)",
     "test": "npm run all-tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:permissions": "node --test permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/index.test.ts",
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts"
   },
@@ -14,5 +15,9 @@
     "@earendil-works/pi-tui": "^0.79.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "typebox": "^1.1.24"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.21",
+    "typescript": "^6.0.3"
   }
 }

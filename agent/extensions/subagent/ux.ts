@@ -32,7 +32,7 @@ export interface MessageLike {
 	role?: string;
 	toolName?: string;
 	toolCallId?: string;
-	content?: Array<Record<string, any>>;
+	content?: unknown;
 	details?: unknown;
 	isError?: boolean;
 	timestamp?: number;
