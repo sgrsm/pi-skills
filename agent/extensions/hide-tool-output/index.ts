@@ -24,6 +24,7 @@ import {
 import { getToolCallRenderStrategy } from "./renderStrategy.ts";
 
 type HideToolMode = "on" | "off";
+type BuiltInToolFactory = (cwd: string) => any;
 
 function parseModeArg(args?: string): HideToolMode | undefined | "invalid" {
   const value = args?.trim().toLowerCase();
@@ -51,23 +52,31 @@ function refreshToolRows(ctx: ExtensionCommandContext): void {
 export default function (pi: ExtensionAPI) {
   const state: HideToolOutputState = loadHideToolOutputState();
   const shortPathsState = getShortPathsState();
-  const cwd = process.cwd();
-  const tools = [
-    createReadToolDefinition(cwd),
-    createBashToolDefinition(cwd),
-    createEditToolDefinition(cwd),
-    createWriteToolDefinition(cwd),
-    createGrepToolDefinition(cwd),
-    createFindToolDefinition(cwd),
-    createLsToolDefinition(cwd),
+  const initialCwd = process.cwd();
+  const toolFactories: BuiltInToolFactory[] = [
+    createReadToolDefinition,
+    createBashToolDefinition,
+    createEditToolDefinition,
+    createWriteToolDefinition,
+    createGrepToolDefinition,
+    createFindToolDefinition,
+    createLsToolDefinition,
   ];
+  const tools = toolFactories.map((createToolDefinition) => ({
+    createToolDefinition,
+    definition: createToolDefinition(initialCwd),
+  }));
 
-  for (const tool of tools) {
+  for (const { createToolDefinition, definition: tool } of tools) {
     // Built-in tool definitions are heterogeneous generics; this wrapper preserves
     // each tool at runtime while using a dynamic type for shared render overrides.
     const wrappedTool = tool as any;
     pi.registerTool({
       ...wrappedTool,
+      execute(toolCallId: any, params: any, signal: any, onUpdate: any, ctx: any) {
+        const sessionCwd = typeof ctx?.cwd === "string" && ctx.cwd.length > 0 ? ctx.cwd : process.cwd();
+        return createToolDefinition(sessionCwd).execute(toolCallId, params, signal, onUpdate, ctx);
+      },
       renderCall(args: any, theme: any, context: any) {
         const fallback = new Text(theme.fg("toolTitle", theme.bold(wrappedTool.label ?? wrappedTool.name)), 0, 0);
         const strategy = getToolCallRenderStrategy(wrappedTool.name, state.enabled, wrappedTool.renderShell);
