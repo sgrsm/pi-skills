@@ -36,7 +36,14 @@ const AGENT_BRANCH_ENTRY_TYPE = "permissions-agent-branch";
 const LEGACY_AGENT_BRANCH_ENTRY_TYPES = new Set([AGENT_BRANCH_ENTRY_TYPE, "guardrails-agent-branch"]);
 
 type PermissionStatusTheme = {
-	fg(color: "dim" | "error" | "success", text: string): string;
+	fg(color: "dim" | "error" | "syntaxComment", text: string): string;
+	bold(text: string): string;
+};
+
+type PermissionStatusGrantCounts = {
+	fs: number;
+	git: number;
+	deps: number;
 };
 
 export default function (pi: ExtensionAPI) {
@@ -379,20 +386,39 @@ function updateStatus(
 	const fileCount = filePermissions?.list().length ?? 0;
 	const gitCount = gitPermissions?.list().length ?? 0;
 	const packageCount = packagePermissions?.list().length ?? 0;
-	const count = fileCount + gitCount + packageCount;
-	ctx.ui.setStatus(STATUS_KEY, formatPermissionStatus({ enabled, grantCount: count, theme: ctx.ui.theme }));
+	ctx.ui.setStatus(
+		STATUS_KEY,
+		formatPermissionStatus({ enabled, grants: { fs: fileCount, git: gitCount, deps: packageCount }, theme: ctx.ui.theme }),
+	);
 }
 
 function formatPermissionMode(enabled: boolean): "on" | "off" {
 	return enabled ? "on" : "off";
 }
 
-export function formatPermissionStatus(options: { enabled: boolean; grantCount: number; theme: PermissionStatusTheme }): string {
+export function formatPermissionStatus(options: { enabled: boolean; grants: PermissionStatusGrantCounts; theme: PermissionStatusTheme }): string {
 	const prefix = options.theme.fg("dim", "permissions: ");
 	const separator = options.theme.fg("dim", " •");
 	if (!options.enabled) return prefix + options.theme.fg("error", "off") + separator;
-	if (options.grantCount > 0) return prefix + options.theme.fg("success", String(options.grantCount)) + separator;
+
+	const grantCount = options.grants.fs + options.grants.git + options.grants.deps;
+	if (grantCount > 0) {
+		const detail = formatPermissionGrantDetails(options.grants);
+		return prefix + options.theme.fg("syntaxComment", options.theme.bold(String(grantCount))) + options.theme.fg("dim", ` (${detail})`) + separator;
+	}
+
 	return prefix + options.theme.fg("dim", "on") + separator;
+}
+
+function formatPermissionGrantDetails(grants: PermissionStatusGrantCounts): string {
+	return [
+		{ label: "fs", count: grants.fs },
+		{ label: "git", count: grants.git },
+		{ label: "deps", count: grants.deps },
+	]
+		.filter((item) => item.count > 0)
+		.map((item) => (item.count === 1 ? item.label : `${item.label}×${item.count}`))
+		.join(", ");
 }
 
 function formatFilePermissionPrompt(request: PermissionRequest, cwd: string): string {

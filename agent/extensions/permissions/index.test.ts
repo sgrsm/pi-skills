@@ -6,6 +6,9 @@ const markerTheme = {
 	fg(color: string, text: string) {
 		return `<${color}>${text}</${color}>`;
 	},
+	bold(text: string) {
+		return `<bold>${text}</bold>`;
+	},
 };
 
 test("permissions command offers mode and clear argument completions", () => {
@@ -25,12 +28,22 @@ test("permissions command offers mode and clear argument completions", () => {
 	assert.equal(getPermissionsArgumentCompletions("clear now"), null);
 });
 
-test("permission status is always visible and reflects mode or granted count", () => {
-	assert.equal(formatPermissionStatus({ enabled: true, grantCount: 0, theme: markerTheme }), "<dim>permissions: </dim><dim>on</dim><dim> •</dim>");
-	assert.equal(formatPermissionStatus({ enabled: false, grantCount: 0, theme: markerTheme }), "<dim>permissions: </dim><error>off</error><dim> •</dim>");
+test("permission status is always visible and reflects mode or granted count details", () => {
 	assert.equal(
-		formatPermissionStatus({ enabled: true, grantCount: 3, theme: markerTheme }),
-		"<dim>permissions: </dim><success>3</success><dim> •</dim>",
+		formatPermissionStatus({ enabled: true, grants: { fs: 0, git: 0, deps: 0 }, theme: markerTheme }),
+		"<dim>permissions: </dim><dim>on</dim><dim> •</dim>",
+	);
+	assert.equal(
+		formatPermissionStatus({ enabled: false, grants: { fs: 2, git: 1, deps: 0 }, theme: markerTheme }),
+		"<dim>permissions: </dim><error>off</error><dim> •</dim>",
+	);
+	assert.equal(
+		formatPermissionStatus({ enabled: true, grants: { fs: 2, git: 1, deps: 0 }, theme: markerTheme }),
+		"<dim>permissions: </dim><syntaxComment><bold>3</bold></syntaxComment><dim> (fs×2, git)</dim><dim> •</dim>",
+	);
+	assert.equal(
+		formatPermissionStatus({ enabled: true, grants: { fs: 1, git: 0, deps: 2 }, theme: markerTheme }),
+		"<dim>permissions: </dim><syntaxComment><bold>3</bold></syntaxComment><dim> (fs, deps×2)</dim><dim> •</dim>",
 	);
 });
 
@@ -63,7 +76,7 @@ test("session permission grants update the visible granted count", async () => {
 	await harness.emit("session_start", {}, ctx);
 	await harness.emitFirst("tool_call", { toolName: "write", input: { path: "/tmp/out.txt" } }, ctx);
 
-	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><success>1</success><dim> •</dim>");
+	assert.equal(ctx.statuses.get("3-permissions"), "<dim>permissions: </dim><syntaxComment><bold>1</bold></syntaxComment><dim> (fs)</dim><dim> •</dim>");
 });
 
 function createPermissionsHarness() {
