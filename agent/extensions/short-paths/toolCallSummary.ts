@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { Box, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui"
+import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
 
 type ToolArgs = Record<string, unknown> | undefined
 

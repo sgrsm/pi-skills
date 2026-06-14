@@ -2,13 +2,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "all-tests": "node --test $(find . -path './node_modules' -prune -o -name '*.test.ts' -print | sort)",
+    "test": "npm run all-tests",
     "test:permissions": "node --test permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/index.test.ts",
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.78.0",
-    "@earendil-works/pi-ai": "^0.78.0",
-    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-agent-core": "^0.79.3",
+    "@earendil-works/pi-ai": "^0.79.3",
+    "@earendil-works/pi-coding-agent": "^0.79.3",
+    "@earendil-works/pi-tui": "^0.79.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "typebox": "^1.1.24"
   }

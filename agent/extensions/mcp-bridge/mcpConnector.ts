@@ -1,5 +1,13 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Container, Text } from "@mariozechner/pi-tui";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	truncateHead,
+	type ExtensionAPI,
+	type TruncationOptions,
+	type TruncationResult,
+} from "@earendil-works/pi-coding-agent";
+import { Container, Text } from "@earendil-works/pi-tui";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Type } from "typebox";
@@ -67,10 +75,14 @@ export type McpConnectorOptions = {
 	defaultEnabled?: boolean;
 };
 
-type McpNotifyType = "info" | "success" | "warning" | "error";
+export type McpTextContentBlock = { type: "text"; text: string };
+export type McpImageContentBlock = { type: "image"; data: string; mimeType: string };
+export type McpContentBlock = McpTextContentBlock | McpImageContentBlock;
+type PiNotifyType = "info" | "warning" | "error";
+export type McpNotifyType = PiNotifyType | "success";
 type McpStatusColor = "dim" | "accent";
 type McpStatusContext = { ui: { setStatus: (key: string, value: string | undefined) => void; theme: { fg: (color: McpStatusColor, text: string) => string } } };
-type McpNotifyContext = { ui: { notify: (message: string, type?: McpNotifyType) => void } };
+type McpNotifyContext = { ui: { notify: (message: string, type?: PiNotifyType) => void } };
 type McpCommandContext = McpStatusContext & McpNotifyContext;
 type McpEnabledScope = "global" | "session";
 type McpSessionState = { connectorName: string; enabled: boolean };
@@ -143,8 +155,64 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error && error.message ? error.message : String(error);
 }
 
+export function normalizeMcpNotifyType(type?: McpNotifyType): PiNotifyType | undefined {
+	return type === "success" ? "info" : type;
+}
+
+function notifyMcp(ctx: McpNotifyContext, message: string, type?: McpNotifyType): void {
+	ctx.ui.notify(message, normalizeMcpNotifyType(type));
+}
+
+function formatMcpTruncationMarker(truncation: TruncationResult): string {
+	const limit =
+		truncation.truncatedBy === "lines"
+			? `${truncation.maxLines} line limit`
+			: truncation.truncatedBy === "bytes"
+				? `${formatSize(truncation.maxBytes)} byte limit`
+				: "configured limit";
+	return `[MCP text output truncated by ${limit}: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output is preserved in tool details.rawResult.]`;
+}
+
+export function truncateMcpToolContent(content: McpContentBlock[], options: TruncationOptions = {}): McpContentBlock[] {
+	const textBlocks = content.filter((block): block is McpTextContentBlock => block.type === "text");
+	if (textBlocks.length === 0) return content;
+
+	const combinedText = textBlocks.map((block) => block.text).join("\n");
+	const truncation = truncateHead(combinedText, {
+		maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
+		maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
+	});
+	if (!truncation.truncated) return content;
+
+	// Only text blocks are truncated. Image blocks stay unchanged so existing image handling is preserved.
+	const truncatedContent: McpContentBlock[] = [];
+	let consumedCharacters = 0;
+	let textBlockIndex = 0;
+	for (const block of content) {
+		if (block.type === "image") {
+			truncatedContent.push(block);
+			continue;
+		}
+
+		const segment = `${textBlockIndex > 0 ? "\n" : ""}${block.text}`;
+		const keptSegment = truncation.content.slice(
+			consumedCharacters,
+			Math.min(consumedCharacters + segment.length, truncation.content.length),
+		);
+		const keptText = textBlockIndex > 0 && keptSegment.startsWith("\n") ? keptSegment.slice(1) : keptSegment;
+		if (keptText.length > 0) {
+			truncatedContent.push({ type: "text", text: keptText });
+		}
+		consumedCharacters += segment.length;
+		textBlockIndex++;
+	}
+
+	truncatedContent.push({ type: "text", text: formatMcpTruncationMarker(truncation) });
+	return truncatedContent;
+}
+
 function getMcpTextOutput(
-	content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>,
+	content: McpContentBlock[],
 	showImages: boolean,
 ): string {
 	return content
@@ -193,12 +261,12 @@ function asObjectSchema(schema: unknown) {
 	});
 }
 
-function formatMcpContent(content: unknown): Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> {
+function formatMcpContent(content: unknown): McpContentBlock[] {
 	if (!Array.isArray(content)) {
 		return [{ type: "text", text: JSON.stringify(content, null, 2) }];
 	}
 
-	const result: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
+	const result: McpContentBlock[] = [];
 	for (const item of content) {
 		if (!item || typeof item !== "object") {
 			result.push({ type: "text", text: String(item) });
@@ -374,29 +442,29 @@ function registerMcpCommand(pi: ExtensionAPI, manager: McpManager) {
 		handler: async (args, ctx) => {
 			const parsed = parseMcpArgs(args);
 			if (parsed.error) {
-				ctx.ui.notify(`${parsed.error}\nUsage: /${manager.commandName} [status|tools|enable|disable|reload] [connector]\nKnown connectors: ${knownConnectorText(manager)}`, "error");
+				notifyMcp(ctx, `${parsed.error}\nUsage: /${manager.commandName} [status|tools|enable|disable|reload] [connector]\nKnown connectors: ${knownConnectorText(manager)}`, "error");
 				return;
 			}
 
 			if (parsed.command === "status" && !parsed.connectorName) {
 				const lines = connectorNames(manager).map((name) => manager.connectors.get(name)!.statusLine());
-				ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "No MCP connectors registered.", lines.length > 0 ? "info" : "warning");
+				notifyMcp(ctx, lines.length > 0 ? lines.join("\n") : "No MCP connectors registered.", lines.length > 0 ? "info" : "warning");
 				return;
 			}
 
 			if (!parsed.connectorName && TARGET_REQUIRED_COMMANDS.has(parsed.command)) {
-				ctx.ui.notify(`Missing connector name. Usage: /${manager.commandName} ${parsed.command} <connector>\nKnown connectors: ${knownConnectorText(manager)}`, "error");
+				notifyMcp(ctx, `Missing connector name. Usage: /${manager.commandName} ${parsed.command} <connector>\nKnown connectors: ${knownConnectorText(manager)}`, "error");
 				return;
 			}
 
 			const connector = parsed.connectorName ? manager.connectors.get(parsed.connectorName) : undefined;
 			if (!connector) {
-				ctx.ui.notify(`Unknown MCP connector: ${parsed.connectorName ?? "(missing)"}\nKnown connectors: ${knownConnectorText(manager)}`, "error");
+				notifyMcp(ctx, `Unknown MCP connector: ${parsed.connectorName ?? "(missing)"}\nKnown connectors: ${knownConnectorText(manager)}`, "error");
 				return;
 			}
 
 			if (parsed.command === "status") {
-				ctx.ui.notify(connector.statusLine(), connector.state.enabled && connector.state.connected ? "success" : "warning");
+				notifyMcp(ctx, connector.statusLine(), connector.state.enabled && connector.state.connected ? "info" : "warning");
 				return;
 			}
 
@@ -427,12 +495,12 @@ function registerToggleCommand(pi: ExtensionAPI, runtime: McpConnectorRuntime, t
 		handler: async (args, ctx) => {
 			const parsed = parseToggleArgs(args);
 			if (parsed.error) {
-				ctx.ui.notify(`${parsed.error}\nUsage: /${toggleCommandName} [on|off]`, "error");
+				notifyMcp(ctx, `${parsed.error}\nUsage: /${toggleCommandName} [on|off]`, "error");
 				return;
 			}
 
 			if (!parsed.command) {
-				ctx.ui.notify(runtime.statusLine(), runtime.state.enabled && runtime.state.connected ? "success" : "warning");
+				notifyMcp(ctx, runtime.statusLine(), runtime.state.enabled && runtime.state.connected ? "info" : "warning");
 				return;
 			}
 
@@ -556,7 +624,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			pi.registerTool({
 				name: piName,
 				label: tool.annotations?.title ?? tool.title ?? tool.name,
-				description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}`,
+				description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}\nText output returned to the model is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full raw MCP results remain in tool details.rawResult. Image content is passed through unchanged.`,
 				promptSnippet: `Call ${displayName} tool ${tool.name}${tool.description ? `: ${tool.description}` : "."}`,
 				parameters: asObjectSchema(tool.inputSchema),
 				renderResult(result, _options, theme, context) {
@@ -598,7 +666,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 						throw new Error(content.map((block) => (block.type === "text" ? block.text : `[${block.mimeType} image]`)).join("\n"));
 					}
 					return {
-						content,
+						content: truncateMcpToolContent(content),
 						details: {
 							mcpConnector: connectorName,
 							mcpServer: state.serverName,
@@ -669,7 +737,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 		notifyTools: (ctx) => {
 			const lines = [...state.toolByPiName.entries()]
 				.map(([piName, tool]) => `${piName} -> ${tool.name}${tool.description ? ` - ${tool.description}` : ""}`);
-			ctx.ui.notify(lines.length ? lines.join("\n") : `No ${displayName} tools registered. Use ${enableCommandText} or ${reloadCommandText}.`, "info");
+			notifyMcp(ctx, lines.length ? lines.join("\n") : `No ${displayName} tools registered. Use ${enableCommandText} or ${reloadCommandText}.`, "info");
 		},
 		enable: async (ctx) => {
 			setEnabled(true, true);
@@ -677,11 +745,11 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 				const count = await connectAndRegister();
 				activateTools();
 				runtime.setStatus(ctx);
-				ctx.ui.notify(`${displayName} enabled and connected (${count} tools).`, "success");
+				notifyMcp(ctx, `${displayName} enabled and connected (${count} tools).`, "info");
 			} catch (error) {
 				state.lastError = errorMessage(error);
 				runtime.setStatus(ctx);
-				ctx.ui.notify(`${displayName} enabled, but connection failed: ${state.lastError}`, "error");
+				notifyMcp(ctx, `${displayName} enabled, but connection failed: ${state.lastError}`, "error");
 			}
 		},
 		disable: async (ctx) => {
@@ -689,23 +757,23 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			deactivateTools();
 			await closeConnection(state);
 			runtime.setStatus(ctx);
-			ctx.ui.notify(`${displayName} disabled. Run ${enableCommandText} to re-enable it.`, "success");
+			notifyMcp(ctx, `${displayName} disabled. Run ${enableCommandText} to re-enable it.`, "info");
 		},
 		reload: async (ctx) => {
 			if (!state.enabled) {
 				runtime.setStatus(ctx);
-				ctx.ui.notify(`${displayName} is disabled. Run ${enableCommandText} to connect it.`, "warning");
+				notifyMcp(ctx, `${displayName} is disabled. Run ${enableCommandText} to connect it.`, "warning");
 				return;
 			}
 			try {
 				const count = await connectAndRegister();
 				activateTools();
 				runtime.setStatus(ctx);
-				ctx.ui.notify(`${displayName} reloaded (${count} tools).`, "success");
+				notifyMcp(ctx, `${displayName} reloaded (${count} tools).`, "info");
 			} catch (error) {
 				state.lastError = errorMessage(error);
 				runtime.setStatus(ctx);
-				ctx.ui.notify(`${displayName} connection failed: ${state.lastError}`, "error");
+				notifyMcp(ctx, `${displayName} connection failed: ${state.lastError}`, "error");
 			}
 		},
 		syncEnabledState,

@@ -205,6 +205,10 @@ function notifyCommand(
 	else console.log(message);
 }
 
+export function canOpenSubagentConfigUi(ctx: { mode: string }): boolean {
+	return ctx.mode === "tui";
+}
+
 function trimPreview(text: string, max = 140): string {
 	const normalized = text.replace(/\s+/g, " ").trim();
 	if (normalized.length <= max) return normalized;
@@ -369,6 +373,15 @@ function createAgentDiscoveryResolver(
 		}
 		return discovery;
 	};
+}
+
+export function getProjectAgentTrustBlockReason(agentScope: AgentScope, isProjectTrusted: boolean): string | null {
+	if (agentScope === "user" || isProjectTrusted) return null;
+
+	// Safer/simple behavior: if a call opts into project-local agents from an untrusted
+	// project, block the whole call before reading .pi/agents instead of trying to
+	// degrade `both` to user-only and risk ambiguous agent-name resolution.
+	return `Blocked: project-local agents require project trust. Current project is not trusted, so agentScope="${agentScope}" cannot load agents from .pi/agents. Trust the project before using project-local subagents, or use agentScope="user". confirmProjectAgents only controls the extra confirmation shown after project trust is established and cannot bypass project trust.`;
 }
 
 function normalizeAgentNameForScopeLookup(agentName: string): string {
@@ -654,7 +667,7 @@ function buildSubagentUsageText(): string {
 	return [
 		"Usage:",
 		"/subagents — show current mode and limits",
-		"/subagents ui — open interactive subagent config",
+		"/subagents ui — open interactive TUI subagent config",
 		"/subagents off|manual|ask|auto — set policy mode",
 		`/subagents concurrency <n>|default — set max concurrent subagents (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
 		`/subagents max-tasks <n>|default — set max parallel tasks per call (1-${SUBAGENT_MAX_PARALLEL_TASKS_LIMIT})`,
@@ -692,7 +705,7 @@ function buildSubagentSummaryText(
 		"- manual: only explicit user requests may use subagents",
 		"- ask: explicit requests run immediately; otherwise Pi asks first (Allow once / Allow for current session / Deny)",
 		`- auto: Pi may auto-use read-only multi-agent delegation within guardrails (max ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} agents; write-capable agents require an explicit request)`,
-		"- /subagents ui opens interactive config",
+		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
 		"- maxDelegationDepth, inherited approval overrides, and per-agent model defaults are currently edited manually in settings.json",
@@ -2188,6 +2201,15 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	async function showSubagentConfigUi(ctx: ExtensionCommandContext): Promise<void> {
+		if (!canOpenSubagentConfigUi(ctx)) {
+			notifyCommand(
+				ctx,
+				"Interactive subagent config UI is available only in TUI mode. Use /subagents show, /subagents off|manual|ask|auto, /subagents concurrency <n>|default, or /subagents max-tasks <n>|default.",
+				"warning",
+			);
+			return;
+		}
+
 		let executionSettings = loadSubagentExecutionSettings(ctx.cwd);
 
 		await ctx.ui.custom((tui, theme, _kb, done) => {
@@ -2349,17 +2371,11 @@ export default function (pi: ExtensionAPI) {
 		parameters: ParentEscalationParams,
 		async execute(_toolCallId, params) {
 			if (!hasParentEscalationRelay()) {
-				return {
-					content: [{ type: "text", text: `${PARENT_ESCALATION_TOOL_NAME} is only available inside delegated subagent sessions.` }],
-					isError: true,
-				};
+				throw new Error(`${PARENT_ESCALATION_TOOL_NAME} is only available inside delegated subagent sessions.`);
 			}
 			const question = params.question.trim();
 			if (!question) {
-				return {
-					content: [{ type: "text", text: `${PARENT_ESCALATION_TOOL_NAME} requires a non-empty question.` }],
-					isError: true,
-				};
+				throw new Error(`${PARENT_ESCALATION_TOOL_NAME} requires a non-empty question.`);
 			}
 			const requestType = params.requestType === "approval" ? "approval" : "clarify";
 			const options = normalizeEscalationOptions(params.options);
@@ -2448,6 +2464,17 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (event.toolName !== "subagent" || !isRecord(event.input)) return undefined;
 
+		const requestedScope: AgentScope =
+			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
+		const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
+			requestedScope,
+			requestedScope === "user" ? true : ctx.isProjectTrusted(),
+		);
+		if (projectAgentTrustBlockReason) {
+			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			return { block: true, reason: projectAgentTrustBlockReason };
+		}
+
 		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
 		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd);
 		const currentDepth = getCurrentSubagentDepth();
@@ -2459,8 +2486,6 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		const requestedScope: AgentScope =
-			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
 		const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, requestedScope);
 		const summary = summarizeSubagentRequestWithResolver(
 			event.input,
@@ -2610,8 +2635,12 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (raw === "ui") {
-				if (!ctx.hasUI) {
-					notifyCommand(ctx, "Interactive UI is not available here. Use /subagents show or edit settings.json manually.", "warning");
+				if (!canOpenSubagentConfigUi(ctx)) {
+					notifyCommand(
+						ctx,
+						"Interactive subagent config UI is available only in TUI mode. Use /subagents show, /subagents off|manual|ask|auto, /subagents concurrency <n>|default, or /subagents max-tasks <n>|default.",
+						"warning",
+					);
 					return;
 				}
 				await showSubagentConfigUi(ctx);
@@ -2778,6 +2807,11 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
+			const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
+				agentScope,
+				agentScope === "user" ? true : ctx.isProjectTrusted(),
+			);
+			if (projectAgentTrustBlockReason) throw new Error(projectAgentTrustBlockReason);
 			const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, agentScope);
 			const discovery = resolveDiscovery(undefined);
 			const agents = discovery.agents;
@@ -2842,16 +2876,9 @@ export default function (pi: ExtensionAPI) {
 					const dirs = Array.from(new Set(projectAgentsRequested.map((agent) => agent.dir ?? "(unknown)")));
 					const sourceText = dirs.length === 1 ? dirs[0] : dirs.map((dir) => `- ${dir}`).join("\n");
 					if (!ctx.hasUI) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `Blocked: project-local agents require confirmation, but no UI is available. Agents: ${names}. Source: ${sourceText}. Pass confirmProjectAgents: false only for trusted repositories.`,
-								},
-							],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
-							isError: true,
-						};
+						throw new Error(
+							`Blocked: project-local agents require confirmation, but no UI is available. Agents: ${names}. Source: ${sourceText}. Pass confirmProjectAgents: false only for trusted repositories.`,
+						);
 					}
 					const ok = await ctx.ui.confirm(
 						"Run project-local agents?",
@@ -2921,11 +2948,7 @@ export default function (pi: ExtensionAPI) {
 					const isError = isFailedResult(result);
 					if (isError) {
 						const errorMsg = getResultOutput(result);
-						return {
-							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
-							details: makeDetails("chain")(results),
-							isError: true,
-						};
+						throw new Error(`Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}`);
 					}
 					previousOutput = getFinalOutput(result.messages);
 				}
@@ -3072,11 +3095,7 @@ export default function (pi: ExtensionAPI) {
 				const isError = isFailedResult(result);
 				if (isError) {
 					const errorMsg = getResultOutput(result);
-					return {
-						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
-						details: makeDetails("single")([result]),
-						isError: true,
-					};
+					throw new Error(`Agent ${result.stopReason || "failed"}: ${errorMsg}`);
 				}
 				return {
 					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],

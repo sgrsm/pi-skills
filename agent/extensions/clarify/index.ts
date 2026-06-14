@@ -95,6 +95,10 @@ function buildChoiceLabel(index: number, label: string): string {
 
 type ClarifySelection = { kind: "option"; index: number } | { kind: "custom" };
 
+export function canUseClarifyCustomSelector(ctx: { mode: string }): boolean {
+	return ctx.mode === "tui";
+}
+
 const ENABLE_MOUSE_SCROLL = "\x1b[?1000h\x1b[?1006h";
 const DISABLE_MOUSE_SCROLL = "\x1b[?1000l\x1b[?1006l";
 const MOUSE_WHEEL_SEQUENCE = /^\x1b\[<(\d+);\d+;\d+[Mm]$/;
@@ -135,6 +139,7 @@ function buildDescriptionPreviewLines(
 
 async function showClarifySelector(
 	ctx: {
+		mode: string;
 		ui: {
 			custom<T>(factory: (tui: any, theme: any, keybindings: any, done: (result: T) => void) => any): Promise<T>;
 		};
@@ -143,6 +148,8 @@ async function showClarifySelector(
 	options: ClarifyOption[],
 	allowCustom: boolean,
 ): Promise<ClarifySelection | undefined> {
+	if (!canUseClarifyCustomSelector(ctx)) return undefined;
+
 	const optionItems = options.map((option, index) => ({
 		value: `option:${index}`,
 		label: buildChoiceLabel(index, option.label),
@@ -312,22 +319,65 @@ async function showClarifySelector(
 	});
 }
 
+function buildBasicSelectTitle(question: string, options: ClarifyOption[], allowCustom: boolean): string {
+	const lines = [question];
+	const describedOptions = options
+		.map((option, index) => (option.description ? `${buildChoiceLabel(index, option.label)}: ${option.description}` : undefined))
+		.filter((line): line is string => Boolean(line));
+
+	if (describedOptions.length > 0) {
+		lines.push("", "Option details:", ...describedOptions);
+	}
+
+	if (allowCustom) {
+		lines.push("", `${buildChoiceLabel(options.length, "Custom instructions")}: Open the editor to type a custom answer.`);
+	}
+
+	return lines.join("\n");
+}
+
+async function showClarifyBasicSelect(
+	ctx: { ui: { select(title: string, items: string[]): Promise<string | undefined> } },
+	question: string,
+	options: ClarifyOption[],
+	allowCustom: boolean,
+): Promise<ClarifySelection | undefined> {
+	const choices = options.map((option, index) => buildChoiceLabel(index, option.label));
+	const customChoice = buildChoiceLabel(options.length, "Custom instructions");
+	if (allowCustom) choices.push(customChoice);
+
+	const selected = await ctx.ui.select(buildBasicSelectTitle(question, options, allowCustom), choices);
+	if (!selected) return undefined;
+	if (allowCustom && selected === customChoice) return { kind: "custom" };
+
+	const selectedIndex = choices.indexOf(selected);
+	return selectedIndex >= 0 && selectedIndex < options.length ? { kind: "option", index: selectedIndex } : undefined;
+}
+
+async function showClarifySelection(
+	ctx: {
+		mode: string;
+		ui: {
+			custom<T>(factory: (tui: any, theme: any, keybindings: any, done: (result: T) => void) => any): Promise<T>;
+			select(title: string, items: string[]): Promise<string | undefined>;
+		};
+	},
+	question: string,
+	options: ClarifyOption[],
+	allowCustom: boolean,
+): Promise<ClarifySelection | undefined> {
+	if (canUseClarifyCustomSelector(ctx)) {
+		return showClarifySelector(ctx, question, options, allowCustom);
+	}
+	return showClarifyBasicSelect(ctx, question, options, allowCustom);
+}
+
 function buildCancelledDetails(question: string, options: ClarifyOption[]): ClarifyDetails {
 	return {
 		question,
 		options,
 		answer: null,
 		answerType: "cancelled",
-	};
-}
-
-function buildErrorDetails(question: string, options: ClarifyOption[], message: string): ClarifyDetails {
-	return {
-		question,
-		options,
-		answer: null,
-		answerType: "error",
-		message,
 	};
 }
 
@@ -421,11 +471,7 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (!clarifyEnabled) {
-				return {
-					content: [{ type: "text", text: "Error: clarify is disabled. Run /clarify on to enable it." }],
-					details: buildErrorDetails(params.question?.trim() ?? "", normalizeOptions(params.options), "clarify is disabled"),
-					isError: true,
-				};
+				throw new Error("clarify is disabled. Run /clarify on to enable it.");
 			}
 
 			const question = params.question.trim();
@@ -433,32 +479,15 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 			const allowCustom = params.allowCustom !== false;
 
 			if (!question) {
-				return {
-					content: [{ type: "text", text: "Error: clarify requires a non-empty question." }],
-					details: buildErrorDetails("", options, "Missing question"),
-					isError: true,
-				};
+				throw new Error("clarify requires a non-empty question.");
 			}
 
 			if (!ctx.hasUI) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "Error: interactive clarification UI is not available in this mode. Ask the user in plain text instead.",
-						},
-					],
-					details: buildErrorDetails(question, options, "Interactive UI unavailable"),
-					isError: true,
-				};
+				throw new Error("interactive clarification UI is not available in this mode. Ask the user in plain text instead.");
 			}
 
 			if (options.length === 0 && !allowCustom) {
-				return {
-					content: [{ type: "text", text: "Error: clarify needs at least one option or allowCustom=true." }],
-					details: buildErrorDetails(question, options, "No choices available"),
-					isError: true,
-				};
+				throw new Error("clarify needs at least one option or allowCustom=true.");
 			}
 
 			if (options.length === 0) {
@@ -482,7 +511,7 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const selected = await showClarifySelector(ctx, question, options, allowCustom);
+			const selected = await showClarifySelection(ctx, question, options, allowCustom);
 			if (!selected) {
 				return {
 					content: [{ type: "text", text: "User cancelled the clarification." }],
@@ -514,11 +543,7 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 			const selectedIndex = selected.index;
 			const selectedOption = options[selectedIndex];
 			if (!selectedOption) {
-				return {
-					content: [{ type: "text", text: "Error: selected option could not be resolved." }],
-					details: buildErrorDetails(question, options, "Selected option not found"),
-					isError: true,
-				};
+				throw new Error("selected option could not be resolved.");
 			}
 
 			return {

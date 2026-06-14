@@ -1,4 +1,4 @@
-import { getAgentDir, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";

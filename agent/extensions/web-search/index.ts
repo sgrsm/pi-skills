@@ -354,11 +354,7 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 		parameters: searchParamsSchema,
 		async execute(_toolCallId, params, signal) {
 			if (!webSearchEnabled) {
-				return {
-					content: [{ type: "text", text: "Error: web_search is disabled. Run /web-search on to enable it." }],
-					details: { enabled: false },
-					isError: true,
-				};
+				throw new Error("web_search is disabled. Run /web-search on to enable it.");
 			}
 
 			const baseUrl = process.env.PI_SEARXNG_URL ?? process.env.SEARXNG_URL ?? DEFAULT_BASE_URL;

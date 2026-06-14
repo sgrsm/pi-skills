@@ -3,8 +3,8 @@ import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { complete } from "@earendil-works/pi-ai"
-import { CustomEditor, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent"
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { buildSessionContext, CustomEditor, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
 
 const HANDOFF_DIR = join(homedir(), ".pi", "handoff")
 const HANDOFF_FILE_PATTERN = /^(\d{8}-\d{6})(?:-(.+))?\.md$/i
@@ -302,6 +302,16 @@ function notify(
 ): void {
 	if (ctx.hasUI) ctx.ui.notify(message, type)
 	else console.log(message)
+}
+
+type PublicSessionContextSource = Pick<ExtensionContext["sessionManager"], "getEntries" | "getLeafId">
+
+export function buildCurrentSessionContext(sessionManager: PublicSessionContextSource): SessionContext {
+	return buildSessionContext(sessionManager.getEntries(), sessionManager.getLeafId())
+}
+
+export function canInstallContinueWarningEditor(ctx: { mode: string }): boolean {
+	return ctx.mode === "tui"
 }
 
 function normalizeInlineText(value: string | undefined): string | undefined {
@@ -946,7 +956,7 @@ async function resolveHandoffDoc(
 }
 
 async function summarizeCurrentSession(ctx: ExtensionContext, requestedTitle: string | undefined): Promise<SummarizeResult> {
-	const sessionContext = ctx.sessionManager.buildSessionContext()
+	const sessionContext = buildCurrentSessionContext(ctx.sessionManager)
 	const messages = sessionContext.messages
 	const fileOps = extractFileOps(messages)
 	const conversationText = serializeConversation(convertToLlm(messages))
@@ -1033,7 +1043,7 @@ async function createHandoff(
 		requestedTitle ??
 		summary.title ??
 		ctx.sessionManager.getSessionName() ??
-		inferTitleFromMessages(ctx.sessionManager.buildSessionContext().messages) ??
+		inferTitleFromMessages(buildCurrentSessionContext(ctx.sessionManager).messages) ??
 		"Session handoff"
 	const title = normalizeInlineText(inferredTitle) ?? "Session handoff"
 	const slug = slugifyTitle(title)
@@ -1087,7 +1097,7 @@ function buildSavedMessage(result: { doc: HandoffDoc; usedFallback: boolean; err
 }
 
 function hasMeaningfulSessionContext(ctx: ExtensionContext): boolean {
-	return ctx.sessionManager.buildSessionContext().messages.length > 0
+	return buildCurrentSessionContext(ctx.sessionManager).messages.length > 0
 }
 
 function getInlineHandoffWarningLines(ctx: ExtensionContext, text: string): string[] | undefined {
@@ -1134,7 +1144,7 @@ function updateContinueWarningWidget(ctx: ExtensionContext, text: string): void 
 }
 
 function installContinueWarningEditor(ctx: ExtensionContext): void {
-	if (!ctx.hasUI) return
+	if (!canInstallContinueWarningEditor(ctx)) return
 	const previous = ctx.ui.getEditorComponent()
 	ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 		const base = previous?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings)
