@@ -2371,12 +2371,12 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Request that the parent agent obtain user clarification or approval before this delegated subagent continues.",
 		promptSnippet:
-			"Use this only from delegated subagents when you need the parent agent to ask the user a question or request broader approval.",
+			"Use escalate_to_parent only from delegated subagents when you need the parent agent to ask the user a question or request broader approval.",
 		promptGuidelines: [
-			"Use this only from delegated subagents. The top-level assistant should ask the user directly instead.",
-			"Use it when you need a user decision, approval, or instruction that cannot be safely assumed inside this delegated session.",
-			"Keep the question focused and provide a small set of materially different options when possible.",
-			"After calling it, stop and let the parent agent continue.",
+			"Use escalate_to_parent only from delegated subagents. The top-level assistant should ask the user directly instead.",
+			"Use escalate_to_parent when you need a user decision, approval, or instruction that cannot be safely assumed inside this delegated session.",
+			"Keep the escalate_to_parent question focused and provide a small set of materially different options when possible.",
+			"After calling escalate_to_parent, stop and let the parent agent continue.",
 		],
 		parameters: ParentEscalationParams,
 		async execute(_toolCallId, params) {
