@@ -252,7 +252,7 @@ function inspectLocalLink(link: PiHostDepLink): string | undefined {
 async function main(): Promise<void> {
 	const command = process.argv[2] ?? "check";
 	if (command !== "sync" && command !== "check") {
-		console.error("Usage: node scripts/piHostDeps.ts [sync|check]");
+		console.error("Usage: node pi-host-deps/piHostDeps.ts [sync|check]");
 		process.exitCode = 2;
 		return;
 	}

@@ -4,8 +4,8 @@
   "scripts": {
     "all-tests": "node --test $(find . -path './node_modules' -prune -o -name '*.test.ts' -print | sort)",
     "test": "npm run all-tests",
-    "sync:pi-host-deps": "node scripts/piHostDeps.ts sync",
-    "check:pi-host-deps": "node scripts/piHostDeps.ts check",
+    "sync:pi-host-deps": "node pi-host-deps/piHostDeps.ts sync",
+    "check:pi-host-deps": "node pi-host-deps/piHostDeps.ts check",
     "typecheck": "npm run check:pi-host-deps && tsc -p tsconfig.json --noEmit",
     "test:permissions": "node --test permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/index.test.ts",
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts subagent/outputTruncation.test.ts subagent/footerActivity.test.ts"

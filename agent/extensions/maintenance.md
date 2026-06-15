@@ -6,6 +6,8 @@
 
 After an ordinary `pi update`, no local `npm install` is normally needed.
 
+For command details, environment overrides, and troubleshooting, see [`pi-host-deps/README.md`](./pi-host-deps/README.md).
+
 If switching Node/nvm versions, changing npm global prefix, or moving/reinstalling the global Pi install, refresh the host-package symlinks:
 
 From the Pi config root:
