@@ -7,8 +7,6 @@
 !/agent/extensions/**
 !/agent/skills/
 !/agent/skills/**
-!/agent/skills-disabled/
-!/agent/skills-disabled/**
 
 # Optional shared example configs at agent root
 !/agent/*.example.json
