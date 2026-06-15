@@ -37,6 +37,7 @@ import {
 	saveSubagentPolicyState,
 	type SubagentPolicyMode,
 } from "./policyState.ts";
+import { truncateSubagentVisibleOutput } from "./outputTruncation.ts";
 import {
 	SUBAGENT_MAX_CONCURRENCY_LIMIT,
 	SUBAGENT_MAX_PARALLEL_TASKS_LIMIT,
@@ -67,7 +68,6 @@ import {
 const COMMON_CONCURRENCY_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32] as const;
 const COMMON_MAX_TASK_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32, 48, 64] as const;
 const COLLAPSED_ITEM_COUNT = 10;
-const PER_TASK_OUTPUT_CAP = 50 * 1024;
 const SUBAGENT_TERMINATION_GRACE_MS = 5000;
 const AUTO_MODE_MAX_NON_EXPLICIT_AGENTS = 3;
 const AUTO_MODE_ALLOW_WRITE_CAPABLE_AGENTS = false;
@@ -1466,17 +1466,6 @@ function formatParentEscalationSummary(
 	}
 
 	return lines.join("\n");
-}
-
-function truncateParallelOutput(output: string): string {
-	const byteLength = Buffer.byteLength(output, "utf8");
-	if (byteLength <= PER_TASK_OUTPUT_CAP) return output;
-
-	let truncated = output.slice(0, PER_TASK_OUTPUT_CAP);
-	while (Buffer.byteLength(truncated, "utf8") > PER_TASK_OUTPUT_CAP) {
-		truncated = truncated.slice(0, -1);
-	}
-	return `${truncated}\n\n[Output truncated: ${byteLength - Buffer.byteLength(truncated, "utf8")} bytes omitted. Full output preserved in tool details.]`;
 }
 
 type DisplayItem =
@@ -2981,13 +2970,16 @@ export default function (pi: ExtensionAPI) {
 
 					const isError = isFailedResult(result);
 					if (isError) {
-						const errorMsg = getResultOutput(result);
-						throw new Error(`Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}`);
+						const errorMsg = await truncateSubagentVisibleOutput(getResultOutput(result));
+						throw new Error(`Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg.text}`);
 					}
 					previousOutput = getFinalOutput(result.messages);
 				}
+				const finalOutput = await truncateSubagentVisibleOutput(
+					getFinalOutput(results[results.length - 1].messages) || "(no output)",
+				);
 				return {
-					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
+					content: [{ type: "text", text: finalOutput.text }],
 					details: makeDetails("chain")(results),
 				};
 			}
@@ -3084,13 +3076,15 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				const successCount = results.filter((r) => !isFailedResult(r)).length;
-				const summaries = results.map((r) => {
-					const output = truncateParallelOutput(getResultOutput(r));
-					const status = isFailedResult(r)
-						? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
-						: "completed";
-					return `### [${r.agent}] ${status}\n\n${output}`;
-				});
+				const summaries = await Promise.all(
+					results.map(async (r) => {
+						const output = await truncateSubagentVisibleOutput(getResultOutput(r));
+						const status = isFailedResult(r)
+							? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
+							: "completed";
+						return `### [${r.agent}] ${status}\n\n${output.text}`;
+					}),
+				);
 				return {
 					content: [
 						{
@@ -3136,11 +3130,12 @@ export default function (pi: ExtensionAPI) {
 				}
 				const isError = isFailedResult(result);
 				if (isError) {
-					const errorMsg = getResultOutput(result);
-					throw new Error(`Agent ${result.stopReason || "failed"}: ${errorMsg}`);
+					const errorMsg = await truncateSubagentVisibleOutput(getResultOutput(result));
+					throw new Error(`Agent ${result.stopReason || "failed"}: ${errorMsg.text}`);
 				}
+				const finalOutput = await truncateSubagentVisibleOutput(getFinalOutput(result.messages) || "(no output)");
 				return {
-					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+					content: [{ type: "text", text: finalOutput.text }],
 					details: makeDetails("single")([result]),
 				};
 			}

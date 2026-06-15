@@ -8,7 +8,7 @@
     "check:pi-host-deps": "node scripts/piHostDeps.ts check",
     "typecheck": "npm run check:pi-host-deps && tsc -p tsconfig.json --noEmit",
     "test:permissions": "node --test permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/index.test.ts",
-    "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts"
+    "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts subagent/outputTruncation.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
