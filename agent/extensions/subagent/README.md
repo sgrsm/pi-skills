@@ -1,195 +1,236 @@
 # Subagent extension
 
-Adds multi-agent delegation to Pi via a `subagent` tool.
+Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child runs in its own `pi` process with an isolated context window.
 
 ## What it does
 
-- Spawns isolated child `pi` processes as sub-agents
-- Supports single, parallel, and chained delegation modes
-- Locks each delegated workflow to the parent session's current model/thinking unless explicitly overridden
-- Streams progress/results back to the parent agent
-- Lets delegated child sessions escalate user questions or broader approval needs back to the parent agent
-- Lets the main agent act as orchestrator and merge sub-agent outputs
+- Runs named agent prompts from `~/.pi/agent/agents` and, when opted in, project-local `.pi/agents`.
+- Supports one child, parallel children, or a sequential chain that passes prior output with `{previous}`.
+- Streams partial child results back to the parent and tracks nested subagent activity.
+- Applies policy, depth, trust, and concurrency guardrails before spawning children.
+- Lets delegated children use `escalate_to_parent` to hand user decisions back to the parent session.
 
-## Policy modes
+Use subagents for explicit delegation requests or large work that can be split cleanly. Avoid them for ordinary PR reviews, small diffs, or simple tasks unless the user asks for multi-agent work.
 
-The extension supports 4 global modes, configured with `/subagents`:
+## Slash command
 
-- `off` - disable subagents completely
-- `manual` - only explicit user requests may use subagents
-- `ask` - explicit requests run immediately; otherwise Pi asks before spawning subagents (`Allow once` / `Allow for current session` / `Deny`)
-- `auto` - Pi may autonomously use read-only multi-agent fan-out within guardrails
-
-Default:
-
-- `ask`
+`/subagents` shows the current mode, effective limits, depth, and configured defaults.
 
 Examples:
 
-- `/subagents` - show current mode and effective limits
-- `/subagents ui` - open interactive mode/limit config in the terminal UI
-- `/subagents off`
-- `/subagents manual`
-- `/subagents ask`
-- `/subagents auto`
-- `/subagents concurrency 8`
-- `/subagents concurrency default`
-- `/subagents max-tasks 16`
-- `/subagents max-tasks default`
-- `/subagents reset-limits`
-- `/subagents cancel-session-approval`
-
-## Parallel limits
-
-Effective parallel execution limits now come from merged Pi settings under the custom `subagents` block:
-
-```json
-{
-  "subagents": {
-    "maxConcurrency": 8,
-    "maxParallelTasks": 16,
-    "maxDelegationDepth": 2,
-    "inheritedApprovalScopes": {
-      "consolidator": "read-only",
-      "planner": "read-only",
-      "planner-readonly": "read-only",
-      "reviewer": "read-only",
-      "reviewer-readonly": "read-only",
-      "scout": "read-only",
-      "worker": "read-only"
-    }
-  }
-}
+```text
+/subagents
+/subagents show
+/subagents help
+/subagents ui
+/subagents off
+/subagents manual
+/subagents ask
+/subagents auto
+/subagents concurrency 8
+/subagents concurrency default
+/subagents max-tasks 16
+/subagents max-tasks default
+/subagents reset-limits
+/subagents cancel-session-approval
 ```
 
-Where:
+Behavior:
 
-- `maxConcurrency` = how many subagent processes may run at the same time
-- `maxParallelTasks` = how many tasks a single parallel `subagent` call may request
-- `maxDelegationDepth` = max delegated child depth below the root session; `2` means `root -> first -> second`
-- `inheritedApprovalScopes.<agent>` = override the nested delegation scope inherited by that child agent (`none`, `read-only`, or `all`)
+- `ui` opens a TUI settings screen for mode, max concurrency, and max parallel tasks. It is available only in TUI mode.
+- `off|manual|ask|auto` saves the global policy mode to `~/.pi/agent/subagent-policy.json`.
+- `concurrency` and `max-tasks` save global defaults to `~/.pi/agent/settings.json`.
+- `reset-limits` removes the global `maxConcurrency` and `maxParallelTasks` overrides.
+- `cancel-session-approval` clears the current-session approval created by `ask` mode's `Allow for current session` choice.
 
-Settings are read from the normal Pi locations:
+Argument completion is provided for the command names and common limit values.
 
-- global: `~/.pi/agent/settings.json`
-- project override: `.pi/settings.json`
+## Tool: `subagent`
 
-Notes:
+The tool accepts exactly one execution mode:
 
-- `/subagents ui`, `/subagents concurrency ...`, and `/subagents max-tasks ...` save global defaults to `~/.pi/agent/settings.json`
-- `subagents.maxDelegationDepth`, `subagents.inheritedApprovalScopes`, and `subagents.agentDefaults` are currently edited manually in settings.json
-- project `.pi/settings.json` values still override the effective subagent settings for that project
+- Single: `{ "agent": "scout", "task": "Map the auth package" }`
+- Parallel: `{ "tasks": [{ "agent": "scout", "task": "Inspect auth" }, { "agent": "reviewer-readonly", "task": "Review tests" }] }`
+- Chain: `{ "chain": [{ "agent": "scout", "task": "Gather context" }, { "agent": "planner", "task": "Plan from this context: {previous}" }] }`
 
-Guardrails:
+Common parameters:
 
-- ordinary PR reviews and small tasks should be handled directly unless the user explicitly asks for multi-agent work
-- non-explicit auto mode is capped at 3 agents
-- write-capable agents are not auto-approved without an explicit user request
-- project-local agents require confirmation by default
-- delegated child sessions inherit only read-only nested delegation approval by default, unless `subagents.inheritedApprovalScopes` overrides a child agent's scope
-- delegated child sessions can be capped with `subagents.maxDelegationDepth`; for example, `2` allows `root -> first -> second` and blocks a third nested generation
-- delegated child sessions can use `escalate_to_parent` to ask the parent agent to obtain clarification or broader approval
+- `agent` / `task` - target agent name and delegated instructions.
+- `tasks` - array of independent parallel tasks.
+- `chain` - array of sequential steps; `{previous}` is replaced with the previous step's final output.
+- `cwd` - optional working directory for a child process, resolved relative to the parent `cwd`.
+- `model` - optional per-child model override using the same values as `pi --model`.
+- `thinking` - optional `off`, `minimal`, `low`, `medium`, `high`, or `xhigh` override.
+- `agentScope` - `user` by default; use `project` or `both` to load project-local agents.
+- `confirmProjectAgents` - defaults to `true`; prompts before running repo-controlled project agents.
 
-## Model selection
+Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewer`, `reviewer-readonly`, `worker`, and `consolidator`. Agents are Markdown files with frontmatter such as `name`, `description`, optional `tools`, `model`, and `thinking`. If an agent has a `tools` list, the child process is started with that tool set.
 
-Each top-level `subagent` tool call snapshots the parent session's current model and thinking level, then passes that lock to every child `pi` process in the delegated workflow. This prevents unrelated `/model` changes in other sessions from changing models mid-workflow.
+Project-local agents require a trusted project when `agentScope` is `project` or `both`; `confirmProjectAgents: false` only skips the extra confirmation after trust is established.
 
-Per-subagent selection precedence:
+## Tool: `escalate_to_parent`
 
-1. task-level `model` / `thinking` override
-2. settings.json `subagents.agentDefaults.<agent>.{model,thinking}`
-3. agent frontmatter `model` / `thinking` default
-4. inherited workflow-start model / thinking lock
+`escalate_to_parent` is active only inside delegated child sessions. Top-level calls are blocked.
 
-Supported override fields:
+Parameters:
 
-- single mode: `{ agent, task, model?, thinking?, cwd? }`
-- parallel mode: `tasks: [{ agent, task, model?, thinking?, cwd? }, ...]`
-- chain mode: `chain: [{ agent, task, model?, thinking?, cwd? }, ...]`
+- `requestType` - `clarify` by default, or `approval`.
+- `question` - required question for the parent to ask.
+- `options` - optional focused choices with optional descriptions.
+- `allowCustom` - defaults to `true`.
+- `customPrompt` - optional prefilled custom-answer text.
+- `reason` - optional context for why the child is blocked.
 
-Notes:
+After a child calls this tool, it should stop. The parent receives an escalation summary and, for `clarify` requests with a TUI available, Pi can ask the top-level user through the interactive clarify UI. The parent then decides whether to rerun the child or handle the follow-up directly.
 
-- `model` accepts the same values as `pi --model`, such as `anthropic/claude-sonnet-4-5` or a model alias/pattern.
-- `thinking` accepts `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
-- If you override only `thinking`, the subagent keeps its inherited or agent-default model.
-- If you override only `model`, the subagent still inherits/defaults its thinking level via the precedence above.
-- Settings-based agent defaults override agent frontmatter, so you can change persistent defaults without editing the agent prompt files.
-- Task or agent overrides affect that delegated child invocation. Descendants without their own override still inherit the workflow-start lock.
+## Settings and policy
 
-Example settings:
+Execution settings live under the `subagents` key:
 
 ```json
 {
   "subagents": {
+    "maxParallelTasks": 8,
+    "maxConcurrency": 5,
+    "maxDelegationDepth": null,
+    "inheritedApprovalScopes": {
+      "scout": "read-only"
+    },
     "agentDefaults": {
       "scout": {
         "model": "anthropic/claude-haiku-4-5",
         "thinking": "off"
-      },
-      "planner": {
-        "model": "anthropic/claude-sonnet-4-5",
-        "thinking": "high"
-      },
-      "worker": {
-        "model": "anthropic/claude-sonnet-4-5",
-        "thinking": "high"
       }
     }
   }
 }
 ```
 
-Examples:
+Sources:
 
-- Single: `{ "agent": "scout", "task": "Map the auth code", "model": "anthropic/claude-haiku-4-5", "thinking": "off" }`
-- Parallel task: `{ "agent": "planner", "task": "Create a plan", "model": "anthropic/claude-sonnet-4-5", "thinking": "high" }`
-- Chain step: `{ "agent": "worker", "task": "Implement {previous}", "model": "anthropic/claude-sonnet-4-5", "thinking": "high" }`
+- Global settings: `~/.pi/agent/settings.json`
+- Trusted project override: `.pi/settings.json`
 
-## Built-in agents
+Project settings are ignored unless the project is trusted. Project values override global values; `maxConcurrency` is also clipped to `maxParallelTasks`. Hard caps are 64 parallel tasks per call and 32 concurrent child processes.
 
-Global agent prompts live in `~/.pi/agent/agents/`:
+Keys:
 
-- `scout` - fast codebase discovery, with optional read-only helper delegation when depth allows
-- `planner` - implementation planning, with optional Markdown plan output and read-only helper delegation
-- `planner-readonly` - read-only planning and decomposition
-- `reviewer` - review / correctness / security analysis, with optional Markdown report output, read-only helper delegation, and parent escalation
-- `reviewer-readonly` - read-only review specialist for nested analysis
-- `worker` - general-purpose implementation and analysis, with read-only nested delegation
-- `consolidator` - synthesis/final report writing, with optional read-only helper delegation
+- `maxParallelTasks` - maximum length of a `tasks` array; default `8`.
+- `maxConcurrency` - maximum child processes running at once; default `5`.
+- `maxDelegationDepth` - `null` means unlimited; `0` blocks new subagents; `2` means `root -> first -> second`, and the second-level child cannot delegate again.
+- `inheritedApprovalScopes.<agent>` - nested delegation approval passed to that child: `none`, `read-only`, or `all`.
+- `agentDefaults.<agent>` - default child `model` and/or `thinking`; a string value is treated as a model shorthand.
 
-You can also add project-local agents in `.pi/agents/` inside a repo and opt into them with `agentScope: "both"`.
+The command/UI currently edit only mode, `maxConcurrency`, and `maxParallelTasks`; edit `maxDelegationDepth`, `inheritedApprovalScopes`, and `agentDefaults` by hand.
 
-Agent frontmatter can also set defaults for that named agent:
+Model/thinking selection precedence is:
 
-```markdown
----
-name: scout
-description: Fast recon
-tools: read, grep, find, ls
-model: anthropic/claude-haiku-4-5
-thinking: off
----
+1. tool-call `model` / `thinking`
+2. `subagents.agentDefaults.<agent>`
+3. agent frontmatter defaults
+4. the workflow-start model/thinking lock
+
+Each top-level `subagent` call snapshots the parent session's current model and thinking level. Per-child overrides affect that child invocation, but do not change the workflow lock inherited by deeper descendants.
+
+Policy modes:
+
+- `off` - disables the `subagent` tool.
+- `manual` - only explicit user requests for subagents, delegation, multiple agents, or a named agent are allowed.
+- `ask` - default. Explicit requests run; non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`. Without UI, non-explicit requests are blocked.
+- `auto` - may auto-approve clearly decomposable, non-explicit, read-only multi-agent work within guardrails.
+
+Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `off` mode and depth caps still win.
+
+Auto-mode guardrails for non-explicit use:
+
+- single-agent delegation is not auto-approved;
+- at most 3 agents are auto-approved at once;
+- ordinary PR reviews are not auto-delegated;
+- write-capable, project-local, and unknown agents require approval, or are blocked without UI.
+
+A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
+
+## Examples
+
+Parallel investigation:
+
+```json
+{
+  "tasks": [
+    { "agent": "scout", "task": "Map auth entry points" },
+    { "agent": "scout", "task": "Map caching and persistence" },
+    { "agent": "reviewer-readonly", "task": "Look for risky test gaps" }
+  ]
+}
 ```
 
-## Example prompts
+Sequential handoff:
 
-- `Spawn 3 sub-agents to investigate auth, caching, and tests, then merge the results into one report.`
-- `Use sub-agents to review this refactor from three angles: correctness, performance, and maintainability.`
-- `Have a reviewer write its findings to reports/review.md.`
-- `Have a planner save the implementation plan to docs/implementation-plan.md.`
-- `Ask a reviewer to fan out into focused subreviews, then merge them into one report.`
-- `If a delegated reviewer needs a user decision, have it escalate the question back to the parent agent.`
-- `Delegate discovery to a scout, then create a plan, then have a worker implement it.`
-- `Use a top-level scout to map this package, and let it delegate once to scout or planner-readonly for focused read-only follow-up if needed.`
-- `Use planner-readonly as the top-level agent for a read-only implementation plan, and let it delegate once to scout for discovery or reviewer-readonly for validation.`
-- `Have reviewer write reports/review.md, but keep any delegated children read-only: scout, planner-readonly, or reviewer-readonly.`
+```json
+{
+  "chain": [
+    { "agent": "scout", "task": "Inspect the billing module" },
+    { "agent": "planner", "task": "Create a concise plan from: {previous}" },
+    { "agent": "worker", "task": "Implement the plan: {previous}", "thinking": "high" }
+  ]
+}
+```
 
-## Notes
+Project-local agent:
 
-- In `ask` mode, choosing `Allow for current session` auto-approves later non-explicit subagent requests for the rest of that session, until you run `/subagents cancel-session-approval`.
-- The parent agent remains the orchestrator. It is expected to review sub-agent outputs, de-duplicate them, and present a single final answer to the user.
-- Nested clarification and approval do not bubble to the user automatically. Delegated children should use `escalate_to_parent`, and the parent agent should ask the user at the top level before continuing.
-- When `escalate_to_parent` uses `requestType: "clarify"`, Pi prefers the top-level interactive clarify UI when it is available; otherwise the parent still surfaces the request in text.
-- `escalate_to_parent` is only active inside delegated child sessions, not in the top-level assistant session.
-- Broader nested delegation beyond the inherited read-only scope should be approved or handled by the parent agent explicitly, unless you intentionally configured a broader child scope via `subagents.inheritedApprovalScopes`.
-- With `maxDelegationDepth = 2`, read-only top-level subagents such as `scout`, `planner-readonly`, or `reviewer-readonly` may still delegate once, but their children are leaves.
+```json
+{
+  "agent": "repo-reviewer",
+  "task": "Review the local migration guide",
+  "agentScope": "both"
+}
+```
+
+Child escalation:
+
+```json
+{
+  "requestType": "clarify",
+  "question": "Which compatibility path should I assume?",
+  "options": [
+    { "label": "Keep legacy behavior" },
+    { "label": "Use the new behavior" }
+  ],
+  "reason": "The delegated review depends on product direction."
+}
+```
+
+## Events and hooks
+
+The extension registers these Pi events:
+
+- `session_start` - reloads policy, clears runtime activity, enables child-only escalation when applicable, and refreshes active tools/status.
+- `session_tree` - resyncs active tools and status when navigating session branches.
+- `before_agent_start` - appends current subagent policy, limits, depth, and escalation guidance to the agent prompt.
+- `tool_call` - enforces policy, depth, project trust, and child-only escalation rules before execution.
+- `tool_execution_update` - updates nested runtime activity from streaming child results.
+- `tool_execution_end` - clears per-call approval and activity tracking.
+
+No custom CLI flags or keyboard shortcuts are registered.
+
+## Visual and status indicators
+
+TUI footer status examples:
+
+```text
+subagents: ask •
+subagents: ask (session-approved) •
+subagents: auto • r:2|q:3 •
+subagents: auto • r:2→3|q:2→4 •
+subagents: off •
+```
+
+`r` means running children and `q` means queued children. Arrows show nested delegation depths.
+
+Tool display:
+
+- Calls show `subagent <agent> [scope]`, `subagent parallel (<n> tasks) [scope]`, or `subagent chain (<n> steps) [scope]` with short task previews.
+- Results include an activity tree with statuses such as `[running]`, `[done]`, `[failed]`, and `[waiting on parent/user]`.
+- Icons summarize outcome: `✓` success, `✗` failure, `⏳` running, and `◐` mixed parallel results.
+- Collapsed results show recent output and tool calls; `Ctrl+O` expands full task/output details where available.
+- Very large visible outputs are truncated using Pi's standard limits, with the full output saved to a temporary file and linked in the truncation marker.
