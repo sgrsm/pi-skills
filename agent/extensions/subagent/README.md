@@ -215,17 +215,27 @@ No custom CLI flags or keyboard shortcuts are registered.
 
 ## Visual and status indicators
 
+The footer indicator uses the shared local-extension footer status helper at `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`) for its stable status key/order and to clear legacy footer keys.
+
 TUI footer status examples:
 
 ```text
 subagents: ask •
 subagents: ask (session-approved) •
+subagents: manual •
 subagents: auto • r:2|q:3 •
 subagents: auto • r:2→3|q:2→4 •
 subagents: off •
 ```
 
-`r` means running children and `q` means queued children. Arrows show nested delegation depths.
+Footer state rules:
+
+- In non-TUI contexts, no footer indicator is rendered.
+- Idle TUI sessions show `subagents: <mode> •`, where `<mode>` is `off`, `manual`, `ask`, or `auto`.
+- Ask mode with current-session approval shows `subagents: ask (session-approved) •`.
+- While subagent work is in flight, a runtime activity segment is inserted before the trailing `•`: `r:<counts>` for running children, `q:<counts>` for queued children, or both as `r:<counts>|q:<counts>`.
+- Counts are grouped by delegation depth with `→`; the first number is direct children and later numbers are nested generations. Interior zeroes may appear when deeper generations are active, and trailing zeroes are omitted.
+- When no running or queued tasks remain, the runtime activity segment is omitted.
 
 Tool display:
 

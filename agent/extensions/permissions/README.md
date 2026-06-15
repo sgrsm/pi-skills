@@ -128,7 +128,7 @@ Pi events used:
 
 ## Footer status
 
-In the terminal UI, the extension keeps a footer status visible:
+In the terminal UI, the extension keeps a footer status visible. The status key/order and legacy-key cleanup come from the shared footer status helper imported as `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`).
 
 ```text
 permissions: on •
@@ -137,11 +137,16 @@ permissions: 3 (fs×2, git) •
 permissions: 3 (fs, deps×2) •
 ```
 
-Status details:
+Runtime states:
 
-- `on` - guards are enabled and there are no active grants
-- `off` - guards are disabled
-- number - total active session grants
+- `permissions: on •` - guards are enabled and there are no active session grants
+- `permissions: off •` - guards are disabled for the current session; this disabled state takes precedence over grant counts in the footer
+- `permissions: <n> (...) •` - guards are enabled and there are active session grants from `Allow for current session`
+- no footer item - the terminal UI is unavailable (`hasUI` is false)
+
+Grant detail labels:
+
 - `fs` - file/path grants
 - `git` - git grants
 - `deps` - package/dependency grants
+- `×<n>` - more than one grant in that category

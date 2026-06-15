@@ -80,10 +80,15 @@ If clarify is disabled, the tool call is blocked with: `clarify is disabled. Run
 
 ## UI and status
 
-Footer status:
+Footer status uses the shared helper at `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`) so clarify participates in the managed footer order and clears legacy status keys before writing its current state.
 
-- `clarify: on •`
-- `clarify: off •`
+When the terminal UI is available, possible footer states are:
+
+- `clarify: on •` - clarify is enabled from saved state or `/clarify on`, and the `clarify` tool is active.
+- `clarify: off •` - clarify is disabled by saved state or `/clarify off`, so the tool is removed/blocked.
+- no footer indicator - non-UI mode; the extension cannot write terminal footer status and the agent is told to ask in plain text when clarification is needed.
+
+The status is refreshed on session start and when `/clarify on|off` changes the state.
 
 Interactive selector in TUI mode:
 

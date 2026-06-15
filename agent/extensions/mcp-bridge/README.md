@@ -40,6 +40,10 @@ The bridge supplies the shared MCP behavior; `idea-mcp` owns its config file and
 - `mcpConnector.ts` - connector factory, shared command manager, runtime state, MCP tool wrapping, content formatting, and truncation helpers.
 - `mcpConnector.test.ts` - focused regression tests for notification normalization and MCP text-output truncation behavior.
 
+Related local dependency:
+
+- `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`) - shared footer-key order and legacy status cleanup used by the aggregate MCP footer indicator.
+
 ## Public API and exports
 
 Primary entry point:
@@ -125,13 +129,14 @@ Optional toggle command:
 
 With no argument it reports the connector status. `on` delegates to enable behavior; `off` delegates to disable behavior. Commands provide argument completions for actions and known connector names.
 
-Footer status uses the shared `mcp` footer key:
+Footer status uses the shared `mcp` footer key from `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`):
 
-- `mcp: none` when no connectors are registered.
-- `mcp: <name>` entries when connectors exist.
-- Connector names are dim when disabled and accent-colored when enabled.
+- `mcp: none` appears dim when no connectors are registered.
+- `mcp: <name>` appears when one or more connectors are registered; multiple connectors are ordered by connector id/key and the rendered display names are separated with ` · `.
+- Connector names are dim when disabled.
+- Connector names are accent-colored whenever enabled, including enabled-but-disconnected or connection-failed states.
 
-Detailed connection errors are intentionally kept in command notifications/status lines, not the compact footer.
+Detailed connection errors, connection state, and tool counts are intentionally kept in command notifications/status lines, not the compact footer.
 
 ## Tool wrapping behavior
 

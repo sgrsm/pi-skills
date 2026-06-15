@@ -73,9 +73,12 @@ Search endpoint selection:
 
 ## Status indicator
 
-When the terminal UI is available, the footer shows one dim status item:
+When the terminal UI is available, the footer status is managed through the shared helper at `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`). The helper provides the ordered `webSearch` status key and clears legacy keys before this extension writes its current status.
 
-- `web-search: on •`
-- `web-search: off •`
+The footer shows one dim status item based on runtime state:
+
+- `web-search: on •` - `web_search` is enabled, including the default when no saved state exists.
+- `web-search: off •` - `web_search` is disabled by saved state or `/web-search off`.
+- No footer item - the terminal UI is unavailable.
 
 The status is refreshed on session start and when `/web-search on|off` changes the state.
