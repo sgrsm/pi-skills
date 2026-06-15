@@ -6,12 +6,15 @@ import {
 	type ExtensionAPI,
 	type TruncationOptions,
 	type TruncationResult,
+	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Type } from "typebox";
-import { readFileSync, writeFileSync } from "node:fs";
+import { promises as fs, readFileSync, writeFileSync } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { isHideToolOutputEnabled } from "../shared/hideToolOutputState.ts";
@@ -164,26 +167,51 @@ function notifyMcp(ctx: McpNotifyContext, message: string, type?: McpNotifyType)
 	ctx.ui.notify(message, normalizeMcpNotifyType(type));
 }
 
-function formatMcpTruncationMarker(truncation: TruncationResult): string {
-	const limit =
-		truncation.truncatedBy === "lines"
-			? `${truncation.maxLines} line limit`
-			: truncation.truncatedBy === "bytes"
-				? `${formatSize(truncation.maxBytes)} byte limit`
-				: "configured limit";
-	return `[MCP text output truncated by ${limit}: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output is preserved in tool details.rawResult.]`;
+export interface McpToolContentTruncationOptions extends TruncationOptions {
+	tempFilePrefix?: string;
+	tempFileName?: string;
 }
 
-export function truncateMcpToolContent(content: McpContentBlock[], options: TruncationOptions = {}): McpContentBlock[] {
+export type McpToolContentTruncationResult = {
+	content: McpContentBlock[];
+	truncation?: TruncationResult;
+	fullTextOutputPath?: string;
+};
+
+function formatMcpTruncationLimit(truncation: TruncationResult): string {
+	return truncation.truncatedBy === "lines"
+		? `${truncation.maxLines} line limit`
+		: truncation.truncatedBy === "bytes"
+			? `${formatSize(truncation.maxBytes)} byte limit`
+			: "configured limit";
+}
+
+function formatMcpTruncationMarker(truncation: TruncationResult, fullTextOutputPath: string): string {
+	const limit = formatMcpTruncationLimit(truncation);
+	return `[MCP text output truncated by ${limit}: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full text output saved to: ${fullTextOutputPath}]`;
+}
+
+async function writeMcpTextOutputToTempFile(output: string, options: McpToolContentTruncationOptions): Promise<string> {
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), options.tempFilePrefix ?? "pi-mcp-"));
+	const tempFile = path.join(tempDir, options.tempFileName ?? "text-output.txt");
+	await withFileMutationQueue(tempFile, async () => {
+		await fs.writeFile(tempFile, output, { encoding: "utf8", mode: 0o600 });
+	});
+	return tempFile;
+}
+
+export async function truncateMcpToolContent(content: McpContentBlock[], options: McpToolContentTruncationOptions = {}): Promise<McpToolContentTruncationResult> {
 	const textBlocks = content.filter((block): block is McpTextContentBlock => block.type === "text");
-	if (textBlocks.length === 0) return content;
+	if (textBlocks.length === 0) return { content };
 
 	const combinedText = textBlocks.map((block) => block.text).join("\n");
 	const truncation = truncateHead(combinedText, {
 		maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
 		maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES,
 	});
-	if (!truncation.truncated) return content;
+	if (!truncation.truncated) return { content };
+
+	const fullTextOutputPath = await writeMcpTextOutputToTempFile(combinedText, options);
 
 	// Only text blocks are truncated. Image blocks stay unchanged so existing image handling is preserved.
 	const truncatedContent: McpContentBlock[] = [];
@@ -208,8 +236,8 @@ export function truncateMcpToolContent(content: McpContentBlock[], options: Trun
 		textBlockIndex++;
 	}
 
-	truncatedContent.push({ type: "text", text: formatMcpTruncationMarker(truncation) });
-	return truncatedContent;
+	truncatedContent.push({ type: "text", text: formatMcpTruncationMarker(truncation, fullTextOutputPath) });
+	return { content: truncatedContent, truncation, fullTextOutputPath };
 }
 
 function getMcpTextOutput(
@@ -626,7 +654,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			pi.registerTool({
 				name: piName,
 				label: tool.annotations?.title ?? tool.title ?? tool.name,
-				description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}\nText output returned to the model is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}; full raw MCP results remain in tool details.rawResult. Image content is passed through unchanged.`,
+				description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}\nText output returned to the model is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}. When truncated, the full MCP text output is saved to a temp file path reported in the tool output/details; raw MCP results remain in tool details.rawResult. Image content is passed through unchanged.`,
 				promptSnippet: `Call ${displayName} tool ${tool.name}${tool.description ? `: ${tool.description}` : "."}`,
 				parameters: asObjectSchema(tool.inputSchema),
 				renderResult(result, _options, theme, context) {
@@ -667,8 +695,9 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 					if ("isError" in result && result.isError) {
 						throw new Error(content.map((block) => (block.type === "text" ? block.text : `[${block.mimeType} image]`)).join("\n"));
 					}
+					const truncated = await truncateMcpToolContent(content);
 					return {
-						content: truncateMcpToolContent(content),
+						content: truncated.content,
 						details: {
 							mcpConnector: connectorName,
 							mcpServer: state.serverName,
@@ -676,6 +705,12 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 							piTool: piName,
 							structuredContent: "structuredContent" in result ? result.structuredContent : undefined,
 							rawResult: result,
+							...(truncated.truncation
+								? {
+									truncation: truncated.truncation,
+									fullTextOutputPath: truncated.fullTextOutputPath,
+								}
+								: {}),
 						},
 					};
 				},
