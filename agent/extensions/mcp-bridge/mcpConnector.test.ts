@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import test from "node:test";
-import { normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
+import { formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
 
 const imageBlock = { type: "image" as const, data: "base64-image-data", mimeType: "image/png" };
 
@@ -56,6 +56,40 @@ test("large MCP text output is truncated with a temp-file marker while images ar
 	assert.match(marker?.type === "text" ? marker.text : "", new RegExp(fullTextOutputPath!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 	assert.equal(readFileSync(fullTextOutputPath!, "utf8"), "line 1\nline 2\nline 3\nline 4");
 	assert.equal(result.truncation?.truncated, true);
+
+	rmSync(dirname(fullTextOutputPath!), { recursive: true, force: true });
+});
+
+test("small MCP error output keeps existing text and image formatting", async () => {
+	const content = [
+		{ type: "text" as const, text: "small error" },
+		imageBlock,
+		{ type: "text" as const, text: "more context" },
+	];
+
+	const message = await formatMcpToolErrorMessage(content, { maxLines: 10, maxBytes: 1024 });
+
+	assert.equal(message, "small error\n[image/png image]\nmore context");
+	assert.doesNotMatch(message, /MCP text output truncated/);
+});
+
+test("large MCP error text is truncated with the temp-file marker before throwing", async () => {
+	const content = [
+		{ type: "text" as const, text: "error line 1\nerror line 2" },
+		imageBlock,
+		{ type: "text" as const, text: "error line 3\nerror line 4" },
+	];
+
+	const message = await formatMcpToolErrorMessage(content, { maxLines: 2, maxBytes: 1024 });
+
+	assert.match(message, /^error line 1\nerror line 2\n\[image\/png image\]/);
+	assert.doesNotMatch(message, /error line 3/);
+	assert.match(message, /MCP text output truncated/);
+	assert.match(message, /Full text output saved to:/);
+
+	const fullTextOutputPath = message.match(/Full text output saved to: ([^\]]+)/)?.[1];
+	assert.equal(typeof fullTextOutputPath, "string");
+	assert.equal(readFileSync(fullTextOutputPath!, "utf8"), "error line 1\nerror line 2\nerror line 3\nerror line 4");
 
 	rmSync(dirname(fullTextOutputPath!), { recursive: true, force: true });
 });

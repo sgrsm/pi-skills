@@ -252,6 +252,11 @@ function getMcpTextOutput(
 		.join("\n");
 }
 
+export async function formatMcpToolErrorMessage(content: McpContentBlock[], options: McpToolContentTruncationOptions = {}): Promise<string> {
+	const truncated = await truncateMcpToolContent(content, options);
+	return getMcpTextOutput(truncated.content, false);
+}
+
 function normalizeConnectorName(name: string): string {
 	return name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -693,7 +698,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 					);
 					const content = formatMcpContent("content" in result ? result.content : result);
 					if ("isError" in result && result.isError) {
-						throw new Error(content.map((block) => (block.type === "text" ? block.text : `[${block.mimeType} image]`)).join("\n"));
+						throw new Error(await formatMcpToolErrorMessage(content));
 					}
 					const truncated = await truncateMcpToolContent(content);
 					return {
