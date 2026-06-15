@@ -39,6 +39,13 @@ import {
 } from "./policyState.ts";
 import { truncateSubagentVisibleOutput } from "./outputTruncation.ts";
 import {
+	SubagentFooterActivityTracker,
+	countInitialSubagentTasks,
+	formatSubagentRuntimeActivityStatus,
+	getNestedSubagentFooterActivity,
+	type SubagentFooterActivitySnapshot,
+} from "./footerActivity.ts";
+import {
 	SUBAGENT_MAX_CONCURRENCY_LIMIT,
 	SUBAGENT_MAX_PARALLEL_TASKS_LIMIT,
 	formatSubagentSettingsSource,
@@ -59,7 +66,6 @@ import {
 import {
 	formatParentEscalationSummary as formatParentEscalationSummaryFromUx,
 	formatSubagentActivityTree as formatSubagentActivityTreeFromUx,
-	getMaxSubagentRelativeDepth as getMaxSubagentRelativeDepthFromUx,
 	getParentEscalationsFromMessage as getParentEscalationsFromMessageFromUx,
 	getSubagentCallLabel as getSubagentCallLabelFromUx,
 	resolveInteractiveParentClarifications as resolveInteractiveParentClarificationsFromUx,
@@ -80,7 +86,7 @@ const SUBAGENT_WORKFLOW_MODEL_ENV = "PI_SUBAGENT_WORKFLOW_MODEL";
 const SUBAGENT_WORKFLOW_THINKING_ENV = "PI_SUBAGENT_WORKFLOW_THINKING";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
-const activeSubagentRelativeDepthByToolCallId = new Map<string, number>();
+const subagentFooterActivity = new SubagentFooterActivityTracker();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
 const APPROVAL_OPTION_DENY = "Deny";
@@ -582,16 +588,15 @@ function updateSubagentStatus(
 	executionSettings: LoadedSubagentExecutionSettings = loadSubagentExecutionSettings(ctx.cwd, {
 		projectTrusted: ctx.isProjectTrusted(),
 	}),
+	activity: SubagentFooterActivitySnapshot = subagentFooterActivity.snapshot(),
 ): void {
 	if (!ctx.hasUI) return;
 	clearLegacyFooterStatus(ctx, "subagents");
-	const currentDepth = getDisplayedSubagentDepth();
+	const runtimeActivityStatus = formatSubagentRuntimeActivityStatus(activity);
+	const runtimeActivitySegment = runtimeActivityStatus ? ` • ${runtimeActivityStatus}` : "";
 	ctx.ui.setStatus(
 		SUBAGENT_STATUS_KEY,
-		ctx.ui.theme.fg(
-			"dim",
-			`subagents: ${formatSubagentStatusLabel(mode, sessionApproval)} • c:${executionSettings.limits.maxConcurrency}|t:${executionSettings.limits.maxParallelTasks} • d:${currentDepth}|${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} •`,
-		),
+		ctx.ui.theme.fg("dim", `subagents: ${formatSubagentStatusLabel(mode, sessionApproval)}${runtimeActivitySegment} •`),
 	);
 }
 
@@ -1161,6 +1166,7 @@ interface SubagentDetails {
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	footerActivity?: SubagentFooterActivitySnapshot;
 	parentEscalationResolutions?: ParentEscalationResolution[];
 }
 
@@ -1177,33 +1183,11 @@ function parseSubagentDetails(value: unknown): SubagentDetails | null {
 		agentScope,
 		projectAgentsDir: typeof value.projectAgentsDir === "string" ? value.projectAgentsDir : null,
 		results: value.results.filter(isRecord) as SingleResult[],
+		...(isRecord(value.footerActivity) && Array.isArray(value.footerActivity.runningByDepth) && Array.isArray(value.footerActivity.queuedByDepth)
+			? { footerActivity: value.footerActivity as SubagentFooterActivitySnapshot }
+			: {}),
 		...(resolutions && resolutions.length > 0 ? { parentEscalationResolutions: resolutions } : {}),
 	};
-}
-
-function getActiveSubagentRelativeDepthFromResult(result: unknown): number {
-	if (!isRecord(result)) return 1;
-	const details = parseSubagentDetails(result.details);
-	return details ? getMaxSubagentRelativeDepthFromUx(details) : 1;
-}
-
-function setActiveSubagentRelativeDepth(toolCallId: string, relativeDepth: number): boolean {
-	const normalizedDepth = Math.max(1, Math.floor(relativeDepth));
-	if (activeSubagentRelativeDepthByToolCallId.get(toolCallId) === normalizedDepth) return false;
-	activeSubagentRelativeDepthByToolCallId.set(toolCallId, normalizedDepth);
-	return true;
-}
-
-function clearActiveSubagentRelativeDepth(toolCallId: string): boolean {
-	return activeSubagentRelativeDepthByToolCallId.delete(toolCallId);
-}
-
-function getDisplayedSubagentDepth(): number {
-	let activeRelativeDepth = 0;
-	for (const relativeDepth of activeSubagentRelativeDepthByToolCallId.values()) {
-		activeRelativeDepth = Math.max(activeRelativeDepth, relativeDepth);
-	}
-	return getCurrentSubagentDepth() + activeRelativeDepth;
 }
 
 function getParentEscalationKey(escalation: ParentEscalationDetails): string {
@@ -2170,9 +2154,21 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	function markSubagentExecutionActive(toolCallId: string, ctx: ExtensionContext): void {
-		if (setActiveSubagentRelativeDepth(toolCallId, 1)) {
-			refreshSubagentFooter(ctx);
+	function markSubagentExecutionActive(toolCallId: string, ctx: ExtensionContext, input?: unknown): void {
+		const changed = input !== undefined && subagentFooterActivity.markToolCallActive(toolCallId, countInitialSubagentTasks(input));
+		if (changed) refreshSubagentFooter(ctx);
+	}
+
+	async function runTrackedSubagentTask<T>(
+		toolCallId: string,
+		ctx: ExtensionContext,
+		run: () => Promise<T>,
+	): Promise<T> {
+		if (subagentFooterActivity.startTask(toolCallId)) refreshSubagentFooter(ctx);
+		try {
+			return await run();
+		} finally {
+			if (subagentFooterActivity.finishTask(toolCallId)) refreshSubagentFooter(ctx);
 		}
 	}
 
@@ -2434,7 +2430,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		policyState = loadSubagentPolicyState();
-		activeSubagentRelativeDepthByToolCallId.clear();
+		subagentFooterActivity.clear();
 		setParentEscalationToolEnabled(pi, hasParentEscalationRelay());
 		syncSubagentSessionState(ctx);
 	});
@@ -2460,7 +2456,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_execution_update", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
-		if (setActiveSubagentRelativeDepth(event.toolCallId, getActiveSubagentRelativeDepthFromResult(event.partialResult))) {
+		if (!isRecord(event.partialResult)) return;
+		if (subagentFooterActivity.setNestedActivity(event.toolCallId, getNestedSubagentFooterActivity(event.partialResult.details))) {
 			refreshSubagentFooter(ctx);
 		}
 	});
@@ -2521,7 +2518,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (decision.action === "allow") {
 			delegatedApprovalByToolCallId.set(event.toolCallId, delegatedApprovalScope);
-			markSubagentExecutionActive(event.toolCallId, ctx);
+			markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 			return undefined;
 		}
 		if (decision.action === "block") {
@@ -2543,7 +2540,7 @@ export default function (pi: ExtensionAPI) {
 			persistSessionSubagentApproval(pi, true);
 			updateSubagentStatus(ctx, policyState.mode, true);
 			delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
-			markSubagentExecutionActive(event.toolCallId, ctx);
+			markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 			return undefined;
 		}
 		if (choice !== APPROVAL_OPTION_ALLOW_ONCE) {
@@ -2551,16 +2548,15 @@ export default function (pi: ExtensionAPI) {
 			return { block: true, reason: `Blocked by user: ${decision.reason}` };
 		}
 		delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
-		markSubagentExecutionActive(event.toolCallId, ctx);
+		markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 		return undefined;
 	});
 
 	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
 		delegatedApprovalByToolCallId.delete(event.toolCallId);
-		if (clearActiveSubagentRelativeDepth(event.toolCallId)) {
-			refreshSubagentFooter(ctx);
-		}
+		const activityChanged = subagentFooterActivity.clearToolCall(event.toolCallId);
+		if (activityChanged) refreshSubagentFooter(ctx);
 	});
 
 	pi.registerCommand("subagents", {
@@ -2856,15 +2852,19 @@ export default function (pi: ExtensionAPI) {
 
 			const makeDetails =
 				(mode: "single" | "parallel" | "chain") =>
-				(results: SingleResult[], parentEscalationResolutions?: ParentEscalationResolution[]): SubagentDetails => ({
-					mode,
-					agentScope,
-					projectAgentsDir: projectAgentsDirForDetails,
-					results,
-					...(parentEscalationResolutions && parentEscalationResolutions.length > 0
-						? { parentEscalationResolutions }
-						: {}),
-				});
+				(results: SingleResult[], parentEscalationResolutions?: ParentEscalationResolution[]): SubagentDetails => {
+					const footerActivity = subagentFooterActivity.snapshot();
+					return {
+						mode,
+						agentScope,
+						projectAgentsDir: projectAgentsDirForDetails,
+						results,
+						...(formatSubagentRuntimeActivityStatus(footerActivity) ? { footerActivity } : {}),
+						...(parentEscalationResolutions && parentEscalationResolutions.length > 0
+							? { parentEscalationResolutions }
+							: {}),
+					};
+				};
 
 			const buildParentEscalationResult = async (mode: "single" | "parallel" | "chain", results: SingleResult[]) => {
 				const resolutions = await resolveInteractiveParentClarificationsFromUx(ctx.hasUI ? ctx.ui : null, results);
@@ -2885,6 +2885,10 @@ export default function (pi: ExtensionAPI) {
 					],
 					details: makeDetails("single")([]),
 				};
+			}
+
+			if (subagentFooterActivity.markToolCallActive(toolCallId, countInitialSubagentTasks(params))) {
+				refreshSubagentFooter(ctx);
 			}
 
 			if (agentScope === "project" || agentScope === "both") {
@@ -2940,27 +2944,29 @@ export default function (pi: ExtensionAPI) {
 						step.cwd,
 						settingsLoadOptions,
 					);
-					const result = await runSingleAgent(
-						ctx.cwd,
-						stepDiscovery.agents,
-						{
-							agent: step.agent,
-							task: taskWithContext,
-							cwd: step.cwd,
-							model: step.model,
-							thinking: step.thinking,
-						},
-						i + 1,
-						signal,
-						chainUpdate,
-						workflowModelLock,
-						stepExecutionSettings,
-						resolveInheritedApprovalScopeForAgent(
-							inheritedDelegationApproval,
-							step.agent,
+					const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
+						runSingleAgent(
+							ctx.cwd,
+							stepDiscovery.agents,
+							{
+								agent: step.agent,
+								task: taskWithContext,
+								cwd: step.cwd,
+								model: step.model,
+								thinking: step.thinking,
+							},
+							i + 1,
+							signal,
+							chainUpdate,
+							workflowModelLock,
 							stepExecutionSettings,
+							resolveInheritedApprovalScopeForAgent(
+								inheritedDelegationApproval,
+								step.agent,
+								stepExecutionSettings,
+							),
+							makeDetails("chain"),
 						),
-						makeDetails("chain"),
 					);
 					results.push(result);
 
@@ -3036,33 +3042,35 @@ export default function (pi: ExtensionAPI) {
 							t.cwd,
 							settingsLoadOptions,
 						);
-						const result = await runSingleAgent(
-							ctx.cwd,
-							taskDiscovery.agents,
-							{
-								agent: t.agent,
-								task: t.task,
-								cwd: t.cwd,
-								model: t.model,
-								thinking: t.thinking,
-							},
-							undefined,
-							signal,
-							// Per-task update callback
-							(partial) => {
-								if (partial.details?.results[0]) {
-									allResults[index] = partial.details.results[0];
-									emitParallelUpdate();
-								}
-							},
-							workflowModelLock,
-							taskExecutionSettings,
-							resolveInheritedApprovalScopeForAgent(
-								inheritedDelegationApproval,
-								t.agent,
+						const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
+							runSingleAgent(
+								ctx.cwd,
+								taskDiscovery.agents,
+								{
+									agent: t.agent,
+									task: t.task,
+									cwd: t.cwd,
+									model: t.model,
+									thinking: t.thinking,
+								},
+								undefined,
+								signal,
+								// Per-task update callback
+								(partial) => {
+									if (partial.details?.results[0]) {
+										allResults[index] = partial.details.results[0];
+										emitParallelUpdate();
+									}
+								},
+								workflowModelLock,
 								taskExecutionSettings,
+								resolveInheritedApprovalScopeForAgent(
+									inheritedDelegationApproval,
+									t.agent,
+									taskExecutionSettings,
+								),
+								makeDetails("parallel"),
 							),
-							makeDetails("parallel"),
 						);
 						allResults[index] = result;
 						emitParallelUpdate();
@@ -3097,33 +3105,37 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (params.agent && params.task) {
+				const singleAgent = params.agent;
+				const singleTask = params.task;
 				const taskDiscovery = resolveDiscovery(params.cwd);
 				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
 					ctx.cwd,
 					params.cwd,
 					settingsLoadOptions,
 				);
-				const result = await runSingleAgent(
-					ctx.cwd,
-					taskDiscovery.agents,
-					{
-						agent: params.agent,
-						task: params.task,
-						cwd: params.cwd,
-						model: params.model,
-						thinking: params.thinking,
-					},
-					undefined,
-					signal,
-					onUpdate,
-					workflowModelLock,
-					taskExecutionSettings,
-					resolveInheritedApprovalScopeForAgent(
-						inheritedDelegationApproval,
-						params.agent,
+				const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
+					runSingleAgent(
+						ctx.cwd,
+						taskDiscovery.agents,
+						{
+							agent: singleAgent,
+							task: singleTask,
+							cwd: params.cwd,
+							model: params.model,
+							thinking: params.thinking,
+						},
+						undefined,
+						signal,
+						onUpdate,
+						workflowModelLock,
 						taskExecutionSettings,
+						resolveInheritedApprovalScopeForAgent(
+							inheritedDelegationApproval,
+							singleAgent,
+							taskExecutionSettings,
+						),
+						makeDetails("single"),
 					),
-					makeDetails("single"),
 				);
 				if (hasParentEscalations(result)) {
 					return buildParentEscalationResult("single", [result]);
