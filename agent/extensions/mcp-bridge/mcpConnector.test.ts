@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import { formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
+import { pathToFileURL } from "node:url";
+import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { createMcpConnector, formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
 
 const imageBlock = { type: "image" as const, data: "base64-image-data", mimeType: "image/png" };
 
@@ -17,6 +20,64 @@ test("MCP notification types are normalized to Pi 0.79 supported values", () => 
 test("MCP bridge no longer passes success directly to ctx.ui.notify", () => {
 	const source = readFileSync(new URL("./mcpConnector.ts", import.meta.url), "utf8");
 	assert.equal(/\.notify\([\s\S]*?,\s*"success"\s*\)/.test(source), false);
+});
+
+test("aggregate MCP footer separates multiple connector display names with comma-space", async () => {
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-mcp-footer-test-"));
+	let activeTools: string[] = [];
+	const sessionStartHandlers: Array<(event: unknown, ctx: unknown) => unknown> = [];
+	const pi = {
+		appendEntry() {},
+		getActiveTools: () => activeTools,
+		on(event: string, handler: (event: unknown, ctx: unknown) => unknown) {
+			if (event === "session_start") sessionStartHandlers.push(handler);
+		},
+		registerCommand() {},
+		registerTool() {},
+		setActiveTools(names: string[]) {
+			activeTools = names;
+		},
+	};
+	const writeConfig = (name: string) => {
+		const filePath = join(tempDir, `${name}.json`);
+		writeFileSync(filePath, `${JSON.stringify({ type: "streamable-http", url: `http://127.0.0.1:1/${name}`, enabled: false }, null, 2)}\n`);
+		return pathToFileURL(filePath);
+	};
+
+	try {
+		await createMcpConnector(pi as never, {
+			connectorName: "zeta",
+			extensionName: "zeta-mcp",
+			displayName: "Zeta MCP",
+			toolPrefix: "zeta_",
+			configUrl: writeConfig("zeta"),
+		});
+		await createMcpConnector(pi as never, {
+			connectorName: "alpha",
+			extensionName: "alpha-mcp",
+			displayName: "Alpha MCP",
+			toolPrefix: "alpha_",
+			configUrl: writeConfig("alpha"),
+		});
+
+		const statuses = new Map<string, string | undefined>();
+		const ctx = {
+			sessionManager: { getBranch: () => [] },
+			ui: {
+				setStatus: (key: string, value: string | undefined) => statuses.set(key, value),
+				theme: { fg: (_color: string, text: string) => text },
+			},
+		};
+		for (const handler of sessionStartHandlers) {
+			await handler(undefined, ctx);
+		}
+
+		const footerStatus = statuses.get(FOOTER_STATUS_KEYS.mcp) ?? "";
+		assert.equal(footerStatus, "mcp: alpha, zeta");
+		assert.doesNotMatch(footerStatus, / · /);
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
 });
 
 test("small MCP text output and image blocks are preserved without truncation metadata", async () => {

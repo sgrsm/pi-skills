@@ -94,7 +94,7 @@ type McpSessionStateEntry = { type?: string; customType?: string; data?: unknown
 type McpSessionStateContext = McpStatusContext & { sessionManager: { getBranch: () => McpSessionStateEntry[] } };
 
 const MCP_STATUS_KEY = FOOTER_STATUS_KEYS.mcp;
-const ENABLED_MCP_SEPARATOR = " · ";
+const ENABLED_MCP_SEPARATOR = ", ";
 const MCP_SESSION_STATE_CUSTOM_TYPE = "mcp-connector-state";
 
 type McpConnectorRuntime = {

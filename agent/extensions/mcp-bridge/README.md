@@ -132,7 +132,7 @@ With no argument it reports the connector status. `on` delegates to enable behav
 Footer status uses the shared `mcp` footer key from `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`):
 
 - `mcp: none` appears dim when no connectors are registered.
-- `mcp: <name>` appears when one or more connectors are registered; multiple connectors are ordered by connector id/key and the rendered display names are separated with ` · `.
+- `mcp: <name>` appears when one or more connectors are registered; multiple connectors are ordered by connector id/key and the rendered display names are separated with `, `.
 - Connector names are dim when disabled.
 - Connector names are accent-colored whenever enabled, including enabled-but-disconnected or connection-failed states.
 
