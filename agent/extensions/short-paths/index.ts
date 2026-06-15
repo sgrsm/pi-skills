@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import { getShortPathsState, saveShortPathsState } from "../shared/shortPathsState.ts";
+import { getShortPathsState, saveShortPathsState } from "./state.ts";
 
 type ShortPathsMode = "on" | "off";
 
@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
-export { getShortPathsState, saveShortPathsState } from "../shared/shortPathsState.ts";
+export { getShortPathsState, saveShortPathsState } from "./state.ts";
 export {
   renderSmartToolCall,
   renderSmartVisibleToolCall,

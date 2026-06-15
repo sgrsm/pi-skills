@@ -17,7 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
-import { isHideToolOutputEnabled } from "../shared/hideToolOutputState.ts";
+import { isHideToolOutputEnabled } from "../hide-tool-output/state.ts";
 
 export type McpConfig = {
 	type: "streamable-http";

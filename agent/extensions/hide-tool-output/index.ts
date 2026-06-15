@@ -15,7 +15,7 @@ import {
   loadHideToolOutputState,
   saveHideToolOutputState,
   type HideToolOutputState,
-} from "../shared/hideToolOutputState.ts";
+} from "./state.ts";
 import {
   getShortPathsState,
   renderSmartToolCall,
