@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
-import { createMcpConnector, formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
+import { createMcpConnector, formatMcpFooterStatus, formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
 
 const imageBlock = { type: "image" as const, data: "base64-image-data", mimeType: "image/png" };
 
@@ -20,6 +20,18 @@ test("MCP notification types are normalized to Pi 0.79 supported values", () => 
 test("MCP bridge no longer passes success directly to ctx.ui.notify", () => {
 	const source = readFileSync(new URL("./mcpConnector.ts", import.meta.url), "utf8");
 	assert.equal(/\.notify\([\s\S]*?,\s*"success"\s*\)/.test(source), false);
+});
+
+test("aggregate MCP footer colors the label like active connectors when any connector is enabled", () => {
+	const footerStatus = formatMcpFooterStatus(
+		[
+			{ name: "alpha", displayName: "Alpha MCP", enabled: false },
+			{ name: "zeta", displayName: "Zeta MCP", enabled: true },
+		],
+		{ fg: (color: string, text: string) => `<${color}>${text}</${color}>` },
+	);
+
+	assert.equal(footerStatus, "<accent>mcp: </accent><dim>alpha</dim><dim>, </dim><accent>zeta</accent>");
 });
 
 test("aggregate MCP footer separates multiple connector display names with comma-space", async () => {

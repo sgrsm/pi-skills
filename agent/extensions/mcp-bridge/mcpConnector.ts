@@ -85,7 +85,8 @@ export type McpContentBlock = McpTextContentBlock | McpImageContentBlock;
 type PiNotifyType = "info" | "warning" | "error";
 export type McpNotifyType = PiNotifyType | "success";
 type McpStatusColor = "dim" | "accent";
-type McpStatusContext = { ui: { setStatus: (key: string, value: string | undefined) => void; theme: { fg: (color: McpStatusColor, text: string) => string } } };
+type McpStatusTheme = { fg: (color: McpStatusColor, text: string) => string };
+type McpStatusContext = { ui: { setStatus: (key: string, value: string | undefined) => void; theme: McpStatusTheme } };
 type McpNotifyContext = { ui: { notify: (message: string, type?: PiNotifyType) => void } };
 type McpCommandContext = McpStatusContext & McpNotifyContext;
 type McpEnabledScope = "global" | "session";
@@ -375,28 +376,37 @@ function knownConnectorText(manager: McpManager): string {
 	return names.length > 0 ? names.join(", ") : "none";
 }
 
-function statusDisplayName(connector: McpConnectorRuntime): string {
+type McpFooterConnectorStatus = { name: string; displayName: string; enabled: boolean };
+const ACTIVE_MCP_STATUS_COLOR: McpStatusColor = "accent";
+const INACTIVE_MCP_STATUS_COLOR: McpStatusColor = "dim";
+
+function statusDisplayName(connector: { name: string; displayName: string }): string {
 	const name = connector.displayName.trim().replace(/\s+MCP$/i, "").trim();
 	return (name || connector.name).toLowerCase();
 }
 
-function updateMcpStatus(manager: McpManager, ctx: McpStatusContext): void {
-	clearLegacyFooterStatus(ctx, "mcp");
-	const connectors = connectorNames(manager).map((name) => manager.connectors.get(name)!);
-	if (connectors.length === 0) {
-		ctx.ui.setStatus(MCP_STATUS_KEY, ctx.ui.theme.fg("dim", "mcp: none"));
-		return;
-	}
+export function formatMcpFooterStatus(connectors: readonly McpFooterConnectorStatus[], theme: McpStatusTheme): string {
+	if (connectors.length === 0) return theme.fg(INACTIVE_MCP_STATUS_COLOR, "mcp: none");
 
-	let text = ctx.ui.theme.fg("dim", "mcp: ");
+	const labelColor = connectors.some((connector) => connector.enabled) ? ACTIVE_MCP_STATUS_COLOR : INACTIVE_MCP_STATUS_COLOR;
+	let text = theme.fg(labelColor, "mcp: ");
 	for (const [index, connector] of connectors.entries()) {
 		if (index > 0) {
-			text += ctx.ui.theme.fg("dim", ENABLED_MCP_SEPARATOR);
+			text += theme.fg(INACTIVE_MCP_STATUS_COLOR, ENABLED_MCP_SEPARATOR);
 		}
-		text += ctx.ui.theme.fg(connector.state.enabled ? "accent" : "dim", statusDisplayName(connector));
+		text += theme.fg(connector.enabled ? ACTIVE_MCP_STATUS_COLOR : INACTIVE_MCP_STATUS_COLOR, statusDisplayName(connector));
 	}
 
-	ctx.ui.setStatus(MCP_STATUS_KEY, text);
+	return text;
+}
+
+function updateMcpStatus(manager: McpManager, ctx: McpStatusContext): void {
+	clearLegacyFooterStatus(ctx, "mcp");
+	const connectors = connectorNames(manager).map((name) => {
+		const connector = manager.connectors.get(name)!;
+		return { name: connector.name, displayName: connector.displayName, enabled: connector.state.enabled };
+	});
+	ctx.ui.setStatus(MCP_STATUS_KEY, formatMcpFooterStatus(connectors, ctx.ui.theme));
 }
 
 function getArgumentCompletions(manager: McpManager, prefix: string) {
