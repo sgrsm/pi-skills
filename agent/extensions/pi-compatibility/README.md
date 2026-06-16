@@ -15,7 +15,7 @@ Developer/internal compatibility checks for local Pi extensions. This directory 
 Protects Pi custom-tool API assumptions used by extensions that register tools.
 
 - Scans `clarify/index.ts`, `web-search/index.ts`, and `subagent/index.ts` for `return { ... isError: true ... }` from tool execution paths.
-- The invariant is that Pi 0.79-style custom tool failures should throw `Error` from `execute()` instead of returning a successful-looking tool result marked with `isError: true`.
+- The invariant is that Pi custom-tool failures should throw `Error` from `execute()` instead of returning a successful-looking tool result marked with `isError: true`.
 - Checks the `escalate_to_parent` tool metadata in `subagent/index.ts`.
 - The invariant is that `promptSnippet` and every `promptGuidelines` entry for `escalate_to_parent` name the tool explicitly. Pi can compose tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 
@@ -48,7 +48,7 @@ Prefer the owning extension's own test file for normal feature behavior. Keep th
 - Keep tests small and explicit; use `node:test` and `node:assert/strict` like the existing files.
 - Prefer exported helper predicates for behavior checks instead of constructing full UI/runtime objects.
 - If scanning source text, keep the scanned file list narrow and explain the host contract in the test name.
-- When adding a new custom tool that follows the Pi 0.79 failure contract, either add its file to the scoped list in `extension-api.test.ts` or add a more targeted assertion if a source scan would be too brittle.
+- When adding a new custom tool that follows the Pi custom-tool failure contract, either add its file to the scoped list in `extension-api.test.ts` or add a more targeted assertion if a source scan would be too brittle.
 - If a new TUI-only surface is added, expose a small `can...` helper and extend `ui-mode-guards.test.ts` so `rpc` with `hasUI: true` remains covered.
 
 ## Commands

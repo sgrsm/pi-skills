@@ -8,7 +8,7 @@ const scopedExtensionFiles = [
 	"../subagent/index.ts",
 ] as const;
 
-test("Pi 0.79 custom tools do not return isError: true from execute failures", () => {
+test("custom tools throw from execute failures instead of returning isError: true", () => {
 	for (const relativePath of scopedExtensionFiles) {
 		const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
 		assert.equal(

@@ -9,7 +9,7 @@ import { createMcpConnector, formatMcpFooterStatus, formatMcpToolErrorMessage, n
 
 const imageBlock = { type: "image" as const, data: "base64-image-data", mimeType: "image/png" };
 
-test("MCP notification types are normalized to Pi 0.79 supported values", () => {
+test("MCP notification types are normalized to Pi-supported notification values", () => {
 	assert.equal(normalizeMcpNotifyType("success"), "info");
 	assert.equal(normalizeMcpNotifyType("info"), "info");
 	assert.equal(normalizeMcpNotifyType("warning"), "warning");
