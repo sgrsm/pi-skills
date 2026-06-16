@@ -11,6 +11,8 @@ Prompts before:
 - `write` or `edit` tool calls targeting paths outside `cwd`
 - `bash` commands that appear to mutate paths outside `cwd`, including deletes, write redirections, `mv`, `mkdir`, `touch`, `truncate`, `ln`, `chmod`, `chown`, `chgrp`, `cp`/`install` destinations, `tee`, `sed -i`, and `find -delete`
 
+Output suppression to the exact null device (`>/dev/null`, `2>/dev/null`, `&>/dev/null`, append variants, or `tee /dev/null`) is ignored. Other destructive or metadata-changing operations against `/dev/null`, such as `rm /dev/null` or `chmod /dev/null`, are still guarded.
+
 Paths inside the current working directory are not guarded by this extension.
 
 ### Git mutations on existing non-agent branches
@@ -101,6 +103,9 @@ npm test
 npm run build
 mvn test
 gradle build
+some-command >/dev/null
+some-command 2>/dev/null
+some-command | tee /dev/null
 ```
 
 ## Tools, flags, and events

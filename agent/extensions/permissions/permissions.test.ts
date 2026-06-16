@@ -79,6 +79,44 @@ test("bash write-like mutations outside cwd are detected but read-only commands 
 	]);
 });
 
+test("bash ignores output suppression to /dev/null via redirection and tee", () => {
+	for (const command of [
+		"echo hello >/dev/null",
+		"echo hello > /dev/null",
+		"echo hello 1>/dev/null",
+		"echo hello 2>/dev/null",
+		"echo hello >>/dev/null",
+		"echo hello 2>>/dev/null",
+		"echo hello &>/dev/null",
+		"echo hello &>>/dev/null",
+		"printf hi | tee /dev/null",
+	]) {
+		assert.equal(analyzeBashMutation(command, cwd), undefined, command);
+	}
+});
+
+test("bash ignores only /dev/null output targets while preserving other tee targets", () => {
+	const request = analyzeBashMutation("printf hi | tee /dev/null /tmp/pi-permissions/out.txt", cwd);
+	assert.ok(request);
+	assert.deepEqual(request.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+		{ operation: "bash-mutate", path: "/tmp/pi-permissions/out.txt", scopeDir: "/tmp/pi-permissions/out.txt" },
+	]);
+});
+
+test("bash still guards destructive or metadata-changing operations against /dev/null", () => {
+	const deleted = analyzeBashMutation("rm /dev/null", cwd);
+	assert.ok(deleted);
+	assert.deepEqual(deleted.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+		{ operation: "delete", path: "/dev/null", scopeDir: "/dev/null" },
+	]);
+
+	const chmodded = analyzeBashMutation("chmod 666 /dev/null", cwd);
+	assert.ok(chmodded);
+	assert.deepEqual(chmodded.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+		{ operation: "bash-mutate", path: "/dev/null", scopeDir: "/dev/null" },
+	]);
+});
+
 test("bash mutation detection tracks simple cd commands before relative targets", () => {
 	assert.equal(analyzeBashMutation("cd src && rm generated.txt", cwd), undefined);
 

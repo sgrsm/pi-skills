@@ -30,6 +30,7 @@ const PATH_MUTATION_COMMANDS = new Set(["mv", "mkdir", "touch", "truncate", "ln"
 const OWNERSHIP_OR_MODE_COMMANDS = new Set(["chmod", "chown", "chgrp"]);
 const COPY_LIKE_COMMANDS = new Set(["cp", "install"]);
 const TEE_COMMANDS = new Set(["tee"]);
+const NULL_DEVICE_PATH = "/dev/null";
 const SUDO_OPTIONS_WITH_VALUE = new Set([
 	"-u",
 	"--user",
@@ -190,8 +191,9 @@ export function analyzeBashMutation(command: string, cwd: string): PermissionReq
 		}
 
 		if (TEE_COMMANDS.has(commandName)) {
+			const outputTargets = getNonOptionArgs(args).filter((arg) => !resolvesToNullDevice(arg, effectiveCwd));
 			targets.push(
-				...targetsFromArgs(getNonOptionArgs(args), "bash-mutate", "tee output", effectiveCwd, cwd, "path", includePlainRelative),
+				...targetsFromArgs(outputTargets, "bash-mutate", "tee output", effectiveCwd, cwd, "path", includePlainRelative),
 			);
 			continue;
 		}
@@ -229,6 +231,10 @@ function normalizePath(pathValue: string): string {
 
 function stripLeadingAt(pathValue: string): string {
 	return pathValue.startsWith("@") ? pathValue.slice(1) : pathValue;
+}
+
+function resolvesToNullDevice(rawPath: string | undefined, cwd: string): boolean {
+	return resolvePathArgument(rawPath, cwd) === NULL_DEVICE_PATH;
 }
 
 function resolvePathArgument(rawPath: string | undefined, cwd: string): string | undefined {
@@ -312,7 +318,7 @@ function collectRedirectionTargets(
 		const token = tokens[index];
 		if (!token || !isWriteRedirection(token)) continue;
 		const targetArg = tokens[index + 1];
-		if (!targetArg || targetArg.startsWith("&")) continue;
+		if (!targetArg || targetArg.startsWith("&") || resolvesToNullDevice(targetArg, resolveCwd)) continue;
 		targets.push(
 			...targetsFromArgs([targetArg], "bash-mutate", "shell redirection", resolveCwd, guardCwd, "path", includePlainRelative),
 		);
