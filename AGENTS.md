@@ -1,19 +1,26 @@
-- when creating custom extension, always create dedicated folder:
-  correct:     `extensions/<extension_name>/index.ts`
-  NOT correct: `extensions/<extension_name>.ts`
+# Local Agent Guidance
 
-- for non-trivial changes to executable code in this repo, especially under `extensions/`, prefer a test-first workflow:
-  1. write or update focused tests that capture the requirement, expected behavior, or bug reproduction;
-  2. implement or change the code to satisfy those tests.
+Applies to work in this local `.pi` config repo.
 
-- use the existing test framework and conventions in the repo; do not introduce a new test framework unless explicitly asked.
+## Extensions
 
-- when modifying existing code that predates this guidance and lacks tests, do not treat the absence of tests as a blocker; instead, when practical, add the smallest focused test that captures the changed behavior, bug fix, or requirement.
+- New custom extensions go in `agent/extensions/<name>/index.ts`, not `agent/extensions/<name>.ts`.
+- Before changing extension dependencies or Pi host-package links, read `agent/extensions/maintenance.md`.
 
-- do not backfill broad test coverage unless explicitly asked; prefer narrow regression or characterization tests around the code being changed.
+## Human-Facing READMEs
 
-- exceptions: docs, comments, formatting, simple config changes, and purely mechanical refactors do not require test-first work.
+- New extensions/skills must include a directory-local `README.md`; update it when behavior, usage, requirements, commands/tools, examples, or troubleshooting changes.
+- Skill READMEs: quickstart cheat sheets with when to use, useful inputs, example prompts, expected output, and links to deeper files. Avoid copying `SKILL.md` except brief summaries that save navigation.
+- Extension READMEs: fuller usage docs covering purpose, commands/tools, configuration, requirements, how-tos, behavior notes, and troubleshooting.
+- Follow nearby READMEs for style.
 
-- if test-first is impractical, explain why and use another validation method.
+## Testing and Validation
 
-- for local extension dependency maintenance, see `agent/extensions/maintenance.md`.
+- For non-trivial executable-code changes, default to test-first:
+  1. Add/update focused tests for the requirement, expected behavior, or regression.
+  2. Implement the change.
+  3. Run focused tests and relevant typecheck/lint when practical; report skipped validation and why.
+- Use existing test frameworks/conventions; do not add a new framework unless explicitly asked.
+- If changed code lacks tests, add the smallest practical focused test; do not backfill broad coverage unless asked.
+- Docs, comments, formatting, simple config changes, and mechanical refactors do not require test-first. Executable-code refactors still need relevant validation when practical.
+- If test-first is impractical, explain why and use another validation method.
