@@ -4,7 +4,7 @@ These fixtures calibrate `java-clean-code`, `java-clean-solid`, and `java-clean-
 
 ## Quick check
 
-Run the structural fixture check from `/Users/sergey/.pi`:
+Run the structural fixture check from `~/.pi`:
 
 ```bash
 agent/skills/java-clean-shared/examples/check-fixtures.sh

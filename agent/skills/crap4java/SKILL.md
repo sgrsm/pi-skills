@@ -28,7 +28,7 @@ Use this skill when the user wants a CRAP analysis for a Java project.
 - `--changed` analyzes changed Java files under `src/` as detected by crap4java, currently local working-tree changes rather than branch-diff ranges.
 - For branch-diff checks such as `main...HEAD`, collect explicit Java paths with Git and pass existing files as targeted paths. Skip deleted files because they cannot be analyzed in the current checkout.
 - Explicit paths can be passed to analyze specific files, source directories, or module directories. In multi-module repositories, run from the relevant Maven module root and pass paths relative to that root.
-- The jar path defaults to `/Users/sergey/dev/crap4java/target/crap4java-0.1.0-SNAPSHOT.jar`.
+- The jar path defaults to `~/dev/crap4java/target/crap4java-0.1.0-SNAPSHOT.jar`.
 - The jar path can be overridden with `CRAP4JAVA_JAR`.
 - The Java executable used to launch the scanner can be overridden with `CRAP4JAVA_JAVA`.
 
@@ -51,18 +51,18 @@ Use this skill when the user wants a CRAP analysis for a Java project.
 For quick console output:
 
 ```bash
-/Users/sergey/.pi/agent/skills/crap4java/scripts/scan.sh <project-root>
-/Users/sergey/.pi/agent/skills/crap4java/scripts/scan.sh <project-root> --changed
-/Users/sergey/.pi/agent/skills/crap4java/scripts/scan.sh <project-root> <path...>
+"$HOME/.pi/agent/skills/crap4java/scripts/scan.sh" <project-root>
+"$HOME/.pi/agent/skills/crap4java/scripts/scan.sh" <project-root> --changed
+"$HOME/.pi/agent/skills/crap4java/scripts/scan.sh" <project-root> <path...>
 ```
 
 For a saved viewer-friendly artifact:
 
 ```bash
-/Users/sergey/.pi/agent/skills/crap4java/scripts/report.sh <project-root>
-/Users/sergey/.pi/agent/skills/crap4java/scripts/report.sh <project-root> --changed
-/Users/sergey/.pi/agent/skills/crap4java/scripts/report.sh <project-root> --output-dir <dir>
-/Users/sergey/.pi/agent/skills/crap4java/scripts/report.sh <project-root> -- <path...>
+"$HOME/.pi/agent/skills/crap4java/scripts/report.sh" <project-root>
+"$HOME/.pi/agent/skills/crap4java/scripts/report.sh" <project-root> --changed
+"$HOME/.pi/agent/skills/crap4java/scripts/report.sh" <project-root> --output-dir <dir>
+"$HOME/.pi/agent/skills/crap4java/scripts/report.sh" <project-root> -- <path...>
 ```
 
 5. If the project is multi-module and the root scan fails or is too broad, retry from a more specific module root or pass explicit module directories.
@@ -111,4 +111,4 @@ If the scan fails:
 - Prefer the wrapper scripts over calling the jar directly.
 - Both wrappers change into the project root before invoking the jar.
 - `report.sh` saves Markdown, JSON, and raw text output files.
-- See [usage notes](references/usage.md) for observed local behavior, report defaults, and examples.
+- See [scanner notes](references/scanner-notes.md) for observed jar behavior, execution quirks, and output shape.

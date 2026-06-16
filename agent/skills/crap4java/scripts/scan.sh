@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-JAR="${CRAP4JAVA_JAR:-/Users/sergey/dev/crap4java/target/crap4java-0.1.0-SNAPSHOT.jar}"
+JAR="${CRAP4JAVA_JAR:-$HOME/dev/crap4java/target/crap4java-0.1.0-SNAPSHOT.jar}"
 JAVA_BIN="${CRAP4JAVA_JAVA:-java}"
 
 usage() {
