@@ -17,6 +17,14 @@ function readOnlyParallelSummary(taskCount: number) {
 	};
 }
 
+function readOnlySingleSummary() {
+	return {
+		...readOnlyParallelSummary(1),
+		requestMode: "single" as const,
+		requestedTasks: [{ agent: "scout", task: "Inspect one area" }],
+	};
+}
+
 test("auto mode does not add a hard 3-agent cap beyond execution limits", () => {
 	const decision = evaluateSubagentPolicy(
 		"auto",
@@ -77,4 +85,41 @@ test("manual mode allows explicit requests and blocks non-explicit top-level req
 		evaluateSubagentPolicy("manual", readOnlyParallelSummary(4), false, "Audit this", true, "none", false).action,
 		"block",
 	);
+});
+
+test("ask session approval follows auto-equivalent guardrails", () => {
+	assert.equal(
+		evaluateSubagentPolicy("ask", readOnlyParallelSummary(5), false, "Audit this codebase", false, "none", true).action,
+		"allow",
+	);
+	assert.equal(
+		evaluateSubagentPolicy("ask", readOnlySingleSummary(), false, "Inspect auth", false, "none", true).action,
+		"block",
+	);
+});
+
+test("non-explicit project-local and unknown agents require approval in auto-equivalent policy", () => {
+	const projectSummary = {
+		...readOnlyParallelSummary(2),
+		requestedTasks: [
+			{ agent: "repo-reviewer", task: "Review repo area A" },
+			{ agent: "repo-reviewer", task: "Review repo area B" },
+		],
+		requestedAgents: ["repo-reviewer"],
+		projectAgents: ["repo-reviewer"],
+	};
+	const unknownSummary = {
+		...readOnlyParallelSummary(2),
+		requestedTasks: [
+			{ agent: "missing-agent", task: "Review area A" },
+			{ agent: "missing-agent", task: "Review area B" },
+		],
+		requestedAgents: ["missing-agent"],
+		unknownAgents: ["missing-agent"],
+	};
+
+	assert.equal(evaluateSubagentPolicy("auto", projectSummary, false, "Audit this", true, "none", false).action, "ask");
+	assert.equal(evaluateSubagentPolicy("auto", projectSummary, false, "Audit this", false, "none", false).action, "block");
+	assert.equal(evaluateSubagentPolicy("ask", unknownSummary, false, "Audit this", true, "none", true).action, "ask");
+	assert.equal(evaluateSubagentPolicy("ask", unknownSummary, false, "Audit this", false, "none", true).action, "block");
 });

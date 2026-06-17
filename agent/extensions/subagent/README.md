@@ -136,8 +136,8 @@ Policy modes:
 
 - `off` - disables the `subagent` tool.
 - `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
-- `ask` - default. Uses the same delegation eligibility as `auto`, but explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve clearly decomposable, non-explicit, read-only multi-agent work within configured task/concurrency limits; write-capable agents require approval unless explicitly requested.
+- `ask` - default. Uses the same delegation eligibility as `auto`, but explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
+- `auto` - may auto-approve eligible non-explicit read-only multi-agent work within configured task/concurrency limits; write-capable, project-local, and unknown agents require approval unless explicitly requested.
 
 Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
 
@@ -149,7 +149,7 @@ Shared delegation guardrails for `manual`, `ask`, and `auto`:
 - ordinary PR reviews are not auto-delegated;
 - write-capable, project-local, and unknown agents require explicit request/approval, or are blocked without UI.
 
-`ask` prompts before running non-explicit subagent calls unless the current session already has ask-mode approval; `manual` blocks those calls.
+`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls.
 
 A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
 

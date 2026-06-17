@@ -715,8 +715,8 @@ function buildSubagentSummaryText(
 		`agent model/thinking defaults: ${configuredAgentDefaults.length > 0 ? configuredAgentDefaults.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
 		"- manual: same delegation eligibility as auto, but requires explicit user request unless inherited child approval applies",
-		"- ask: same delegation eligibility as auto; explicit requests run immediately, otherwise Pi asks first (Allow once / Allow for current session / Deny)",
-		"- auto: Pi may auto-use read-only multi-agent delegation within configured task/concurrency limits; write-capable agents require approval unless explicitly requested",
+		"- ask: same delegation eligibility as auto; explicit requests run immediately, otherwise Pi asks first unless current-session approval applies",
+		"- auto: Pi may auto-use eligible read-only multi-agent delegation within configured task/concurrency limits; write-capable, project-local, and unknown agents require approval unless explicitly requested",
 		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
@@ -731,7 +731,7 @@ function buildSubagentSummaryText(
 		lines.splice(
 			4,
 			0,
-			"- current session approval: subsequent ask-mode subagent requests are auto-approved in this session",
+			"- current session approval: eligible non-explicit ask-mode subagent requests are auto-approved in this session",
 			"- cancel it with /subagents cancel-session-approval",
 		);
 	}
@@ -807,42 +807,80 @@ function buildSubagentPolicyPrompt(
 	if (mode === "off") {
 		lines.push("- The subagent tool is disabled completely. Do not use it.");
 		lines.push("- Handle all work directly unless the user explicitly asks how to re-enable subagents.");
-	} else if (mode === "manual") {
-		lines.push("- Use the same delegation eligibility as auto mode: clearly decomposable, mostly read-only, multi-surface work.");
-		lines.push("- Manual mode requires an explicit subagent/delegation request unless this session has inherited nested delegation approval above.");
-		lines.push("- Non-explicit top-level subagent calls are blocked instead of prompting; otherwise do the work yourself.");
-		lines.push("- Write-capable subagents such as worker require an explicit request or broader inherited approval; under read-only inherited approval, use read-only agents only.");
-		lines.push("- Do not use subagent for ordinary PR reviews, small diffs, or simple tasks unless the user explicitly asks.");
-	} else if (mode === "ask") {
-		lines.push("- Use the same delegation eligibility as auto mode: clearly decomposable, mostly read-only, multi-surface work.");
-		lines.push("- Non-explicit delegation uses the configured parallel task/concurrency limits; avoid large fan-out unless it is clearly worthwhile.");
-		lines.push("- Write-capable subagents such as worker require approval unless the user explicitly asked for delegation; use them only when approval is available and the split is worthwhile.");
-		lines.push("- Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; do those directly unless the user asks.");
-		lines.push("- If the user explicitly asks for sub-agents, delegation, multiple agents, or a named subagent, you may use the subagent tool without an extra approval prompt.");
-		if (sessionApproval) {
-			lines.push("- This session already has user approval for non-explicit subagent use in ask mode.");
-			lines.push("- You may use the subagent tool in this session without asking again when the same eligibility is met.");
+	} else {
+		lines.push("- Eligibility: delegate only when clearly decomposable and worthwhile; prefer read-only multi-surface fan-out.");
+		lines.push("- Use configured task/concurrency limits; avoid unjustified large fan-out; skip ordinary PR reviews, small diffs, and simple tasks unless the user asks.");
+		lines.push("- Write-capable, project-local, or unknown agents require explicit request/approval; under read-only inherited approval, use only known read-only user agents.");
+		if (mode === "manual") {
+			lines.push("- Manual: top-level calls require explicit delegation request; non-explicit calls block.");
+		} else if (mode === "ask") {
+			lines.push("- Ask: explicit calls run; non-explicit calls prompt unless session-approved and auto-equivalent eligibility passes.");
+			if (!sessionApproval && !hasUI) lines.push("- Non-explicit calls block because no approval UI is available.");
 		} else {
 			lines.push(
 				hasUI
-					? "- If you call subagent without an explicit user request, the user will be asked to approve it first."
-					: "- If you call subagent without an explicit user request, it will be blocked because no approval UI is available.",
+					? "- Auto: eligible read-only multi-agent calls run; out-of-policy calls ask."
+					: "- Auto: eligible read-only multi-agent calls run; out-of-policy calls block because no approval UI is available.",
 			);
 		}
-	} else {
-		lines.push("- You may use subagent autonomously only for clearly decomposable, mostly read-only, multi-surface work.");
-		lines.push("- Non-explicit auto delegation uses the configured parallel task/concurrency limits; avoid large fan-out unless it is clearly worthwhile.");
-		lines.push("- Write-capable subagents such as worker require approval unless the user explicitly asked for delegation; use them only when approval is available and the split is worthwhile.");
-		lines.push("- Do not auto-use subagent for ordinary PR reviews, small diffs, or simple tasks; do those directly unless the user asks.");
-		lines.push(
-			hasUI
-				? "- Requests outside these guardrails will require user approval."
-				: "- Requests outside these guardrails will be blocked because no approval UI is available.",
-		);
 	}
 
 	lines.push("- After any subagent run, you must reconcile, de-duplicate, and merge the results into one final answer.");
 	return lines.join("\n");
+}
+
+function requireApprovalOrBlock(hasUI: boolean, askReason: string, blockReason: string): SubagentPolicyDecision {
+	return hasUI ? { action: "ask", reason: askReason } : { action: "block", reason: blockReason };
+}
+
+function evaluateAutoEquivalentSubagentPolicy(
+	summary: SubagentRequestSummary,
+	latestUserPrompt: string,
+	explicitRequest: boolean,
+	hasUI: boolean,
+): SubagentPolicyDecision {
+	if (looksLikeOrdinaryPrReview(latestUserPrompt, explicitRequest)) {
+		return requireApprovalOrBlock(
+			hasUI,
+			"Ordinary PR reviews should be handled directly unless the user asks for subagents.",
+			"Blocked by subagent policy: ordinary PR reviews are not auto-delegated without approval, and no UI is available.",
+		);
+	}
+	if (summary.requestMode === "single") {
+		return requireApprovalOrBlock(
+			hasUI,
+			"Single-agent delegation is not auto-approved without an explicit user request.",
+			"Blocked by subagent policy: single-agent delegation without an explicit request requires approval, and no UI is available.",
+		);
+	}
+	if (summary.writeCapableAgents.length > 0) {
+		const agents = summary.writeCapableAgents.join(", ");
+		return requireApprovalOrBlock(
+			hasUI,
+			`Write-capable agents require approval unless explicitly requested (${agents}).`,
+			`Blocked by subagent policy: write-capable agents require approval unless explicitly requested (${agents}), and no UI is available.`,
+		);
+	}
+	if (summary.projectAgents.length > 0) {
+		const agents = summary.projectAgents.join(", ");
+		return requireApprovalOrBlock(
+			hasUI,
+			`Project-local agents require approval unless explicitly requested (${agents}).`,
+			`Blocked by subagent policy: project-local agents require approval unless explicitly requested (${agents}), and no UI is available.`,
+		);
+	}
+	if (summary.unknownAgents.length > 0) {
+		const agents = summary.unknownAgents.join(", ");
+		return requireApprovalOrBlock(
+			hasUI,
+			`Unknown agents require approval unless explicitly requested (${agents}).`,
+			`Blocked by subagent policy: unknown agents require approval unless explicitly requested (${agents}), and no UI is available.`,
+		);
+	}
+	return {
+		action: "allow",
+		reason: "Auto-equivalent guardrails passed for non-explicit read-only multi-agent delegation within configured limits.",
+	};
 }
 
 export function evaluateSubagentPolicy(
@@ -891,13 +929,6 @@ export function evaluateSubagentPolicy(
 		return { action: "allow", reason: "User explicitly requested subagents." };
 	}
 
-	if (mode === "ask" && sessionApproval) {
-		return {
-			action: "allow",
-			reason: "This session already has user approval for non-explicit subagent use in ask mode.",
-		};
-	}
-
 	if (mode === "manual") {
 		return {
 			action: "block",
@@ -905,7 +936,7 @@ export function evaluateSubagentPolicy(
 		};
 	}
 
-	if (mode === "ask") {
+	if (mode === "ask" && !sessionApproval) {
 		if (!hasUI) {
 			return {
 				action: "block",
@@ -918,44 +949,7 @@ export function evaluateSubagentPolicy(
 		};
 	}
 
-	if (looksLikeOrdinaryPrReview(latestUserPrompt, explicitRequest)) {
-		return hasUI
-			? {
-					action: "ask",
-					reason: "Ordinary PR reviews should be handled directly unless the user asks for subagents.",
-				}
-			: {
-					action: "block",
-					reason: "Blocked by subagent policy: ordinary PR reviews are not auto-delegated without approval, and no UI is available.",
-				};
-	}
-	if (summary.requestMode === "single") {
-		return hasUI
-			? {
-					action: "ask",
-					reason: "Single-agent delegation is not auto-approved without an explicit user request.",
-				}
-			: {
-					action: "block",
-					reason: "Blocked by subagent policy: single-agent delegation without an explicit request requires approval, and no UI is available.",
-				};
-	}
-	if (summary.writeCapableAgents.length > 0) {
-		const agents = summary.writeCapableAgents.join(", ");
-		return hasUI
-			? {
-					action: "ask",
-					reason: `Write-capable agents require approval unless explicitly requested (${agents}).`,
-				}
-			: {
-					action: "block",
-					reason: `Blocked by subagent policy: write-capable agents require approval unless explicitly requested (${agents}), and no UI is available.`,
-				};
-	}
-	return {
-		action: "allow",
-		reason: "Auto mode guardrails passed for non-explicit read-only multi-agent delegation within configured limits.",
-	};
+	return evaluateAutoEquivalentSubagentPolicy(summary, latestUserPrompt, explicitRequest, hasUI);
 }
 
 function buildApprovalPrompt(
