@@ -71,6 +71,20 @@ test("auto mode does not add a hard 3-agent cap beyond execution limits", () => 
 	assert.equal(decision.action, "allow");
 });
 
+test("auto mode allows non-explicit read-only single-agent delegation", () => {
+	const decision = evaluateSubagentPolicy(
+		"auto",
+		readOnlySingleSummary(),
+		false,
+		"Inspect auth flow",
+		false,
+		"none",
+		false,
+	);
+
+	assert.equal(decision.action, "allow");
+});
+
 test("auto mode requires approval for non-explicit write-capable agents", () => {
 	const summary = {
 		...readOnlyParallelSummary(2),
@@ -126,7 +140,7 @@ test("ask session approval follows auto-equivalent guardrails", () => {
 	);
 	assert.equal(
 		evaluateSubagentPolicy("ask", readOnlySingleSummary(), false, "Inspect auth", false, "none", true).action,
-		"block",
+		"allow",
 	);
 });
 

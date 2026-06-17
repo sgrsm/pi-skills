@@ -1,5 +1,4 @@
 ## Subagents
-
-- Within current subagent policy, delegate non-trivial splittable inspection/review/analysis for parallelism and context hygiene; skip simple or high-overhead cases.
-- Use parallel read-only `scout`/`reviewer-readonly`/`planner-readonly` for independent angles; chain dependent flows. Use write-capable agents only when explicit/approved.
+- Within current policy, delegate non-trivial focused or splittable inspection/review/analysis for parallelism/context hygiene; skip simple or high-overhead cases.
+- Use read-only `scout`/`reviewer-readonly`/`planner-readonly` for focused or parallel angles; chain dependent flows; use write-capable agents only when explicit/approved.
 - Keep child prompts narrow; require path/line evidence; synthesize one deduped final answer.

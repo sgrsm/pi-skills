@@ -716,7 +716,7 @@ function buildSubagentSummaryText(
 		"- off: subagent tool disabled completely",
 		"- manual: same delegation eligibility as auto, but requires explicit user request unless inherited child approval applies",
 		"- ask: same delegation eligibility as auto; valid explicit requests run immediately, otherwise Pi asks first unless current-session approval applies",
-		"- auto: Pi may auto-use eligible read-only multi-agent delegation within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agents are blocked",
+		"- auto: Pi may auto-use eligible read-only delegation within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agents are blocked",
 		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
@@ -808,7 +808,7 @@ function buildSubagentPolicyPrompt(
 		lines.push("- The subagent tool is disabled completely. Do not use it.");
 		lines.push("- Handle all work directly unless the user explicitly asks how to re-enable subagents.");
 	} else {
-		lines.push("- Eligibility: delegate only when clearly decomposable and worthwhile; prefer read-only multi-surface fan-out.");
+		lines.push("- Eligibility: delegate only when clearly useful and worth the overhead; prefer read-only focused work or multi-surface fan-out.");
 		lines.push("- Use configured task/concurrency limits; avoid unjustified large fan-out; skip ordinary PR reviews, small diffs, and simple tasks unless the user asks.");
 		lines.push("- Write-capable or project-local agents require explicit request/approval; unknown agents are always blocked; under read-only inherited approval, use only known read-only user agents.");
 		if (mode === "manual") {
@@ -819,8 +819,8 @@ function buildSubagentPolicyPrompt(
 		} else {
 			lines.push(
 				hasUI
-					? "- Auto: eligible read-only multi-agent calls run; out-of-policy calls ask."
-					: "- Auto: eligible read-only multi-agent calls run; out-of-policy calls block because no approval UI is available.",
+					? "- Auto: eligible read-only calls run; out-of-policy calls ask."
+					: "- Auto: eligible read-only calls run; out-of-policy calls block because no approval UI is available.",
 			);
 		}
 	}
@@ -858,13 +858,6 @@ function evaluateAutoEquivalentSubagentPolicy(
 			"Blocked by subagent policy: ordinary PR reviews are not auto-delegated without approval, and no UI is available.",
 		);
 	}
-	if (summary.requestMode === "single") {
-		return requireApprovalOrBlock(
-			hasUI,
-			"Single-agent delegation is not auto-approved without an explicit user request.",
-			"Blocked by subagent policy: single-agent delegation without an explicit request requires approval, and no UI is available.",
-		);
-	}
 	if (summary.writeCapableAgents.length > 0) {
 		const agents = summary.writeCapableAgents.join(", ");
 		return requireApprovalOrBlock(
@@ -883,7 +876,7 @@ function evaluateAutoEquivalentSubagentPolicy(
 	}
 	return {
 		action: "allow",
-		reason: "Auto-equivalent guardrails passed for non-explicit read-only multi-agent delegation within configured limits.",
+		reason: "Auto-equivalent guardrails passed for non-explicit read-only delegation within configured limits.",
 	};
 }
 
@@ -2704,7 +2697,7 @@ export default function (pi: ExtensionAPI) {
 				{ value: "off", label: "off", description: "Disable subagents completely" },
 				{ value: "manual", label: "manual", description: "Only explicit user requests may use subagents" },
 				{ value: "ask", label: "ask", description: "Default: valid explicit requests run, otherwise ask first" },
-				{ value: "auto", label: "auto", description: "Allow autonomous read-only fan-out within guardrails" },
+				{ value: "auto", label: "auto", description: "Allow autonomous read-only delegation within guardrails" },
 				{
 					value: "concurrency",
 					label: "concurrency",
@@ -2905,8 +2898,8 @@ export default function (pi: ExtensionAPI) {
 		].join(" "),
 		promptSnippet: "Delegate work to isolated subagents in single, parallel, or chain mode.",
 		promptGuidelines: [
-			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when large decomposable work clearly benefits from multi-agent fan-out under the current policy mode.",
-			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for multi-agent review.",
+			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when non-trivial work clearly benefits from isolated delegation under the current policy mode.",
+			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for subagent review.",
 			"Use subagent with the tasks parameter when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
 			"When the user specifies different speed, cost, or reasoning expectations per subagent, pass model and thinking overrides in the subagent call instead of relying on the current global /model setting.",
 			"If a delegated child requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",

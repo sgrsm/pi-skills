@@ -10,7 +10,7 @@ Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child
 - Applies policy, depth, trust, and concurrency guardrails before spawning children.
 - Lets delegated children use `escalate_to_parent` to hand user decisions back to the parent session.
 
-Use subagents for explicit delegation requests or large work that can be split cleanly. Avoid them for ordinary PR reviews, small diffs, or simple tasks unless the user asks for multi-agent work.
+Use subagents for explicit delegation requests or non-trivial work that benefits from isolated focus or clean decomposition. Avoid them for ordinary PR reviews, small diffs, or simple tasks unless the user asks for subagent work.
 
 ## Slash command
 
@@ -139,14 +139,14 @@ Policy modes:
 - `off` - disables the `subagent` tool.
 - `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
 - `ask` - default. Uses the same delegation eligibility as `auto`, but valid explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve eligible non-explicit read-only multi-agent work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked.
+- `auto` - may auto-approve eligible non-explicit read-only work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked.
 
 Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
 
 Shared delegation guardrails for `manual`, `ask`, and `auto`:
 
-- use subagents for clearly decomposable, mostly read-only, multi-surface work;
-- single-agent non-explicit delegation is not auto-approved;
+- use subagents for clearly useful, mostly read-only focused work or multi-surface fan-out;
+- single-agent non-explicit read-only delegation is auto-approved when other guardrails pass;
 - parallel/chain task count is governed by configured `maxParallelTasks` and `maxConcurrency`; there is no separate auto-mode agent cap;
 - ordinary PR reviews are not auto-delegated;
 - write-capable and project-local agents require explicit request/approval, or are blocked without UI; unknown agent names are always blocked.
