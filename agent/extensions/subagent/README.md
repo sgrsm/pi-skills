@@ -68,7 +68,7 @@ Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewe
 
 Unknown agent names are blocked by policy before approval prompts or execution; approval cannot make a missing or misspelled agent valid.
 
-Project-local agents require a trusted project when `agentScope` is `project` or `both`; `confirmProjectAgents: false` only skips the extra confirmation after trust is established.
+Project-local agents require a trusted project when `agentScope` is `project` or `both`; `confirmProjectAgents: false` only skips the extra confirmation after trust is established. If a non-explicit project-local request already asks for policy approval, that approval includes the project-agent source/warning and the duplicate project-local confirmation is skipped for that tool call only. Explicit project-local requests still use the normal project-local confirmation path.
 
 ## Tool: `escalate_to_parent`
 
@@ -151,7 +151,7 @@ Shared delegation guardrails for `manual`, `ask`, and `auto`:
 - ordinary PR reviews are not auto-delegated;
 - write-capable and project-local agents require explicit request/approval, or are blocked without UI; unknown agent names are always blocked.
 
-`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls.
+`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls. `Allow for current session` does not disable future project-local confirmations; a project-local skip only applies to the same tool call whose policy approval included the project-agent warning.
 
 A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
 

@@ -959,12 +959,75 @@ export function evaluateSubagentPolicy(
 	return evaluateAutoEquivalentSubagentPolicy(summary, latestUserPrompt, explicitRequest, hasUI);
 }
 
-function buildApprovalPrompt(
+export interface ProjectAgentConfirmationDetails {
+	names: string;
+	sourceText: string;
+	warning: string;
+}
+
+const PROJECT_AGENT_CONFIRMATION_WARNING =
+	"Project agents are repo-controlled. Only continue for trusted repositories.";
+
+export function buildProjectAgentConfirmationDetails(
+	projectAgentsRequested: Array<{ name: string; dir: string | null }>,
+): ProjectAgentConfirmationDetails | null {
+	if (projectAgentsRequested.length === 0) return null;
+	const names = Array.from(new Set(projectAgentsRequested.map((agent) => agent.name))).join(", ");
+	const dirs = Array.from(new Set(projectAgentsRequested.map((agent) => agent.dir ?? "(unknown)")));
+	const sourceText = dirs.length === 1 ? dirs[0] : dirs.map((dir) => `- ${dir}`).join("\n");
+	return { names, sourceText, warning: PROJECT_AGENT_CONFIRMATION_WARNING };
+}
+
+export function formatProjectAgentConfirmationBody(details: ProjectAgentConfirmationDetails): string {
+	return `Agents: ${details.names}\nSource: ${details.sourceText}\n\n${details.warning}`;
+}
+
+export function shouldPolicyApprovalCoverProjectAgentConfirmation(
+	summary: SubagentRequestSummary,
+	explicitRequest: boolean,
+	decision: SubagentPolicyDecision,
+): boolean {
+	return decision.action === "ask" && !explicitRequest && summary.projectAgents.length > 0;
+}
+
+export function shouldPromptForProjectAgentConfirmation(
+	confirmProjectAgents: boolean,
+	projectAgentsRequested: Array<{ name: string; dir: string | null }>,
+	projectAgentConfirmationCoveredByPolicyApproval: boolean,
+): boolean {
+	return (
+		confirmProjectAgents &&
+		projectAgentsRequested.length > 0 &&
+		!projectAgentConfirmationCoveredByPolicyApproval
+	);
+}
+
+export class ProjectAgentConfirmationPolicyCoverage {
+	private readonly coveredToolCallIds = new Set<string>();
+
+	setCovered(toolCallId: string, covered: boolean): void {
+		if (covered) this.coveredToolCallIds.add(toolCallId);
+		else this.coveredToolCallIds.delete(toolCallId);
+	}
+
+	consume(toolCallId: string): boolean {
+		const covered = this.coveredToolCallIds.has(toolCallId);
+		this.coveredToolCallIds.delete(toolCallId);
+		return covered;
+	}
+
+	clear(toolCallId: string): void {
+		this.coveredToolCallIds.delete(toolCallId);
+	}
+}
+
+export function buildApprovalPrompt(
 	mode: SubagentPolicyMode,
 	summary: SubagentRequestSummary,
 	reason: string,
 	latestUserPrompt: string,
 	explicitRequest: boolean,
+	projectAgentConfirmationDetails?: ProjectAgentConfirmationDetails | null,
 ): string {
 	const taskLines = summary.requestedTasks
 		.slice(0, 6)
@@ -972,6 +1035,13 @@ function buildApprovalPrompt(
 	if (summary.requestedTasks.length > taskLines.length) {
 		taskLines.push(`... +${summary.requestedTasks.length - taskLines.length} more task(s)`);
 	}
+
+	const projectAgentConfirmationPrompt = projectAgentConfirmationDetails
+		? [
+				"Project-local agent confirmation covered by this policy approval:",
+				formatProjectAgentConfirmationBody(projectAgentConfirmationDetails),
+			]
+		: [];
 
 	const lines = [
 		`Policy mode: ${formatSubagentPolicyMode(mode)}`,
@@ -985,6 +1055,7 @@ function buildApprovalPrompt(
 			? `Write-capable agents: ${summary.writeCapableAgents.join(", ")}`
 			: "Write-capable agents: none detected",
 		summary.unknownAgents.length > 0 ? `Unknown agents: ${summary.unknownAgents.join(", ")}` : undefined,
+		...projectAgentConfirmationPrompt,
 		`Reason: ${reason}`,
 		mode === "ask"
 			? `Approval options: ${APPROVAL_OPTION_ALLOW_ONCE} / ${APPROVAL_OPTION_ALLOW_SESSION} / ${APPROVAL_OPTION_DENY}`
@@ -2124,6 +2195,7 @@ export function resolveDelegatedApprovalScopeForPolicy(
 export default function (pi: ExtensionAPI) {
 	let policyState = loadSubagentPolicyState();
 	const delegatedApprovalByToolCallId = new Map<string, DelegationApprovalScope>();
+	const projectAgentConfirmationPolicyCoverage = new ProjectAgentConfirmationPolicyCoverage();
 
 	function getDelegatedApprovalScope(
 		explicitRequest: boolean,
@@ -2469,6 +2541,7 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 		if (event.toolName !== "subagent" || !isRecord(event.input)) return undefined;
+		projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 
 		const requestedScope: AgentScope =
 			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
@@ -2479,6 +2552,7 @@ export default function (pi: ExtensionAPI) {
 		);
 		if (projectAgentTrustBlockReason) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return { block: true, reason: projectAgentTrustBlockReason };
 		}
 
@@ -2489,6 +2563,7 @@ export default function (pi: ExtensionAPI) {
 		const currentDepth = getCurrentSubagentDepth();
 		if (!canDelegateWithinDepthLimit(currentDepth, executionSettings.limits.maxDelegationDepth)) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return {
 				block: true,
 				reason: `Blocked by subagent depth policy: current depth ${currentDepth} has reached maxDelegationDepth ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)}. This session may not spawn more subagents.`,
@@ -2522,15 +2597,33 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (decision.action === "block") {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return { block: true, reason: decision.reason };
 		}
 		if (!ctx.hasUI) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return { block: true, reason: decision.reason };
 		}
 
+		const projectAgentConfirmationDetails = shouldPolicyApprovalCoverProjectAgentConfirmation(
+			summary,
+			explicitRequest,
+			decision,
+		)
+			? buildProjectAgentConfirmationDetails(getRequestedProjectAgents(event.input, resolveDiscovery))
+			: null;
+		const projectAgentConfirmationCoveredByPolicyApproval = Boolean(projectAgentConfirmationDetails);
+
 		const choice = await ctx.ui.select(
-			buildApprovalPrompt(policyState.mode, summary, decision.reason, latestUserPrompt, explicitRequest),
+			buildApprovalPrompt(
+				policyState.mode,
+				summary,
+				decision.reason,
+				latestUserPrompt,
+				explicitRequest,
+				projectAgentConfirmationDetails,
+			),
 			policyState.mode === "ask"
 				? [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_ALLOW_SESSION, APPROVAL_OPTION_DENY]
 				: [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_DENY],
@@ -2539,14 +2632,23 @@ export default function (pi: ExtensionAPI) {
 			persistSessionSubagentApproval(pi, true);
 			updateSubagentStatus(ctx, policyState.mode, true);
 			delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
+			projectAgentConfirmationPolicyCoverage.setCovered(
+				event.toolCallId,
+				projectAgentConfirmationCoveredByPolicyApproval,
+			);
 			markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 			return undefined;
 		}
 		if (choice !== APPROVAL_OPTION_ALLOW_ONCE) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return { block: true, reason: `Blocked by user: ${decision.reason}` };
 		}
 		delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
+		projectAgentConfirmationPolicyCoverage.setCovered(
+			event.toolCallId,
+			projectAgentConfirmationCoveredByPolicyApproval,
+		);
 		markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 		return undefined;
 	});
@@ -2554,6 +2656,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== "subagent") return;
 		delegatedApprovalByToolCallId.delete(event.toolCallId);
+		projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 		const activityChanged = subagentFooterActivity.clearToolCall(event.toolCallId);
 		if (activityChanged) refreshSubagentFooter(ctx);
 	});
@@ -2835,6 +2938,7 @@ export default function (pi: ExtensionAPI) {
 			);
 			const projectAgentsDirForDetails = projectAgentDirs.length === 1 ? projectAgentDirs[0] : null;
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
+			const projectAgentConfirmationCoveredByPolicyApproval = projectAgentConfirmationPolicyCoverage.consume(toolCallId);
 			const inheritedDelegationApproval =
 				delegatedApprovalByToolCallId.get(toolCallId) ?? getInheritedSubagentApprovalScope();
 			const executionSettings = loadSubagentExecutionSettingsForCwds(
@@ -2892,19 +2996,24 @@ export default function (pi: ExtensionAPI) {
 
 			if (agentScope === "project" || agentScope === "both") {
 				const projectAgentsRequested = getRequestedProjectAgents(params, resolveDiscovery);
+				const projectAgentConfirmationDetails = buildProjectAgentConfirmationDetails(projectAgentsRequested);
 
-				if (confirmProjectAgents && projectAgentsRequested.length > 0) {
-					const names = Array.from(new Set(projectAgentsRequested.map((agent) => agent.name))).join(", ");
-					const dirs = Array.from(new Set(projectAgentsRequested.map((agent) => agent.dir ?? "(unknown)")));
-					const sourceText = dirs.length === 1 ? dirs[0] : dirs.map((dir) => `- ${dir}`).join("\n");
+				if (
+					projectAgentConfirmationDetails &&
+					shouldPromptForProjectAgentConfirmation(
+						confirmProjectAgents,
+						projectAgentsRequested,
+						projectAgentConfirmationCoveredByPolicyApproval,
+					)
+				) {
 					if (!ctx.hasUI) {
 						throw new Error(
-							`Blocked: project-local agents require confirmation, but no UI is available. Agents: ${names}. Source: ${sourceText}. Pass confirmProjectAgents: false only for trusted repositories.`,
+							`Blocked: project-local agents require confirmation, but no UI is available. Agents: ${projectAgentConfirmationDetails.names}. Source: ${projectAgentConfirmationDetails.sourceText}. Pass confirmProjectAgents: false only for trusted repositories.`,
 						);
 					}
 					const ok = await ctx.ui.confirm(
 						"Run project-local agents?",
-						`Agents: ${names}\nSource: ${sourceText}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
+						formatProjectAgentConfirmationBody(projectAgentConfirmationDetails),
 					);
 					if (!ok)
 						return {
