@@ -1,6 +1,7 @@
 # Track only shareable Pi customizations under agent/
 # Local runtime/config files at agent root stay ignored unless explicitly re-included below.
 /agent/*
+!/agent/AGENTS.md
 !/agent/agents/
 !/agent/agents/**
 !/agent/extensions/

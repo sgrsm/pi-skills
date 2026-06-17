@@ -135,18 +135,21 @@ Each top-level `subagent` call snapshots the parent session's current model and 
 Policy modes:
 
 - `off` - disables the `subagent` tool.
-- `manual` - only explicit user requests for subagents, delegation, multiple agents, or a named agent are allowed.
-- `ask` - default. Explicit requests run; non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve clearly decomposable, non-explicit, read-only multi-agent work within guardrails.
+- `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
+- `ask` - default. Uses the same delegation eligibility as `auto`, but explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`. Without UI, non-explicit requests are blocked.
+- `auto` - may auto-approve clearly decomposable, non-explicit, read-only multi-agent work within configured task/concurrency limits; write-capable agents require approval unless explicitly requested.
 
-Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `off` mode and depth caps still win.
+Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
 
-Auto-mode guardrails for non-explicit use:
+Shared delegation guardrails for `manual`, `ask`, and `auto`:
 
-- single-agent delegation is not auto-approved;
-- at most 3 agents are auto-approved at once;
+- use subagents for clearly decomposable, mostly read-only, multi-surface work;
+- single-agent non-explicit delegation is not auto-approved;
+- parallel/chain task count is governed by configured `maxParallelTasks` and `maxConcurrency`; there is no separate auto-mode agent cap;
 - ordinary PR reviews are not auto-delegated;
-- write-capable, project-local, and unknown agents require approval, or are blocked without UI.
+- write-capable, project-local, and unknown agents require explicit request/approval, or are blocked without UI.
+
+`ask` prompts before running non-explicit subagent calls unless the current session already has ask-mode approval; `manual` blocks those calls.
 
 A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
 

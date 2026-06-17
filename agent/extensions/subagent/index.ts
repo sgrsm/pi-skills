@@ -75,8 +75,6 @@ const COMMON_CONCURRENCY_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32] as 
 const COMMON_MAX_TASK_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32, 48, 64] as const;
 const COLLAPSED_ITEM_COUNT = 10;
 const SUBAGENT_TERMINATION_GRACE_MS = 5000;
-const AUTO_MODE_MAX_NON_EXPLICIT_AGENTS = 3;
-const AUTO_MODE_ALLOW_WRITE_CAPABLE_AGENTS = false;
 const SUBAGENT_STATUS_KEY = FOOTER_STATUS_KEYS.subagents;
 const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
@@ -716,9 +714,9 @@ function buildSubagentSummaryText(
 		`nested inherited approval overrides: ${configuredInheritedScopes.length > 0 ? configuredInheritedScopes.join(", ") : "none"}`,
 		`agent model/thinking defaults: ${configuredAgentDefaults.length > 0 ? configuredAgentDefaults.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
-		"- manual: only explicit user requests may use subagents",
-		"- ask: explicit requests run immediately; otherwise Pi asks first (Allow once / Allow for current session / Deny)",
-		`- auto: Pi may auto-use read-only multi-agent delegation within guardrails (max ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} agents; write-capable agents require an explicit request)`,
+		"- manual: same delegation eligibility as auto, but requires explicit user request unless inherited child approval applies",
+		"- ask: same delegation eligibility as auto; explicit requests run immediately, otherwise Pi asks first (Allow once / Allow for current session / Deny)",
+		"- auto: Pi may auto-use read-only multi-agent delegation within configured task/concurrency limits; write-capable agents require approval unless explicitly requested",
 		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
@@ -810,18 +808,21 @@ function buildSubagentPolicyPrompt(
 		lines.push("- The subagent tool is disabled completely. Do not use it.");
 		lines.push("- Handle all work directly unless the user explicitly asks how to re-enable subagents.");
 	} else if (mode === "manual") {
-		lines.push("- Only use the subagent tool when the user explicitly asks for sub-agents, delegation, multiple agents, or a named subagent.");
-		lines.push("- Otherwise do the work yourself.");
+		lines.push("- Use the same delegation eligibility as auto mode: clearly decomposable, mostly read-only, multi-surface work.");
+		lines.push("- Manual mode requires an explicit subagent/delegation request unless this session has inherited nested delegation approval above.");
+		lines.push("- Non-explicit top-level subagent calls are blocked instead of prompting; otherwise do the work yourself.");
+		lines.push("- Write-capable subagents such as worker require an explicit request or broader inherited approval; under read-only inherited approval, use read-only agents only.");
+		lines.push("- Do not use subagent for ordinary PR reviews, small diffs, or simple tasks unless the user explicitly asks.");
 	} else if (mode === "ask") {
-		lines.push("- If the user explicitly asks for sub-agents, delegation, multiple agents, or a named subagent, you may use the subagent tool.");
+		lines.push("- Use the same delegation eligibility as auto mode: clearly decomposable, mostly read-only, multi-surface work.");
+		lines.push("- Non-explicit delegation uses the configured parallel task/concurrency limits; avoid large fan-out unless it is clearly worthwhile.");
+		lines.push("- Write-capable subagents such as worker require approval unless the user explicitly asked for delegation; use them only when approval is available and the split is worthwhile.");
+		lines.push("- Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; do those directly unless the user asks.");
+		lines.push("- If the user explicitly asks for sub-agents, delegation, multiple agents, or a named subagent, you may use the subagent tool without an extra approval prompt.");
 		if (sessionApproval) {
 			lines.push("- This session already has user approval for non-explicit subagent use in ask mode.");
-			lines.push("- You may use the subagent tool in this session without asking again when delegation is genuinely helpful.");
+			lines.push("- You may use the subagent tool in this session without asking again when the same eligibility is met.");
 		} else {
-			lines.push("- If the user did not explicitly ask for subagents, prefer doing the work yourself.");
-		}
-		lines.push("- Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; review directly and optionally mention subagents as an option.");
-		if (!sessionApproval) {
 			lines.push(
 				hasUI
 					? "- If you call subagent without an explicit user request, the user will be asked to approve it first."
@@ -830,10 +831,8 @@ function buildSubagentPolicyPrompt(
 		}
 	} else {
 		lines.push("- You may use subagent autonomously only for clearly decomposable, mostly read-only, multi-surface work.");
-		lines.push(`- Non-explicit auto delegation is limited to at most ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} agents.`);
-		if (!AUTO_MODE_ALLOW_WRITE_CAPABLE_AGENTS) {
-			lines.push("- Do not auto-use write-capable subagents such as worker unless the user explicitly asked for delegation.");
-		}
+		lines.push("- Non-explicit auto delegation uses the configured parallel task/concurrency limits; avoid large fan-out unless it is clearly worthwhile.");
+		lines.push("- Write-capable subagents such as worker require approval unless the user explicitly asked for delegation; use them only when approval is available and the split is worthwhile.");
 		lines.push("- Do not auto-use subagent for ordinary PR reviews, small diffs, or simple tasks; do those directly unless the user asks.");
 		lines.push(
 			hasUI
@@ -846,7 +845,7 @@ function buildSubagentPolicyPrompt(
 	return lines.join("\n");
 }
 
-function evaluateSubagentPolicy(
+export function evaluateSubagentPolicy(
 	mode: SubagentPolicyMode,
 	summary: SubagentRequestSummary,
 	explicitRequest: boolean,
@@ -941,32 +940,21 @@ function evaluateSubagentPolicy(
 					reason: "Blocked by subagent policy: single-agent delegation without an explicit request requires approval, and no UI is available.",
 				};
 	}
-	if (summary.taskCount > AUTO_MODE_MAX_NON_EXPLICIT_AGENTS) {
-		return hasUI
-			? {
-					action: "ask",
-					reason: `Auto mode only auto-approves up to ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} non-explicit agents at once.`,
-				}
-			: {
-					action: "block",
-					reason: `Blocked by subagent policy: auto mode only auto-approves up to ${AUTO_MODE_MAX_NON_EXPLICIT_AGENTS} non-explicit agents at once, and no UI is available.`,
-				};
-	}
-	if (!AUTO_MODE_ALLOW_WRITE_CAPABLE_AGENTS && summary.writeCapableAgents.length > 0) {
+	if (summary.writeCapableAgents.length > 0) {
 		const agents = summary.writeCapableAgents.join(", ");
 		return hasUI
 			? {
 					action: "ask",
-					reason: `Write-capable agents require approval unless the user explicitly asked for delegation (${agents}).`,
+					reason: `Write-capable agents require approval unless explicitly requested (${agents}).`,
 				}
 			: {
 					action: "block",
-					reason: `Blocked by subagent policy: write-capable agents require approval unless the user explicitly asked for delegation (${agents}), and no UI is available.`,
+					reason: `Blocked by subagent policy: write-capable agents require approval unless explicitly requested (${agents}), and no UI is available.`,
 				};
 	}
 	return {
 		action: "allow",
-		reason: "Auto mode guardrails passed for non-explicit read-only multi-agent delegation.",
+		reason: "Auto mode guardrails passed for non-explicit read-only multi-agent delegation within configured limits.",
 	};
 }
 
@@ -2119,6 +2107,19 @@ const SubagentParams = Type.Object({
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
+export function resolveDelegatedApprovalScopeForPolicy(
+	mode: SubagentPolicyMode,
+	explicitRequest: boolean,
+	inheritedScope: DelegationApprovalScope,
+	sessionApproval: boolean,
+): DelegationApprovalScope {
+	if (inheritedScope !== "none") return inheritedScope;
+	if (explicitRequest) return "read-only";
+	if (mode === "ask" && sessionApproval) return "read-only";
+	if (mode === "auto") return "read-only";
+	return "none";
+}
+
 export default function (pi: ExtensionAPI) {
 	let policyState = loadSubagentPolicyState();
 	const delegatedApprovalByToolCallId = new Map<string, DelegationApprovalScope>();
@@ -2128,10 +2129,7 @@ export default function (pi: ExtensionAPI) {
 		inheritedScope: DelegationApprovalScope,
 		sessionApproval: boolean,
 	): DelegationApprovalScope {
-		if (inheritedScope !== "none") return inheritedScope;
-		if (explicitRequest) return "read-only";
-		if (policyState.mode === "ask" && sessionApproval) return "read-only";
-		return "none";
+		return resolveDelegatedApprovalScopeForPolicy(policyState.mode, explicitRequest, inheritedScope, sessionApproval);
 	}
 
 	function syncSubagentSessionState(
