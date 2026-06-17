@@ -66,6 +66,8 @@ Common parameters:
 
 Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewer`, `reviewer-readonly`, `worker`, and `consolidator`. Agents are Markdown files with frontmatter such as `name`, `description`, optional `tools`, `model`, and `thinking`. If an agent has a `tools` list, the child process is started with that tool set.
 
+Unknown agent names are blocked by policy before approval prompts or execution; approval cannot make a missing or misspelled agent valid.
+
 Project-local agents require a trusted project when `agentScope` is `project` or `both`; `confirmProjectAgents: false` only skips the extra confirmation after trust is established.
 
 ## Tool: `escalate_to_parent`
@@ -136,8 +138,8 @@ Policy modes:
 
 - `off` - disables the `subagent` tool.
 - `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
-- `ask` - default. Uses the same delegation eligibility as `auto`, but explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve eligible non-explicit read-only multi-agent work within configured task/concurrency limits; write-capable, project-local, and unknown agents require approval unless explicitly requested.
+- `ask` - default. Uses the same delegation eligibility as `auto`, but valid explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
+- `auto` - may auto-approve eligible non-explicit read-only multi-agent work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked.
 
 Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
 
@@ -147,7 +149,7 @@ Shared delegation guardrails for `manual`, `ask`, and `auto`:
 - single-agent non-explicit delegation is not auto-approved;
 - parallel/chain task count is governed by configured `maxParallelTasks` and `maxConcurrency`; there is no separate auto-mode agent cap;
 - ordinary PR reviews are not auto-delegated;
-- write-capable, project-local, and unknown agents require explicit request/approval, or are blocked without UI.
+- write-capable and project-local agents require explicit request/approval, or are blocked without UI; unknown agent names are always blocked.
 
 `ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls.
 

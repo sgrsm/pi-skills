@@ -715,8 +715,8 @@ function buildSubagentSummaryText(
 		`agent model/thinking defaults: ${configuredAgentDefaults.length > 0 ? configuredAgentDefaults.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
 		"- manual: same delegation eligibility as auto, but requires explicit user request unless inherited child approval applies",
-		"- ask: same delegation eligibility as auto; explicit requests run immediately, otherwise Pi asks first unless current-session approval applies",
-		"- auto: Pi may auto-use eligible read-only multi-agent delegation within configured task/concurrency limits; write-capable, project-local, and unknown agents require approval unless explicitly requested",
+		"- ask: same delegation eligibility as auto; valid explicit requests run immediately, otherwise Pi asks first unless current-session approval applies",
+		"- auto: Pi may auto-use eligible read-only multi-agent delegation within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agents are blocked",
 		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
@@ -784,7 +784,7 @@ function buildSubagentPolicyPrompt(
 		lines.push("- You may use the subagent tool within this delegated task without asking again.");
 	} else if (inheritedApprovalScope === "read-only" && mode !== "off") {
 		lines.push("- This session inherits read-only nested delegation approval from an ancestor agent session.");
-		lines.push("- You may only auto-delegate to read-only user-scoped agents (no edit/write tools, no project-local agents, no unknown agents) without new approval.");
+		lines.push("- You may only auto-delegate to known read-only user-scoped agents (no edit/write tools and no project-local agents) without new approval; unknown agents are always blocked.");
 		lines.push("- If you need broader delegation, escalate to the parent agent instead of assuming it is allowed.");
 	}
 
@@ -810,11 +810,11 @@ function buildSubagentPolicyPrompt(
 	} else {
 		lines.push("- Eligibility: delegate only when clearly decomposable and worthwhile; prefer read-only multi-surface fan-out.");
 		lines.push("- Use configured task/concurrency limits; avoid unjustified large fan-out; skip ordinary PR reviews, small diffs, and simple tasks unless the user asks.");
-		lines.push("- Write-capable, project-local, or unknown agents require explicit request/approval; under read-only inherited approval, use only known read-only user agents.");
+		lines.push("- Write-capable or project-local agents require explicit request/approval; unknown agents are always blocked; under read-only inherited approval, use only known read-only user agents.");
 		if (mode === "manual") {
 			lines.push("- Manual: top-level calls require explicit delegation request; non-explicit calls block.");
 		} else if (mode === "ask") {
-			lines.push("- Ask: explicit calls run; non-explicit calls prompt unless session-approved and auto-equivalent eligibility passes.");
+			lines.push("- Ask: valid explicit calls run; non-explicit calls prompt unless session-approved and auto-equivalent eligibility passes.");
 			if (!sessionApproval && !hasUI) lines.push("- Non-explicit calls block because no approval UI is available.");
 		} else {
 			lines.push(
@@ -833,12 +833,24 @@ function requireApprovalOrBlock(hasUI: boolean, askReason: string, blockReason: 
 	return hasUI ? { action: "ask", reason: askReason } : { action: "block", reason: blockReason };
 }
 
+function blockUnknownAgentPolicyViolation(summary: SubagentRequestSummary): SubagentPolicyDecision | null {
+	if (summary.unknownAgents.length === 0) return null;
+	const agents = summary.unknownAgents.join(", ");
+	return {
+		action: "block",
+		reason: `Blocked by subagent policy: unknown requested agents cannot be used (${agents}). Check the agent name or choose an available agent.`,
+	};
+}
+
 function evaluateAutoEquivalentSubagentPolicy(
 	summary: SubagentRequestSummary,
 	latestUserPrompt: string,
 	explicitRequest: boolean,
 	hasUI: boolean,
 ): SubagentPolicyDecision {
+	const unknownAgentBlock = blockUnknownAgentPolicyViolation(summary);
+	if (unknownAgentBlock) return unknownAgentBlock;
+
 	if (looksLikeOrdinaryPrReview(latestUserPrompt, explicitRequest)) {
 		return requireApprovalOrBlock(
 			hasUI,
@@ -869,14 +881,6 @@ function evaluateAutoEquivalentSubagentPolicy(
 			`Blocked by subagent policy: project-local agents require approval unless explicitly requested (${agents}), and no UI is available.`,
 		);
 	}
-	if (summary.unknownAgents.length > 0) {
-		const agents = summary.unknownAgents.join(", ");
-		return requireApprovalOrBlock(
-			hasUI,
-			`Unknown agents require approval unless explicitly requested (${agents}).`,
-			`Blocked by subagent policy: unknown agents require approval unless explicitly requested (${agents}), and no UI is available.`,
-		);
-	}
 	return {
 		action: "allow",
 		reason: "Auto-equivalent guardrails passed for non-explicit read-only multi-agent delegation within configured limits.",
@@ -898,6 +902,9 @@ export function evaluateSubagentPolicy(
 			reason: "Blocked by subagent policy: off mode disables subagents completely.",
 		};
 	}
+
+	const unknownAgentBlock = blockUnknownAgentPolicyViolation(summary);
+	if (unknownAgentBlock) return unknownAgentBlock;
 
 	if (inheritedApprovalScope === "all") {
 		return {
@@ -2593,7 +2600,7 @@ export default function (pi: ExtensionAPI) {
 				{ value: "ui", label: "ui", description: "Open interactive subagent config" },
 				{ value: "off", label: "off", description: "Disable subagents completely" },
 				{ value: "manual", label: "manual", description: "Only explicit user requests may use subagents" },
-				{ value: "ask", label: "ask", description: "Default: explicit requests run, otherwise ask first" },
+				{ value: "ask", label: "ask", description: "Default: valid explicit requests run, otherwise ask first" },
 				{ value: "auto", label: "auto", description: "Allow autonomous read-only fan-out within guardrails" },
 				{
 					value: "concurrency",
@@ -2789,7 +2796,7 @@ export default function (pi: ExtensionAPI) {
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
 			"Per-subagent model and thinking overrides are supported; otherwise child sessions inherit the workflow-start model and thinking level.",
 			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
-			"Default policy mode is ask: explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
+			"Default policy mode is ask: valid explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
 			'Default agent scope is "user" (from ~/.pi/agent/agents).',
 			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
 		].join(" "),

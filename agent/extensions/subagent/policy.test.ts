@@ -25,6 +25,18 @@ function readOnlySingleSummary() {
 	};
 }
 
+function unknownParallelSummary() {
+	return {
+		...readOnlyParallelSummary(2),
+		requestedTasks: [
+			{ agent: "missing-agent", task: "Review area A" },
+			{ agent: "missing-agent", task: "Review area B" },
+		],
+		requestedAgents: ["missing-agent"],
+		unknownAgents: ["missing-agent"],
+	};
+}
+
 test("auto mode does not add a hard 3-agent cap beyond execution limits", () => {
 	const decision = evaluateSubagentPolicy(
 		"auto",
@@ -98,7 +110,7 @@ test("ask session approval follows auto-equivalent guardrails", () => {
 	);
 });
 
-test("non-explicit project-local and unknown agents require approval in auto-equivalent policy", () => {
+test("non-explicit project-local agents require approval in auto-equivalent policy", () => {
 	const projectSummary = {
 		...readOnlyParallelSummary(2),
 		requestedTasks: [
@@ -108,18 +120,51 @@ test("non-explicit project-local and unknown agents require approval in auto-equ
 		requestedAgents: ["repo-reviewer"],
 		projectAgents: ["repo-reviewer"],
 	};
-	const unknownSummary = {
-		...readOnlyParallelSummary(2),
-		requestedTasks: [
-			{ agent: "missing-agent", task: "Review area A" },
-			{ agent: "missing-agent", task: "Review area B" },
-		],
-		requestedAgents: ["missing-agent"],
-		unknownAgents: ["missing-agent"],
-	};
 
 	assert.equal(evaluateSubagentPolicy("auto", projectSummary, false, "Audit this", true, "none", false).action, "ask");
 	assert.equal(evaluateSubagentPolicy("auto", projectSummary, false, "Audit this", false, "none", false).action, "block");
-	assert.equal(evaluateSubagentPolicy("ask", unknownSummary, false, "Audit this", true, "none", true).action, "ask");
-	assert.equal(evaluateSubagentPolicy("ask", unknownSummary, false, "Audit this", false, "none", true).action, "block");
+});
+
+test("unknown agents are blocked before non-explicit approval paths", () => {
+	const summary = unknownParallelSummary();
+	const decisions = [
+		evaluateSubagentPolicy("ask", summary, false, "Audit this", true, "none", false),
+		evaluateSubagentPolicy("ask", summary, false, "Audit this", true, "none", true),
+		evaluateSubagentPolicy("auto", summary, false, "Audit this", true, "none", false),
+		evaluateSubagentPolicy("auto", summary, false, "Audit this", true, "read-only", false),
+	];
+
+	for (const decision of decisions) {
+		assert.equal(decision.action, "block");
+		assert.match(decision.reason, /unknown requested agents cannot be used/);
+	}
+});
+
+test("unknown agents are blocked before explicit or inherited allow paths", () => {
+	const summary = unknownParallelSummary();
+	const decisions = [
+		evaluateSubagentPolicy("manual", summary, true, "Use subagents with missing-agent", true, "none", false),
+		evaluateSubagentPolicy("ask", summary, true, "Use subagents with missing-agent", true, "none", false),
+		evaluateSubagentPolicy("auto", summary, false, "Audit this", true, "all", false),
+	];
+
+	for (const decision of decisions) {
+		assert.equal(decision.action, "block");
+		assert.match(decision.reason, /unknown requested agents cannot be used/);
+	}
+});
+
+test("off mode keeps its existing block reason for unknown agents", () => {
+	const decision = evaluateSubagentPolicy(
+		"off",
+		unknownParallelSummary(),
+		true,
+		"Use subagents with missing-agent",
+		true,
+		"all",
+		true,
+	);
+
+	assert.equal(decision.action, "block");
+	assert.match(decision.reason, /off mode disables subagents completely/);
 });
