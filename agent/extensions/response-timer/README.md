@@ -39,6 +39,8 @@ The timer no longer uses `ctx.ui.setStatus()`, so it does not add a separate ext
 
 Because Pi exposes footer customization as a replacement API, this extension owns the custom footer while it is loaded. Other extensions that also call `ctx.ui.setFooter()` may replace it depending on extension load order.
 
+The wrapper suppresses Pi's `(auto)` context marker because the extension API does not expose live auto-compaction state to custom footers. This avoids showing stale `(auto)` when auto-compaction is disabled.
+
 ## Extension hooks
 
 The extension listens for:

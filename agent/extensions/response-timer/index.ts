@@ -135,6 +135,9 @@ export function registerResponseTimerExtension(
         getContextUsage: () => ctx.getContextUsage?.(),
       };
       const defaultFooter = new FooterComponent(footerSessionAdapter as any, footerData as any);
+      // Extension custom footers cannot observe Pi's live auto-compaction setting;
+      // suppress the built-in marker rather than risk showing stale "(auto)" state.
+      defaultFooter.setAutoCompactEnabled(false);
       const unsubscribeFromBranchChanges =
         typeof (footerData as { onBranchChange?: (callback: () => void) => () => void }).onBranchChange === "function"
           ? (footerData as { onBranchChange(callback: () => void): () => void }).onBranchChange(() => tui.requestRender())

@@ -130,7 +130,9 @@ test("response timer renders on the first footer line, updates live, and keeps f
     },
   );
 
-  assert.ok(footer.render(60)[0].endsWith("✓ 0s"));
+  const initialLines = footer.render(60);
+  assert.ok(initialLines[0].endsWith("✓ 0s"));
+  assert.doesNotMatch(initialLines.join("\n"), /\(auto\)/);
 
   await emit("before_agent_start");
   assert.deepEqual(intervalDelays, [RESPONSE_TIMER_UPDATE_INTERVAL_MS]);
