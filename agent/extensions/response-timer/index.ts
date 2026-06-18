@@ -57,8 +57,9 @@ export function formatElapsedTime(elapsedMs: number): string {
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
 
-  if (hours > 0) return `${hours}:${twoDigits(minutes)}:${twoDigits(seconds)}`;
-  return `${minutes}:${twoDigits(seconds)}`;
+  if (hours > 0) return `${hours}h ${twoDigits(minutes)}m ${twoDigits(seconds)}s`;
+  if (totalMinutes > 0) return `${totalMinutes}m ${twoDigits(seconds)}s`;
+  return `${seconds}s`;
 }
 
 export function formatResponseTimerText(elapsedMs: number, running: boolean, theme: ResponseTimerTheme): string {

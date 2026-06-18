@@ -12,14 +12,17 @@ import {
   type ResponseTimerDependencies,
 } from "./index.ts";
 
-test("formatElapsedTime hides leading zero hour values while preserving timer readability", () => {
-  assert.equal(formatElapsedTime(-1), "0:00");
-  assert.equal(formatElapsedTime(0), "0:00");
-  assert.equal(formatElapsedTime(5_000), "0:05");
-  assert.equal(formatElapsedTime(65_000), "1:05");
-  assert.equal(formatElapsedTime(3_600_000), "1:00:00");
-  assert.equal(formatElapsedTime(3_661_000), "1:01:01");
-  assert.equal(formatElapsedTime(100 * 3_600_000), "100:00:00");
+test("formatElapsedTime uses h/m/s units and hides leading zero values", () => {
+  assert.equal(formatElapsedTime(-1), "0s");
+  assert.equal(formatElapsedTime(0), "0s");
+  assert.equal(formatElapsedTime(5_000), "5s");
+  assert.equal(formatElapsedTime(23_000), "23s");
+  assert.equal(formatElapsedTime(65_000), "1m 05s");
+  assert.equal(formatElapsedTime(730_000), "12m 10s");
+  assert.equal(formatElapsedTime(3_600_000), "1h 00m 00s");
+  assert.equal(formatElapsedTime(3_902_000), "1h 05m 02s");
+  assert.equal(formatElapsedTime(41_130_000), "11h 25m 30s");
+  assert.equal(formatElapsedTime(100 * 3_600_000), "100h 00m 00s");
 });
 
 test("formatResponseTimerText uses requested running and stopped symbols without status separators", () => {
@@ -28,19 +31,19 @@ test("formatResponseTimerText uses requested running and stopped symbols without
     bold: (text: string) => `<bold>${text}</bold>`,
   };
 
-  assert.equal(formatResponseTimerText(5_000, true, theme), "<accent>⏱</accent><dim> 0:05</dim>");
+  assert.equal(formatResponseTimerText(5_000, true, theme), "<accent>⏱</accent><dim> 5s</dim>");
   assert.equal(
     formatResponseTimerText(65_000, false, theme),
-    "<bold><syntaxComment>✓</syntaxComment></bold><dim> 1:05</dim>",
+    "<bold><syntaxComment>✓</syntaxComment></bold><dim> 1m 05s</dim>",
   );
 });
 
 test("rightAlignOnLine places the timer at the right edge and truncates the cwd side", () => {
-  const rendered = rightAlignOnLine("/very/long/project/path", "⏱ 1:05", 24, "...");
+  const rendered = rightAlignOnLine("/very/long/project/path", "⏱ 1m 05s", 28, "...");
 
-  assert.equal(visibleWidth(rendered), 24);
-  assert.ok(rendered.endsWith("⏱ 1:05"));
-  assert.match(rendered, /^\/very\/long.*\s+⏱ 1:05$/);
+  assert.equal(visibleWidth(rendered), 28);
+  assert.ok(rendered.endsWith("⏱ 1m 05s"));
+  assert.match(rendered, /^\/very\/long.*\s+⏱ 1m 05s$/);
 });
 
 test("response timer renders on the first footer line, updates live, and keeps final duration visible", async () => {
@@ -127,29 +130,29 @@ test("response timer renders on the first footer line, updates live, and keeps f
     },
   );
 
-  assert.ok(footer.render(60)[0].endsWith("✓ 0:00"));
+  assert.ok(footer.render(60)[0].endsWith("✓ 0s"));
 
   await emit("before_agent_start");
   assert.deepEqual(intervalDelays, [RESPONSE_TIMER_UPDATE_INTERVAL_MS]);
   assert.equal(renderRequests, 1);
-  assert.ok(footer.render(60)[0].endsWith("⏱ 0:00"));
+  assert.ok(footer.render(60)[0].endsWith("⏱ 0s"));
 
   now = 66_000;
   intervalCallback?.();
   assert.equal(renderRequests, 2);
-  assert.ok(footer.render(60)[0].endsWith("⏱ 1:05"));
+  assert.ok(footer.render(60)[0].endsWith("⏱ 1m 05s"));
 
   await emit("agent_start");
   assert.deepEqual(intervalDelays, [RESPONSE_TIMER_UPDATE_INTERVAL_MS], "agent_start must not reset after before_agent_start");
-  assert.ok(footer.render(60)[0].endsWith("⏱ 1:05"));
+  assert.ok(footer.render(60)[0].endsWith("⏱ 1m 05s"));
 
   await emit("agent_end");
   assert.deepEqual(clearCalls, [intervalHandle]);
-  assert.ok(footer.render(60)[0].endsWith("✓ 1:05"));
+  assert.ok(footer.render(60)[0].endsWith("✓ 1m 05s"));
 
   now = 100_000;
   await emit("before_agent_start");
-  assert.ok(footer.render(60)[0].endsWith("⏱ 0:00"));
+  assert.ok(footer.render(60)[0].endsWith("⏱ 0s"));
 });
 
 test("response timer does not install a custom footer outside TUI mode", async () => {

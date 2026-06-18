@@ -5,7 +5,7 @@ Shows the elapsed time for the current Pi response on the first footer line.
 ## What it does
 
 - Adds a right-aligned timer to the footer line that shows the current working directory.
-- Resets to `0:00` when a new agent response starts.
+- Resets to `0s` when a new agent response starts.
 - Updates once per second while the agent is thinking, streaming, or running tools.
 - Stops at `agent_end` and leaves the final duration visible until the next response.
 - Measures only the current response, not the whole session.
@@ -20,13 +20,16 @@ The timer uses two symbols:
 Examples:
 
 ```text
-~/.pi                                                   ⏱ 0:12
-~/.pi                                                   ⏱ 1:05
-~/.pi                                                ⏱ 1:02:09
-~/.pi                                                   ✓ 0:42
+~/.pi                                                      ⏱ 5s
+~/.pi                                                     ⏱ 23s
+~/.pi                                                 ⏱ 1m 05s
+~/.pi                                                ⏱ 12m 10s
+~/.pi                                              ⏱ 1h 05m 02s
+~/.pi                                             ⏱ 11h 25m 30s
+~/.pi                                                     ✓ 23s
 ```
 
-Time uses `h:mm:ss` once the response reaches one hour, otherwise `m:ss`. Leading zero hour values are hidden, while minutes and seconds keep two-digit readability where needed.
+Time uses `Xh Ym Zs` units. Leading zero values are hidden: seconds-only responses show `5s` or `23s`, minute responses show `1m 05s`, and hour responses show `1h 05m 02s`.
 
 ## UI placement
 
@@ -40,7 +43,7 @@ Because Pi exposes footer customization as a replacement API, this extension own
 
 The extension listens for:
 
-- `session_start` - installs the footer wrapper, initializes the stopped timer at `✓ 0:00`, and clears the previous status-line key.
+- `session_start` - installs the footer wrapper, initializes the stopped timer at `✓ 0s`, and clears the previous status-line key.
 - `before_agent_start` - starts and resets the timer as early as possible for a new response.
 - `agent_start` - fallback start for programmatic turns that may not run `before_agent_start`.
 - `agent_end` - stops live updates and shows the final duration with `✓`.
