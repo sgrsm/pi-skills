@@ -138,7 +138,13 @@ type SubagentPolicyDecision = {
 type DelegationApprovalScope = SubagentDelegationApprovalScope;
 
 type SubagentSessionApprovalState = {
+	askModeApproved?: boolean;
+	writeCapableApproved?: boolean;
+};
+
+type ResolvedSubagentSessionApprovalState = {
 	askModeApproved: boolean;
+	writeCapableApproved: boolean;
 };
 
 interface EscalationOption {
@@ -525,21 +531,37 @@ function canUseSubagentToolInSession(
 	return mode !== "off" && canDelegateWithinDepthLimit(getCurrentSubagentDepth(), executionSettings.limits.maxDelegationDepth);
 }
 
-function hasSessionSubagentApproval(ctx: ExtensionContext): boolean {
-	let approved = false;
+function getSessionSubagentApprovalState(ctx: ExtensionContext): ResolvedSubagentSessionApprovalState {
+	let askModeApproved = false;
+	let writeCapableApproved = false;
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "custom" || entry.customType !== SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE) continue;
 		const data = entry.data as Partial<SubagentSessionApprovalState> | undefined;
-		approved = data?.askModeApproved !== false;
+		if (!isRecord(data)) {
+			// Legacy session-approval entries did not distinguish approval scopes.
+			askModeApproved = true;
+			continue;
+		}
+		if ("askModeApproved" in data) askModeApproved = data.askModeApproved !== false;
+		else if (!("writeCapableApproved" in data)) askModeApproved = true;
+		if ("writeCapableApproved" in data) writeCapableApproved = data.writeCapableApproved === true;
 	}
-	return approved;
+	return { askModeApproved, writeCapableApproved };
 }
 
-function persistSessionSubagentApproval(pi: ExtensionAPI, approved: boolean): void {
-	pi.appendEntry(
-		SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE,
-		{ askModeApproved: approved } as SubagentSessionApprovalState,
-	);
+function hasSessionSubagentApproval(ctx: ExtensionContext): boolean {
+	return getSessionSubagentApprovalState(ctx).askModeApproved;
+}
+
+function persistSessionSubagentApproval(
+	pi: ExtensionAPI,
+	askModeApproved: boolean | undefined,
+	writeCapableApproved?: boolean,
+): void {
+	const state: SubagentSessionApprovalState = {};
+	if (askModeApproved !== undefined) state.askModeApproved = askModeApproved;
+	if (writeCapableApproved !== undefined) state.writeCapableApproved = writeCapableApproved;
+	pi.appendEntry(SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE, state);
 }
 
 function formatSubagentStatusLabel(mode: SubagentPolicyMode, sessionApproval: boolean): string {
@@ -684,7 +706,7 @@ function buildSubagentUsageText(): string {
 		`/subagents concurrency <n>|default — set max concurrent subagents (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
 		`/subagents max-tasks <n>|default — set max parallel tasks per call (1-${SUBAGENT_MAX_PARALLEL_TASKS_LIMIT})`,
 		"/subagents reset-limits — remove global subagent limit overrides from settings.json",
-		"/subagents cancel-session-approval — stop auto-approving ask-mode requests in this session",
+		"/subagents cancel-session-approval — stop auto-approving ask-mode or write-capable requests in this session",
 		'Manual settings.json keys: "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 	].join("\n");
 }
@@ -693,6 +715,7 @@ function buildSubagentSummaryText(
 	mode: SubagentPolicyMode,
 	sessionApproval: boolean,
 	executionSettings: LoadedSubagentExecutionSettings,
+	writeCapableSessionApproval = false,
 ): string {
 	const currentDepth = getCurrentSubagentDepth();
 	const remainingDelegationDepth = getRemainingDelegationDepth(
@@ -727,13 +750,19 @@ function buildSubagentSummaryText(
 		"- policy mode is still stored in ~/.pi/agent/subagent-policy.json",
 	];
 
+	const sessionApprovalLines: string[] = [];
 	if (mode === "ask" && sessionApproval) {
-		lines.splice(
-			4,
-			0,
+		sessionApprovalLines.push(
 			"- current session approval: eligible non-explicit ask-mode subagent requests are auto-approved in this session",
-			"- cancel it with /subagents cancel-session-approval",
 		);
+	}
+	if (writeCapableSessionApproval) {
+		sessionApprovalLines.push(
+			"- write-capable session approval: future non-explicit write-capable user-scoped subagents are auto-approved in this session; project-local agents and other guardrails still require approval",
+		);
+	}
+	if (sessionApprovalLines.length > 0) {
+		lines.splice(4, 0, ...sessionApprovalLines, "- cancel it with /subagents cancel-session-approval");
 	}
 
 	if (remainingDelegationDepth === 0) {
@@ -758,6 +787,7 @@ function buildSubagentPolicyPrompt(
 	sessionApproval: boolean,
 	executionSettings: LoadedSubagentExecutionSettings,
 	parentEscalationAvailable: boolean,
+	writeCapableSessionApproval = false,
 ): string {
 	const currentDepth = getCurrentSubagentDepth();
 	const maxDelegationDepth = executionSettings.limits.maxDelegationDepth;
@@ -777,6 +807,11 @@ function buildSubagentPolicyPrompt(
 		lines.push(`- This session may spawn ${remainingDelegationDepth} more subagent generation(s).`);
 	} else {
 		lines.push("- Max delegation depth has been reached in this session.");
+	}
+
+	if (writeCapableSessionApproval && mode !== "off") {
+		lines.push("- This session has current-session approval for non-explicit write-capable user-scoped subagents; future matching calls can run without another prompt.");
+		lines.push("- Project-local agents, unknown agents, ordinary PR-review guardrails, and depth/limit guardrails still require approval or block as usual.");
 	}
 
 	if (inheritedApprovalScope === "all" && mode !== "off") {
@@ -847,6 +882,7 @@ function evaluateAutoEquivalentSubagentPolicy(
 	latestUserPrompt: string,
 	explicitRequest: boolean,
 	hasUI: boolean,
+	writeCapableSessionApproval = false,
 ): SubagentPolicyDecision {
 	const unknownAgentBlock = blockUnknownAgentPolicyViolation(summary);
 	if (unknownAgentBlock) return unknownAgentBlock;
@@ -858,7 +894,8 @@ function evaluateAutoEquivalentSubagentPolicy(
 			"Blocked by subagent policy: ordinary PR reviews are not auto-delegated without approval, and no UI is available.",
 		);
 	}
-	if (summary.writeCapableAgents.length > 0) {
+	const writeCapableSessionApprovalUsed = summary.writeCapableAgents.length > 0 && writeCapableSessionApproval;
+	if (summary.writeCapableAgents.length > 0 && !writeCapableSessionApproval) {
 		const agents = summary.writeCapableAgents.join(", ");
 		return requireApprovalOrBlock(
 			hasUI,
@@ -876,7 +913,9 @@ function evaluateAutoEquivalentSubagentPolicy(
 	}
 	return {
 		action: "allow",
-		reason: "Auto-equivalent guardrails passed for non-explicit read-only delegation within configured limits.",
+		reason: writeCapableSessionApprovalUsed
+			? `Auto-equivalent guardrails passed; current-session write-capable approval covers ${summary.writeCapableAgents.join(", ")}.`
+			: "Auto-equivalent guardrails passed for non-explicit read-only delegation within configured limits.",
 	};
 }
 
@@ -888,6 +927,7 @@ export function evaluateSubagentPolicy(
 	hasUI: boolean,
 	inheritedApprovalScope: DelegationApprovalScope,
 	sessionApproval: boolean,
+	writeCapableSessionApproval = false,
 ): SubagentPolicyDecision {
 	if (mode === "off") {
 		return {
@@ -912,6 +952,12 @@ export function evaluateSubagentPolicy(
 			return {
 				action: "allow",
 				reason: "This session inherits read-only approval for nested subagent use from an ancestor session.",
+			};
+		}
+		if (writeCapableSessionApproval && summary.writeCapableAgents.length > 0 && summary.projectAgents.length === 0) {
+			return {
+				action: "allow",
+				reason: `Current-session write-capable approval covers nested delegation to ${summary.writeCapableAgents.join(", ")}.`,
 			};
 		}
 		return hasUI
@@ -949,7 +995,13 @@ export function evaluateSubagentPolicy(
 		};
 	}
 
-	return evaluateAutoEquivalentSubagentPolicy(summary, latestUserPrompt, explicitRequest, hasUI);
+	return evaluateAutoEquivalentSubagentPolicy(
+		summary,
+		latestUserPrompt,
+		explicitRequest,
+		hasUI,
+		writeCapableSessionApproval,
+	);
 }
 
 export interface ProjectAgentConfirmationDetails {
@@ -1014,6 +1066,19 @@ export class ProjectAgentConfirmationPolicyCoverage {
 	}
 }
 
+function shouldOfferSessionApprovalOption(mode: SubagentPolicyMode, summary: SubagentRequestSummary): boolean {
+	return mode === "ask" || summary.writeCapableAgents.length > 0;
+}
+
+export function getSubagentApprovalOptions(
+	mode: SubagentPolicyMode,
+	summary: SubagentRequestSummary,
+): string[] {
+	return shouldOfferSessionApprovalOption(mode, summary)
+		? [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_ALLOW_SESSION, APPROVAL_OPTION_DENY]
+		: [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_DENY];
+}
+
 export function buildApprovalPrompt(
 	mode: SubagentPolicyMode,
 	summary: SubagentRequestSummary,
@@ -1035,6 +1100,11 @@ export function buildApprovalPrompt(
 				formatProjectAgentConfirmationBody(projectAgentConfirmationDetails),
 			]
 		: [];
+	const approvalOptions = getSubagentApprovalOptions(mode, summary);
+	const sessionApprovalExplanation =
+		summary.writeCapableAgents.length > 0 && approvalOptions.includes(APPROVAL_OPTION_ALLOW_SESSION)
+			? "Allow for current session will auto-approve future non-explicit write-capable user-scoped subagents in this session; project-local agents and other guardrails still require approval."
+			: undefined;
 
 	const lines = [
 		`Policy mode: ${formatSubagentPolicyMode(mode)}`,
@@ -1050,9 +1120,8 @@ export function buildApprovalPrompt(
 		summary.unknownAgents.length > 0 ? `Unknown agents: ${summary.unknownAgents.join(", ")}` : undefined,
 		...projectAgentConfirmationPrompt,
 		`Reason: ${reason}`,
-		mode === "ask"
-			? `Approval options: ${APPROVAL_OPTION_ALLOW_ONCE} / ${APPROVAL_OPTION_ALLOW_SESSION} / ${APPROVAL_OPTION_DENY}`
-			: `Approval options: ${APPROVAL_OPTION_ALLOW_ONCE} / ${APPROVAL_OPTION_DENY}`,
+		`Approval options: ${approvalOptions.join(" / ")}`,
+		sessionApprovalExplanation,
 		`Latest user prompt: ${trimPreview(latestUserPrompt || "(unavailable)", 180)}`,
 		"",
 		"Planned tasks:",
@@ -2506,14 +2575,16 @@ export default function (pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!pi.getActiveTools().includes("subagent") && !pi.getActiveTools().includes(PARENT_ESCALATION_TOOL_NAME)) return undefined;
 		const executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
+		const sessionApprovalState = getSessionSubagentApprovalState(ctx);
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${buildSubagentPolicyPrompt(
 				policyState.mode,
 				ctx.hasUI,
 				getInheritedSubagentApprovalScope(),
-				hasSessionSubagentApproval(ctx),
+				sessionApprovalState.askModeApproved,
 				executionSettings,
 				hasParentEscalationRelay(),
+				sessionApprovalState.writeCapableApproved,
 			)}`,
 		};
 	});
@@ -2571,7 +2642,7 @@ export default function (pi: ExtensionAPI) {
 		const latestUserPrompt = getLatestUserPromptText(ctx);
 		const explicitRequest = isExplicitSubagentRequest(latestUserPrompt, summary.requestedAgents);
 		const inheritedApprovalScope = getInheritedSubagentApprovalScope();
-		const sessionApproval = hasSessionSubagentApproval(ctx);
+		const sessionApprovalState = getSessionSubagentApprovalState(ctx);
 		const decision = evaluateSubagentPolicy(
 			policyState.mode,
 			summary,
@@ -2579,9 +2650,14 @@ export default function (pi: ExtensionAPI) {
 			latestUserPrompt,
 			ctx.hasUI,
 			inheritedApprovalScope,
-			sessionApproval,
+			sessionApprovalState.askModeApproved,
+			sessionApprovalState.writeCapableApproved,
 		);
-		const delegatedApprovalScope = getDelegatedApprovalScope(explicitRequest, inheritedApprovalScope, sessionApproval);
+		const delegatedApprovalScope = getDelegatedApprovalScope(
+			explicitRequest,
+			inheritedApprovalScope,
+			sessionApprovalState.askModeApproved,
+		);
 
 		if (decision.action === "allow") {
 			delegatedApprovalByToolCallId.set(event.toolCallId, delegatedApprovalScope);
@@ -2617,13 +2693,13 @@ export default function (pi: ExtensionAPI) {
 				explicitRequest,
 				projectAgentConfirmationDetails,
 			),
-			policyState.mode === "ask"
-				? [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_ALLOW_SESSION, APPROVAL_OPTION_DENY]
-				: [APPROVAL_OPTION_ALLOW_ONCE, APPROVAL_OPTION_DENY],
+			getSubagentApprovalOptions(policyState.mode, summary),
 		);
 		if (choice === APPROVAL_OPTION_ALLOW_SESSION) {
-			persistSessionSubagentApproval(pi, true);
-			updateSubagentStatus(ctx, policyState.mode, true);
+			const askModeApproved = policyState.mode === "ask" ? true : undefined;
+			const writeCapableApproved = summary.writeCapableAgents.length > 0 ? true : undefined;
+			persistSessionSubagentApproval(pi, askModeApproved, writeCapableApproved);
+			updateSubagentStatus(ctx, policyState.mode, askModeApproved === true);
 			delegatedApprovalByToolCallId.set(event.toolCallId, "read-only");
 			projectAgentConfirmationPolicyCoverage.setCovered(
 				event.toolCallId,
@@ -2716,7 +2792,7 @@ export default function (pi: ExtensionAPI) {
 				{
 					value: "cancel-session-approval",
 					label: "cancel-session-approval",
-					description: "Stop auto-approving ask-mode subagent requests in this session",
+					description: "Stop auto-approving ask-mode or write-capable subagent requests in this session",
 				},
 			];
 			const filtered = items.filter((item) => item.value.startsWith(normalizedPrefix));
@@ -2725,11 +2801,21 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const raw = args.trim();
 			let executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
-			const sessionApproval = hasSessionSubagentApproval(ctx);
+			const sessionApprovalState = getSessionSubagentApprovalState(ctx);
+			const sessionApproval = sessionApprovalState.askModeApproved;
+			const buildCurrentSummaryText = () => {
+				const currentState = getSessionSubagentApprovalState(ctx);
+				return buildSubagentSummaryText(
+					policyState.mode,
+					currentState.askModeApproved,
+					executionSettings,
+					currentState.writeCapableApproved,
+				);
+			};
 
 			if (!raw || raw === "show") {
 				updateSubagentStatus(ctx, policyState.mode, sessionApproval, executionSettings);
-				notifyCommand(ctx, buildSubagentSummaryText(policyState.mode, sessionApproval, executionSettings));
+				notifyCommand(ctx, buildCurrentSummaryText());
 				return;
 			}
 
@@ -2752,16 +2838,16 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (raw === "cancel-session-approval") {
-				if (!sessionApproval) {
+				if (!sessionApprovalState.askModeApproved && !sessionApprovalState.writeCapableApproved) {
 					updateSubagentStatus(ctx, policyState.mode, false, executionSettings);
 					notifyCommand(ctx, "No current session subagent approval is active.", "warning");
 					return;
 				}
-				persistSessionSubagentApproval(pi, false);
+				persistSessionSubagentApproval(pi, false, false);
 				updateSubagentStatus(ctx, policyState.mode, false, executionSettings);
 				notifyCommand(
 					ctx,
-					"Cancelled current session subagent approval. Non-explicit ask-mode subagent requests will prompt again.",
+					"Cancelled current session subagent approval. Non-explicit ask-mode and write-capable subagent requests will prompt again.",
 				);
 				return;
 			}
@@ -2778,7 +2864,7 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await setPolicyMode(nextMode, ctx);
 				notifyCommand(
 					ctx,
-					`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\nSaved mode to ~/.pi/agent/subagent-policy.json`,
+					`${buildCurrentSummaryText()}\n\nSaved mode to ~/.pi/agent/subagent-policy.json`,
 				);
 				return;
 			}
@@ -2802,7 +2888,7 @@ export default function (pi: ExtensionAPI) {
 							: "Cleared the global maxConcurrency override from ~/.pi/agent/settings.json.";
 					notifyCommand(
 						ctx,
-						`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\n${note}`,
+						`${buildCurrentSummaryText()}\n\n${note}`,
 					);
 					return;
 				}
@@ -2824,7 +2910,7 @@ export default function (pi: ExtensionAPI) {
 							: `Saved maxConcurrency=${requested} to ~/.pi/agent/settings.json.`;
 				notifyCommand(
 					ctx,
-					`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\n${note}`,
+					`${buildCurrentSummaryText()}\n\n${note}`,
 				);
 				return;
 			}
@@ -2842,7 +2928,7 @@ export default function (pi: ExtensionAPI) {
 							: "Cleared the global maxParallelTasks override from ~/.pi/agent/settings.json.";
 					notifyCommand(
 						ctx,
-						`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\n${note}`,
+						`${buildCurrentSummaryText()}\n\n${note}`,
 					);
 					return;
 				}
@@ -2862,7 +2948,7 @@ export default function (pi: ExtensionAPI) {
 						: `Saved maxParallelTasks=${requested} to ~/.pi/agent/settings.json.`;
 				notifyCommand(
 					ctx,
-					`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\n${note}`,
+					`${buildCurrentSummaryText()}\n\n${note}`,
 				);
 				return;
 			}
@@ -2875,7 +2961,7 @@ export default function (pi: ExtensionAPI) {
 						: "Cleared global subagent limit overrides from ~/.pi/agent/settings.json.";
 				notifyCommand(
 					ctx,
-					`${buildSubagentSummaryText(policyState.mode, hasSessionSubagentApproval(ctx), executionSettings)}\n\n${note}`,
+					`${buildCurrentSummaryText()}\n\n${note}`,
 				);
 				return;
 			}

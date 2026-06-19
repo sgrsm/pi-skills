@@ -5,6 +5,7 @@ import {
 	buildApprovalPrompt,
 	buildProjectAgentConfirmationDetails,
 	evaluateSubagentPolicy,
+	getSubagentApprovalOptions,
 	resolveDelegatedApprovalScopeForPolicy,
 	shouldPolicyApprovalCoverProjectAgentConfirmation,
 	shouldPromptForProjectAgentConfirmation,
@@ -57,6 +58,18 @@ function projectParallelSummary() {
 	};
 }
 
+function writeCapableParallelSummary() {
+	return {
+		...readOnlyParallelSummary(2),
+		requestedTasks: [
+			{ agent: "worker", task: "Implement part A" },
+			{ agent: "worker", task: "Implement part B" },
+		],
+		requestedAgents: ["worker"],
+		writeCapableAgents: ["worker"],
+	};
+}
+
 test("auto mode does not add a hard 3-agent cap beyond execution limits", () => {
 	const decision = evaluateSubagentPolicy(
 		"auto",
@@ -86,15 +99,7 @@ test("auto mode allows non-explicit read-only single-agent delegation", () => {
 });
 
 test("auto mode requires approval for non-explicit write-capable agents", () => {
-	const summary = {
-		...readOnlyParallelSummary(2),
-		requestedTasks: [
-			{ agent: "worker", task: "Implement part A" },
-			{ agent: "worker", task: "Implement part B" },
-		],
-		requestedAgents: ["worker"],
-		writeCapableAgents: ["worker"],
-	};
+	const summary = writeCapableParallelSummary();
 
 	assert.equal(
 		evaluateSubagentPolicy("auto", summary, false, "Improve this module", true, "none", false).action,
@@ -104,6 +109,55 @@ test("auto mode requires approval for non-explicit write-capable agents", () => 
 		evaluateSubagentPolicy("auto", summary, false, "Improve this module", false, "none", false).action,
 		"block",
 	);
+});
+
+const APPROVAL_OPTIONS_WITH_SESSION = ["Allow once", "Allow for current session", "Deny"];
+
+test("auto mode write-capable approval prompt offers current-session approval", () => {
+	const summary = writeCapableParallelSummary();
+	const decision = evaluateSubagentPolicy("auto", summary, false, "Improve this module", true, "none", false);
+
+	assert.equal(decision.action, "ask");
+	assert.deepEqual(getSubagentApprovalOptions("auto", summary), APPROVAL_OPTIONS_WITH_SESSION);
+	assert.match(
+		buildApprovalPrompt("auto", summary, decision.reason, "Improve this module", false),
+		/Approval options: Allow once \/ Allow for current session \/ Deny/,
+	);
+});
+
+test("write-capable current-session approval allows future non-explicit write-capable calls", () => {
+	const summary = writeCapableParallelSummary();
+
+	assert.equal(
+		evaluateSubagentPolicy("auto", summary, false, "Improve this module", false, "none", false, true).action,
+		"allow",
+	);
+	assert.equal(
+		evaluateSubagentPolicy("ask", summary, false, "Improve this module", false, "none", true, true).action,
+		"allow",
+	);
+});
+
+test("write-capable current-session approval does not skip project-local approval", () => {
+	const projectSummary = projectParallelSummary();
+	const writeCapableProjectSummary = {
+		...projectSummary,
+		writeCapableAgents: ["repo-reviewer"],
+	};
+
+	assert.deepEqual(getSubagentApprovalOptions("auto", projectSummary), ["Allow once", "Deny"]);
+	const decision = evaluateSubagentPolicy(
+		"auto",
+		writeCapableProjectSummary,
+		false,
+		"Improve this module",
+		true,
+		"none",
+		false,
+		true,
+	);
+	assert.equal(decision.action, "ask");
+	assert.match(decision.reason, /Project-local agents require approval/);
 });
 
 test("manual, ask, and auto pass read-only nested delegation approval to allowed child calls", () => {

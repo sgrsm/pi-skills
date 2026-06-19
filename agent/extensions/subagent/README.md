@@ -41,7 +41,7 @@ Behavior:
 - `off|manual|ask|auto` saves the global policy mode to `~/.pi/agent/subagent-policy.json`.
 - `concurrency` and `max-tasks` save global defaults to `~/.pi/agent/settings.json`.
 - `reset-limits` removes the global `maxConcurrency` and `maxParallelTasks` overrides.
-- `cancel-session-approval` clears the current-session approval created by `ask` mode's `Allow for current session` choice.
+- `cancel-session-approval` clears current-session approvals created by `Allow for current session`, including ask-mode non-explicit approval and write-capable subagent approval.
 
 Argument completion is provided for the command names and common limit values.
 
@@ -139,7 +139,7 @@ Policy modes:
 - `off` - disables the `subagent` tool.
 - `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
 - `ask` - default. Uses the same delegation eligibility as `auto`, but valid explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve eligible non-explicit read-only work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked.
+- `auto` - may auto-approve eligible non-explicit read-only work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked. When a write-capable approval prompt appears, `Allow for current session` is available and lets future non-explicit write-capable user-scoped subagent calls run in the same session.
 
 Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
 
@@ -149,9 +149,9 @@ Shared delegation guardrails for `manual`, `ask`, and `auto`:
 - single-agent non-explicit read-only delegation is auto-approved when other guardrails pass;
 - parallel/chain task count is governed by configured `maxParallelTasks` and `maxConcurrency`; there is no separate auto-mode agent cap;
 - ordinary PR reviews are not auto-delegated;
-- write-capable and project-local agents require explicit request/approval, or are blocked without UI; unknown agent names are always blocked.
+- write-capable and project-local agents require explicit request/approval, or are blocked without UI; a current-session write-capable approval covers future matching user-scoped calls, but not project-local agents; unknown agent names are always blocked.
 
-`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls. `Allow for current session` does not disable future project-local confirmations; a project-local skip only applies to the same tool call whose policy approval included the project-agent warning.
+`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls. Write-capable approval prompts in `auto` (and other promptable policy paths) include `Allow for current session`; choosing it auto-approves future non-explicit write-capable user-scoped subagent calls in the same session. `Allow for current session` does not disable future project-local confirmations; a project-local skip only applies to the same tool call whose policy approval included the project-agent warning.
 
 A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
 
