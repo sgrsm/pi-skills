@@ -75,6 +75,8 @@ interface ActivityNode {
 	status: ActivityStatus;
 	task?: string;
 	children: ActivityNode[];
+	kind?: "subagent";
+	agentScope?: AgentScopeLike;
 }
 
 interface ParentEscalationOccurrence {
@@ -392,6 +394,10 @@ export function getSubagentCallLabel(args: Record<string, any>): string {
 	return "subagent";
 }
 
+function normalizeAgentScopeLike(value: unknown): AgentScopeLike {
+	return value === "project" || value === "both" ? value : "user";
+}
+
 function getMaxSubagentRelativeDepthFromMessages(messages: MessageLike[]): number {
 	const toolResults = getToolResultsByCallId(messages);
 	const seenToolCalls = new Set<string>();
@@ -485,6 +491,7 @@ function buildNestedActivityNodes(messages: MessageLike[]): ActivityNode[] {
 			if (part.name === "subagent") {
 				const resultMessage = callId ? toolResults.get(callId) : undefined;
 				const nestedDetails = resultMessage && isRecord(resultMessage) ? parseSubagentDetails(resultMessage.details) : null;
+				const nestedArgs = isRecord(part.arguments) ? part.arguments : {};
 				const status: ActivityStatus = nestedDetails
 					? getAggregateActivityStatus(nestedDetails.results)
 					: resultMessage && isRecord(resultMessage) && resultMessage.isError
@@ -493,11 +500,13 @@ function buildNestedActivityNodes(messages: MessageLike[]): ActivityNode[] {
 							? "done"
 							: "running";
 				nodes.push({
-					label: getSubagentCallLabel(part.arguments ?? {}),
+					kind: "subagent",
+					label: getSubagentCallLabel(nestedArgs),
 					status,
+					agentScope: nestedDetails?.agentScope ?? normalizeAgentScopeLike(nestedArgs.agentScope),
 					children: nestedDetails
 						? nestedDetails.results.map(buildResultActivityNode)
-						: buildRequestedTaskActivityNodes(part.arguments ?? {}),
+						: buildRequestedTaskActivityNodes(nestedArgs),
 				});
 				continue;
 			}
@@ -518,10 +527,107 @@ function buildNestedActivityNodes(messages: MessageLike[]): ActivityNode[] {
 	return nodes;
 }
 
+function getActivityStatusColor(status: ActivityStatus): string {
+	return status === "done" ? "success" : status === "failed" ? "error" : status === "running" ? "warning" : "accent";
+}
+
 function formatActivityStatus(status: ActivityStatus, themeFg: ThemeFg): string {
-	const color =
-		status === "done" ? "success" : status === "failed" ? "error" : status === "running" ? "warning" : "accent";
-	return themeFg(color, `[${status}]`);
+	return themeFg(getActivityStatusColor(status), `[${status}]`);
+}
+
+function formatBareActivityStatus(status: ActivityStatus, themeFg: ThemeFg): string {
+	return themeFg(getActivityStatusColor(status), status);
+}
+
+function formatActivityStatusSummary(statuses: ActivityStatus[]): string {
+	const counts: Record<ActivityStatus, number> = {
+		running: 0,
+		done: 0,
+		failed: 0,
+		escalated: 0,
+		"waiting on parent/user": 0,
+	};
+	for (const status of statuses) {
+		counts[status]++;
+	}
+
+	const parts: string[] = [];
+	if (counts.done > 0) parts.push(`${counts.done} done`);
+	if (counts.failed > 0) parts.push(`${counts.failed} failed`);
+	if (counts.running > 0) parts.push(`${counts.running} running`);
+	if (counts.escalated > 0) parts.push(`${counts.escalated} escalated`);
+	if (counts["waiting on parent/user"] > 0) parts.push(`${counts["waiting on parent/user"]} waiting on parent/user`);
+	return parts.join(", ") || "0 tasks";
+}
+
+function formatResultStatusSummary(results: SingleResultLike[]): string {
+	return formatActivityStatusSummary(results.map(getResultActivityStatus));
+}
+
+function formatNodeStatusSummary(node: ActivityNode): string {
+	return formatActivityStatusSummary(node.children.length > 0 ? node.children.map((child) => child.status) : [node.status]);
+}
+
+const TASK_PATH_PATTERN = /(?:^|\s)((?:\/[^\s,;:)\]}]+|(?:~|\.{1,2}|[\w.-]+)[/\\][^\s,;:)\]}]+))/;
+const TASK_LEADING_ACTION_PATTERN =
+	/^(?:inspect|review|analy[sz]e|check|map|gather|find|look(?:\s+at|\s+for)?|read|scan|investigate|audit|explore|summari[sz]e|plan|implement|fix|update)\b[\s:,-]*/i;
+const TASK_LEADING_RELATION_PATTERN = /^(?:for|about|regarding|re|on|to|and)\s+/i;
+
+function stripLeadingTaskRelation(text: string): string {
+	return text.replace(/^[\s,;:.-]+/, "").replace(TASK_LEADING_RELATION_PATTERN, "").trim();
+}
+
+function stripLeadingTaskAction(text: string): string {
+	return text.replace(TASK_LEADING_ACTION_PATTERN, "").trim();
+}
+
+function getPathLeaf(rawPath: string): string {
+	const cleaned = rawPath.replace(/[.,;:)\]}]+$/, "");
+	const parts = cleaned.split(/[\\/]/).filter(Boolean);
+	return parts[parts.length - 1] ?? cleaned;
+}
+
+function formatParallelTaskPreview(task: string | undefined): string {
+	const normalized = typeof task === "string" ? task.replace(/\s+/g, " ").trim() : "";
+	if (!normalized) return "";
+
+	const pathMatch = normalized.match(TASK_PATH_PATTERN);
+	if (!pathMatch || pathMatch.index === undefined) return trimPreview(normalized, 72);
+
+	const rawPath = pathMatch[1];
+	const pathOffset = pathMatch[0].indexOf(rawPath);
+	const pathStart = pathMatch.index + Math.max(0, pathOffset);
+	const pathEnd = pathStart + rawPath.length;
+	const target = getPathLeaf(rawPath);
+	const topic = stripLeadingTaskRelation(normalized.slice(pathEnd));
+	if (topic) return trimPreview(`${target} · ${topic}`, 72);
+
+	const leadIn = stripLeadingTaskAction(normalized.slice(0, pathStart));
+	if (leadIn) return trimPreview(`${target} · ${leadIn}`, 72);
+	return trimPreview(target, 72);
+}
+
+function shouldFlattenNestedSubagentNode(node: ActivityNode): boolean {
+	return node.kind === "subagent" && node.children.length > 0 && node.status !== "failed";
+}
+
+function renderFlattenedActivityNodes(
+	node: ActivityNode,
+	themeFg: ThemeFg,
+	prefix: string,
+	isLast: boolean,
+	compact: boolean,
+): string[] {
+	const lines: string[] = [];
+	for (let i = 0; i < node.children.length; i++) {
+		const childIsLast = i === node.children.length - 1 ? isLast : false;
+		lines.push(
+			...(compact
+				? renderCompactActivityNode(node.children[i], themeFg, prefix, childIsLast)
+				: renderActivityNode(node.children[i], themeFg, prefix, childIsLast)),
+		);
+	}
+	return lines;
 }
 
 function renderActivityNode(
@@ -531,6 +637,10 @@ function renderActivityNode(
 	isLast = true,
 	isRoot = false,
 ): string[] {
+	if (!isRoot && shouldFlattenNestedSubagentNode(node)) {
+		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, false);
+	}
+
 	const connector = isRoot ? "" : themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
 	const task = node.task ? themeFg("dim", `: ${trimPreview(node.task, 90)}`) : "";
 	const line = `${connector}${themeFg("accent", node.label)}${task} ${formatActivityStatus(node.status, themeFg)}`;
@@ -542,7 +652,70 @@ function renderActivityNode(
 	return lines;
 }
 
+function formatCompactSubagentHeader(
+	statusSummary: string,
+	aggregateStatus: ActivityStatus,
+	agentScope: AgentScopeLike | undefined,
+	themeFg: ThemeFg,
+): string {
+	return (
+		themeFg("toolTitle", "subagents") +
+		themeFg("muted", " · ") +
+		themeFg(getActivityStatusColor(aggregateStatus), statusSummary) +
+		themeFg("muted", ` · scope: ${agentScope ?? "user"}`)
+	);
+}
+
+function renderCompactActivityNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
+	if (shouldFlattenNestedSubagentNode(node)) {
+		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, true);
+	}
+	if (node.kind === "subagent" && node.status === "running") {
+		return renderCompactSubagentGroupNode(node, themeFg, prefix, isLast);
+	}
+
+	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
+	const taskPreview = formatParallelTaskPreview(node.task);
+	const task = taskPreview ? themeFg("dim", `  ${taskPreview}`) : "";
+	const line = `${connector}${themeFg("accent", node.label)}${task}   ${formatBareActivityStatus(node.status, themeFg)}`;
+	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
+	const lines = [line];
+	for (let i = 0; i < node.children.length; i++) {
+		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1));
+	}
+	return lines;
+}
+
+function renderCompactSubagentGroupNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
+	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
+	const lines = [connector + formatCompactSubagentHeader(formatNodeStatusSummary(node), node.status, node.agentScope, themeFg)];
+	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
+	for (let i = 0; i < node.children.length; i++) {
+		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1));
+	}
+	return lines;
+}
+
+function formatCompactSubagentActivityTree(details: SubagentDetailsLike, themeFg: ThemeFg): string {
+	const lines = [
+		formatCompactSubagentHeader(
+			formatResultStatusSummary(details.results),
+			getAggregateActivityStatus(details.results),
+			details.agentScope,
+			themeFg,
+		),
+	];
+	const children = details.results.map(buildResultActivityNode);
+	for (let i = 0; i < children.length; i++) {
+		lines.push(...renderCompactActivityNode(children[i], themeFg, "", i === children.length - 1));
+	}
+	return lines.join("\n");
+}
+
 export function formatSubagentActivityTree(details: SubagentDetailsLike, themeFg: ThemeFg): string {
+	if (details.mode === "parallel" || (details.mode === "single" && getAggregateActivityStatus(details.results) === "running")) {
+		return formatCompactSubagentActivityTree(details, themeFg);
+	}
 	const root: ActivityNode = {
 		label: getSubagentRootLabel(details),
 		status: getAggregateActivityStatus(details.results),

@@ -154,10 +154,160 @@ test("activity tree renders nested subagent hierarchy and escalation status", ()
 		[
 			"subagent reviewer [waiting on parent/user]",
 			"└─ reviewer: review agent/extensions/subagent/index.ts [waiting on parent/user]",
-			"   └─ subagent parallel (2 tasks) [waiting on parent/user]",
-			"      ├─ scout: gather context [done]",
-			"      └─ planner: suggest review angles [waiting on parent/user]",
-			"         └─ escalate_to_parent: Need parent decision [waiting on parent/user]",
+			"   ├─ scout: gather context [done]",
+			"   └─ planner: suggest review angles [waiting on parent/user]",
+			"      └─ escalate_to_parent: Need parent decision [waiting on parent/user]",
+		].join("\n"),
+	);
+});
+
+test("parallel activity tree uses compact running view with scope and path task labels", () => {
+	const details: SubagentDetailsLike = {
+		mode: "parallel",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "scout",
+				task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_4_1 for Kafka producer config",
+				exitCode: -1,
+			}),
+			makeResult({
+				agent: "scout",
+				task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config",
+				exitCode: -1,
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · 2 running · scope: user",
+			"├─ scout  module5_4_1 · Kafka producer config   running",
+			"└─ scout  module5_7 · Kafka producer config   running",
+		].join("\n"),
+	);
+});
+
+test("single activity tree uses compact running view", () => {
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				task: "Implement the agreed refactoring for Kafka producer wiring",
+				exitCode: -1,
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · 1 running · scope: user",
+			"└─ worker  Implement the agreed refactoring for Kafka producer wiring   running",
+		].join("\n"),
+	);
+});
+
+test("nested running subagent flattens child rows in compact view", () => {
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				task: "Align bean method names for semantics",
+				exitCode: -1,
+				messages: [
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "nested-scouts",
+								name: "subagent",
+								arguments: {
+									tasks: [
+										{
+											agent: "scout",
+											task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config",
+										},
+										{ agent: "scout", task: "Doing other stuff" },
+									],
+									agentScope: "user",
+								},
+							},
+						],
+					},
+				],
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · 1 running · scope: user",
+			"└─ worker  Align bean method names for semantics   running",
+			"   ├─ scout  module5_7 · Kafka producer config   running",
+			"   └─ scout  Doing other stuff   running",
+		].join("\n"),
+	);
+});
+
+test("completed nested subagent flattens child rows in compact view", () => {
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				task: "Review producers",
+				exitCode: -1,
+				messages: [
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "nested-scout",
+								name: "subagent",
+								arguments: { agent: "scout", task: "Inspect config tests", agentScope: "user" },
+							},
+						],
+					},
+					{
+						role: "toolResult",
+						toolCallId: "nested-scout",
+						toolName: "subagent",
+						details: {
+							mode: "single",
+							agentScope: "user",
+							projectAgentsDir: null,
+							results: [makeResult({ agent: "scout", task: "Inspect config tests" })],
+						},
+					},
+				],
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · 1 running · scope: user",
+			"└─ worker  Review producers   running",
+			"   └─ scout  Inspect config tests   done",
 		].join("\n"),
 	);
 });

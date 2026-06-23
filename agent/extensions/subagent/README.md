@@ -6,7 +6,7 @@ Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child
 
 - Runs named agent prompts from `~/.pi/agent/agents` and, when opted in, project-local `.pi/agents`.
 - Supports one child, parallel children, or a sequential chain that passes prior output with `{previous}`.
-- Streams partial child results back to the parent and tracks nested subagent activity.
+- Streams partial child results back to the parent and tracks nested subagent activity with a compact live task view.
 - Applies policy, depth, trust, and concurrency guardrails before spawning children.
 - Lets delegated children use `escalate_to_parent` to hand user decisions back to the parent session.
 

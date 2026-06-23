@@ -3346,7 +3346,13 @@ export default function (pi: ExtensionAPI) {
 			};
 		},
 
-		renderCall(args, theme, _context) {
+		renderCall(args, theme, context) {
+			const isSingleCall = typeof args.agent === "string" && typeof args.task === "string";
+			const isParallelCall = Array.isArray(args.tasks) && args.tasks.length > 0;
+			if ((isSingleCall || isParallelCall) && context.executionStarted && context.isPartial) {
+				return new Container();
+			}
+
 			const scope: AgentScope = args.agentScope ?? "user";
 			if (args.chain && args.chain.length > 0) {
 				let text =
@@ -3423,6 +3429,8 @@ export default function (pi: ExtensionAPI) {
 
 			if (details.mode === "single" && details.results.length === 1) {
 				const r = details.results[0];
+				if (isRunningResult(r)) return new Text(activityTree, 0, 0);
+
 				const isError = isFailedResult(r);
 				const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
 				const displayItems = getDisplayItems(r.messages);
@@ -3619,6 +3627,8 @@ export default function (pi: ExtensionAPI) {
 				const status = isRunning
 					? `${successCount + failCount}/${details.results.length} done, ${running} running`
 					: `${successCount}/${details.results.length} tasks`;
+
+				if (isRunning) return new Text(activityTree, 0, 0);
 
 				if (expanded && !isRunning) {
 					const container = new Container();
