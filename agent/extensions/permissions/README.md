@@ -15,6 +15,8 @@ Output suppression to the exact null device (`>/dev/null`, `2>/dev/null`, `&>/de
 
 Paths inside the current working directory are not guarded by this extension.
 
+The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
+
 ### Git mutations on existing non-agent branches
 
 Prompts before protected `git` operations on an existing branch that is not considered agent-created:
@@ -58,6 +60,8 @@ Session grant scopes are narrow:
 - git grants: same operation, repository, and branch
 - dependency grants: same package manager, operation class, and project root
 
+Auto-approval for the Pi temp workspace does not create a visible session grant and does not count in the footer.
+
 In non-interactive/no-UI mode, guarded actions are blocked instead of prompting.
 
 ## Slash command
@@ -89,6 +93,7 @@ These examples trigger prompts when the agent runs them through the `bash` tool:
 
 ```bash
 echo "hello" > /tmp/pi-out.txt
+rm -rf /tmp/pi/session-other
 git reset --hard HEAD~1
 git rebase main
 npm install
@@ -106,6 +111,7 @@ gradle build
 some-command >/dev/null
 some-command 2>/dev/null
 some-command | tee /dev/null
+# Also not guarded: mutations below the session temp workspace path shown in Pi's prompt.
 ```
 
 ## Tools, flags, and events
@@ -126,10 +132,11 @@ Extension-specific CLI flags/settings:
 
 Pi events used:
 
-- `session_start` - restore tracked agent-created branches and update footer status
-- `tool_call` - inspect guarded tool calls before execution
+- `session_start` - restore tracked agent-created branches, compute the session temp workspace path, and update footer status
+- `before_agent_start` - tell Pi the current session temp workspace path for scratch files
+- `tool_call` - inspect guarded tool calls before execution and auto-approve mutations below the session temp workspace
 - `tool_result` - record successful agent-created git branches
-- `session_shutdown` - reset enabled state, session grants, and pending branch tracking work
+- `session_shutdown` - reset enabled state, session grants, temp workspace state, and pending branch tracking work
 
 ## Footer status
 

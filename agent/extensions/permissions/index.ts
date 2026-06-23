@@ -28,6 +28,7 @@ import {
 	type PermissionGrant,
 	type PermissionRequest,
 } from "./permissions.ts";
+import { createPiTempWorkspace, isPathInsideWorkspaceChild, type PiTempWorkspace } from "./tempWorkspace.ts";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 
 const STATUS_KEY = FOOTER_STATUS_KEYS.permissions;
@@ -56,18 +57,27 @@ export default function (pi: ExtensionAPI) {
 	const gitStateProvider = createGitStateProvider(pi);
 	const packageProjectResolver = createPackageProjectResolver(pi);
 	let permissionsEnabled = true;
+	let tempWorkspace: PiTempWorkspace | undefined;
 
 	pi.on("session_start", (_event, ctx) => {
+		tempWorkspace = createTempWorkspaceForContext(ctx);
 		restoreAgentBranches(ctx, agentBranches);
 		updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 	});
 
 	pi.on("session_shutdown", () => {
 		permissionsEnabled = true;
+		tempWorkspace = undefined;
 		filePermissions.clear();
 		gitPermissions.clear();
 		packagePermissions.clear();
 		pendingBranchCreations.clear();
+	});
+
+	pi.on("before_agent_start", (event, ctx) => {
+		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx);
+		tempWorkspace = workspace;
+		return { systemPrompt: `${event.systemPrompt}\n\n${formatTempWorkspacePrompt(workspace)}` };
 	});
 
 	pi.registerCommand("permissions", {
@@ -133,12 +143,15 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event, ctx) => {
 		const refreshStatus = () => updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
-		if (permissionsEnabled) {
-			const fileRequest = fileRequestForToolCall(event, ctx.cwd);
-			if (fileRequest && !filePermissions.hasGrant(fileRequest)) {
-				const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
-				if (decision) return decision;
-			}
+		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx);
+		tempWorkspace = workspace;
+		const fileRequest = fileRequestForToolCall(event, ctx.cwd);
+		const tempWorkspaceAutoApproved = fileRequest
+			? await tryAutoApproveTempWorkspaceRequest(fileRequest, workspace)
+			: false;
+		if (permissionsEnabled && fileRequest && !tempWorkspaceAutoApproved && !filePermissions.hasGrant(fileRequest)) {
+			const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
+			if (decision) return decision;
 		}
 
 		if (event.toolName !== "bash") return undefined;
@@ -223,6 +236,32 @@ function fileRequestForToolCall(event: { toolName: string; input: unknown }, cwd
 	}
 
 	return undefined;
+}
+
+function createTempWorkspaceForContext(ctx: SessionTempContext): PiTempWorkspace {
+	return createPiTempWorkspace(readSessionId(ctx));
+}
+
+function readSessionId(ctx: SessionTempContext): string | undefined {
+	try {
+		return ctx.sessionManager?.getSessionId?.();
+	} catch {
+		return undefined;
+	}
+}
+
+async function tryAutoApproveTempWorkspaceRequest(request: PermissionRequest, workspace: PiTempWorkspace): Promise<boolean> {
+	if (!request.targets.every((target) => isPathInsideWorkspaceChild(target.path, workspace))) return false;
+	try {
+		await workspace.ensureCreated();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function formatTempWorkspacePrompt(workspace: PiTempWorkspace): string {
+	return `Use scratch temp dir: ${workspace.sessionDir}`;
 }
 
 async function requestFilePermission(
@@ -661,6 +700,12 @@ export function getPermissionsArgumentCompletions(prefix: string): Array<{ value
 }
 
 type ToolCallBlock = { block: true; reason?: string };
+
+type SessionTempContext = {
+	sessionManager?: {
+		getSessionId?(): string;
+	};
+};
 
 type PermissionPromptContext = {
 	cwd: string;

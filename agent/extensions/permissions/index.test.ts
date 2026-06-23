@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { rm, stat } from "node:fs/promises";
 import test from "node:test";
 import permissionsExtension, { formatPermissionStatus, getPermissionsArgumentCompletions } from "./index.ts";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { createPiTempWorkspace } from "./tempWorkspace.ts";
 
 const markerTheme = {
 	fg(color: string, text: string) {
@@ -82,6 +84,49 @@ test("session permission grants update the visible granted count", async () => {
 	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><syntaxComment><bold>1</bold></syntaxComment><dim> (fs)</dim><dim> •</dim>");
 });
 
+test("before_agent_start adds only a one-line scratch temp dir hint without creating it", async () => {
+	const harness = createPermissionsHarness();
+	const ctx = createContext("Deny", "permissions-prompt-test");
+	const workspace = createPiTempWorkspace("permissions-prompt-test");
+	await rm(workspace.sessionDir, { recursive: true, force: true });
+
+	await harness.emit("session_start", {}, ctx);
+	const result = await harness.emitFirst("before_agent_start", { systemPrompt: "Base prompt" }, ctx) as { systemPrompt?: string } | undefined;
+
+	assert.equal(result?.systemPrompt, `Base prompt\n\nUse scratch temp dir: ${workspace.sessionDir}`);
+	await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
+});
+
+test("mutations below the session temp workspace are auto-approved and create it on demand", async () => {
+	const harness = createPermissionsHarness();
+	const ctx = createContext("Deny", "permissions-auto-temp-test");
+	const workspace = createPiTempWorkspace("permissions-auto-temp-test");
+	await rm(workspace.sessionDir, { recursive: true, force: true });
+
+	await harness.emit("session_start", {}, ctx);
+	const writeResult = await harness.emitFirst("tool_call", { toolName: "write", input: { path: `${workspace.sessionDir}/out.txt` } }, ctx);
+	const bashResult = await harness.emitFirst("tool_call", { toolName: "bash", input: { command: `mkdir -p ${workspace.sessionDir}/child` } }, ctx);
+
+	assert.equal(writeResult, undefined);
+	assert.equal(bashResult, undefined);
+	assert.equal(ctx.selectCalls, 0);
+	assert.equal((await stat(workspace.sessionDir)).isDirectory(), true);
+
+	await rm(workspace.sessionDir, { recursive: true, force: true });
+});
+
+test("mutating the session temp workspace root itself still prompts", async () => {
+	const harness = createPermissionsHarness();
+	const ctx = createContext("Deny", "permissions-root-temp-test");
+	const workspace = createPiTempWorkspace("permissions-root-temp-test");
+
+	await harness.emit("session_start", {}, ctx);
+	const result = await harness.emitFirst("tool_call", { toolName: "bash", input: { command: `rm -rf ${workspace.sessionDir}` } }, ctx);
+
+	assert.deepEqual(result, { block: true, reason: `Blocked by user. Target scope(s): delete ${workspace.sessionDir}` });
+	assert.equal(ctx.selectCalls, 1);
+});
+
 function createPermissionsHarness() {
 	const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> | void }>();
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => Promise<unknown> | unknown>>();
@@ -112,14 +157,14 @@ function createPermissionsHarness() {
 	};
 }
 
-function createContext(selectChoice: string) {
+function createContext(selectChoice: string, sessionId = "permissions-index-test") {
 	const ctx = {
 		cwd: "/repo/project",
 		hasUI: true,
 		statuses: new Map<string, string>(),
 		notifications: [] as string[],
 		selectCalls: 0,
-		sessionManager: { getBranch: () => [] },
+		sessionManager: { getBranch: () => [], getSessionId: () => sessionId },
 		ui: {} as {
 			theme: typeof markerTheme;
 			setStatus(key: string, value: string | undefined): void;
