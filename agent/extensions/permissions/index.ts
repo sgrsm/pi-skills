@@ -261,7 +261,7 @@ async function tryAutoApproveTempWorkspaceRequest(request: PermissionRequest, wo
 }
 
 function formatTempWorkspacePrompt(workspace: PiTempWorkspace): string {
-	return `Use scratch temp dir: ${workspace.sessionDir}`;
+	return `Use scratch temp dir instead of /tmp: ${workspace.sessionDir}`;
 }
 
 async function requestFilePermission(

@@ -93,7 +93,7 @@ test("before_agent_start adds only a one-line scratch temp dir hint without crea
 	await harness.emit("session_start", {}, ctx);
 	const result = await harness.emitFirst("before_agent_start", { systemPrompt: "Base prompt" }, ctx) as { systemPrompt?: string } | undefined;
 
-	assert.equal(result?.systemPrompt, `Base prompt\n\nUse scratch temp dir: ${workspace.sessionDir}`);
+	assert.equal(result?.systemPrompt, `Base prompt\n\nUse scratch temp dir instead of /tmp: ${workspace.sessionDir}`);
 	await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
 });
 

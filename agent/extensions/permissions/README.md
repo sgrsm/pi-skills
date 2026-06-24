@@ -15,7 +15,7 @@ Output suppression to the exact null device (`>/dev/null`, `2>/dev/null`, `&>/de
 
 Paths inside the current working directory are not guarded by this extension.
 
-The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
+The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir instead of /tmp: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
 
 ### Git mutations on existing non-agent branches
 
