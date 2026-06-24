@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
-import { complete } from "@earendil-works/pi-ai"
+import { complete } from "@earendil-works/pi-ai/compat"
 import { buildSessionContext, CustomEditor, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
 
