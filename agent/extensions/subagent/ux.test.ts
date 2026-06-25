@@ -13,6 +13,18 @@ import {
 	type SubagentDetailsLike,
 } from "./ux.ts";
 
+const TASK_PREVIEW_WIDTH = 100;
+
+function taskPreview(text: string): string {
+	const normalized = text.replace(/\s+/g, " ").trim();
+	const preview = normalized.length <= TASK_PREVIEW_WIDTH ? normalized : `${normalized.slice(0, TASK_PREVIEW_WIDTH - 1)}…`;
+	return preview.padEnd(TASK_PREVIEW_WIDTH);
+}
+
+function compactRow(prefix: string, agent: string, task: string, status: string): string {
+	return `${prefix}${agent}  ${taskPreview(task)}   ${status}`;
+}
+
 function makeResult(overrides: Partial<SingleResultLike> = {}): SingleResultLike {
 	return {
 		agent: "reviewer",
@@ -154,14 +166,15 @@ test("activity tree renders nested subagent hierarchy and escalation status", ()
 		[
 			"subagent reviewer [waiting on parent/user]",
 			"└─ reviewer: review agent/extensions/subagent/index.ts [waiting on parent/user]",
-			"   ├─ scout: gather context [done]",
-			"   └─ planner: suggest review angles [waiting on parent/user]",
-			"      └─ escalate_to_parent: Need parent decision [waiting on parent/user]",
+			"   └─ subagents · parallel · 1 done, 1 waiting on parent/user · scope: user",
+			compactRow("      ├─ ", "scout", "gather context", "done"),
+			compactRow("      └─ ", "planner", "suggest review angles", "waiting on parent/user"),
+			compactRow("         └─ ", "escalate_to_parent", "Need parent decision", "waiting on parent/user"),
 		].join("\n"),
 	);
 });
 
-test("parallel activity tree uses compact running view with scope and path task labels", () => {
+test("parallel activity tree uses compact running view with stable task descriptions", () => {
 	const details: SubagentDetailsLike = {
 		mode: "parallel",
 		agentScope: "user",
@@ -184,9 +197,9 @@ test("parallel activity tree uses compact running view with scope and path task 
 	assert.equal(
 		tree,
 		[
-			"subagents · 2 running · scope: user",
-			"├─ scout  module5_4_1 · Kafka producer config   running",
-			"└─ scout  module5_7 · Kafka producer config   running",
+			"subagents · parallel · 2 running · scope: user",
+			compactRow("├─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_4_1 for Kafka producer config", "running"),
+			compactRow("└─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config", "running"),
 		].join("\n"),
 	);
 });
@@ -210,12 +223,69 @@ test("single activity tree uses compact running view", () => {
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			"└─ worker  Implement the agreed refactoring for Kafka producer wiring   running",
+			compactRow("└─ ", "worker", "Implement the agreed refactoring for Kafka producer wiring", "running"),
 		].join("\n"),
 	);
 });
 
-test("nested running subagent flattens child rows in compact view", () => {
+test("running activity rows use stable task descriptions instead of child output", () => {
+	const details: SubagentDetailsLike = {
+		mode: "parallel",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "scout",
+				task: "Inspect core/src/main/java/com/example/Alpha.java for import issues",
+				exitCode: -1,
+				messages: [{ role: "assistant", content: [{ type: "text", text: "read core/src/main/java/com/example/Alpha.java\nlines 1-120" }] }],
+			}),
+			makeResult({
+				agent: "reviewer-readonly",
+				task: "Review core/src/main/java/com/example/Beta.java for wildcard imports",
+				exitCode: -1,
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · parallel · 2 running · scope: user",
+			compactRow("├─ ", "scout", "Inspect core/src/main/java/com/example/Alpha.java for import issues", "running"),
+			compactRow("└─ ", "reviewer-readonly", "Review core/src/main/java/com/example/Beta.java for wildcard imports", "running"),
+		].join("\n"),
+	);
+});
+
+test("running activity rows truncate long task descriptions to a fixed width", () => {
+	const longTask = "x".repeat(100);
+	const details: SubagentDetailsLike = {
+		mode: "single",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				task: longTask,
+				exitCode: -1,
+				messages: [{ role: "assistant", content: [{ type: "text", text: "child output should not replace task" }] }],
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	assert.equal(
+		tree,
+		[
+			"subagents · 1 running · scope: user",
+			compactRow("└─ ", "worker", longTask, "running"),
+		].join("\n"),
+	);
+});
+
+test("nested running parallel subagent keeps group in compact view", () => {
 	const details: SubagentDetailsLike = {
 		mode: "single",
 		agentScope: "user",
@@ -256,9 +326,10 @@ test("nested running subagent flattens child rows in compact view", () => {
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			"└─ worker  Align bean method names for semantics   running",
-			"   ├─ scout  module5_7 · Kafka producer config   running",
-			"   └─ scout  Doing other stuff   running",
+			compactRow("└─ ", "worker", "Align bean method names for semantics", "running"),
+			"   └─ subagents · parallel · 2 running · scope: user",
+			compactRow("      ├─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config", "running"),
+			compactRow("      └─ ", "scout", "Doing other stuff", "running"),
 		].join("\n"),
 	);
 });
@@ -306,8 +377,66 @@ test("completed nested subagent flattens child rows in compact view", () => {
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			"└─ worker  Review producers   running",
-			"   └─ scout  Inspect config tests   done",
+			compactRow("└─ ", "worker", "Review producers", "running"),
+			compactRow("   └─ ", "scout", "Inspect config tests", "done"),
+		].join("\n"),
+	);
+});
+
+test("running chain uses compact view and flattens nested subagent rows", () => {
+	const details: SubagentDetailsLike = {
+		mode: "chain",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				step: 1,
+				task: "Implement finding-5 refactor in monthly-balancing",
+				exitCode: -1,
+				messages: [
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "toolCall",
+								id: "nested-scout",
+								name: "subagent",
+								arguments: { agent: "scout", task: "Inspect monthly-balancing module5_7 persistence" },
+							},
+						],
+					},
+					{
+						role: "toolResult",
+						toolCallId: "nested-scout",
+						toolName: "subagent",
+						details: {
+							mode: "single",
+							agentScope: "user",
+							projectAgentsDir: null,
+							results: [makeResult({ agent: "scout", task: "Inspect monthly-balancing module5_7 persistence" })],
+						},
+					},
+				],
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text, {
+		chain: [
+			{ agent: "worker", task: "Implement finding-5 refactor in monthly-balancing" },
+			{ agent: "scout", task: "Verify generated config/tests" },
+			{ agent: "reviewer-readonly", task: "Review final diff and risks" },
+		],
+	});
+	assert.equal(
+		tree,
+		[
+			"subagents · chain · 1 running, 2 waiting · scope: user",
+			compactRow("├─ ", "worker", "Implement finding-5 refactor in monthly-balancing", "running"),
+			compactRow("│  └─ ", "scout", "Inspect monthly-balancing module5_7 persistence", "done"),
+			compactRow("├─ ", "scout", "Verify generated config/tests", "waiting"),
+			compactRow("└─ ", "reviewer-readonly", "Review final diff and risks", "waiting"),
 		].join("\n"),
 	);
 });

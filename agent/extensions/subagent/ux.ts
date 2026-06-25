@@ -68,7 +68,7 @@ export interface ParentClarifyUi {
 
 export type ThemeFg = (color: any, text: string) => string;
 
-type ActivityStatus = "running" | "done" | "failed" | "escalated" | "waiting on parent/user";
+type ActivityStatus = "waiting" | "running" | "done" | "failed" | "escalated" | "waiting on parent/user";
 
 interface ActivityNode {
 	label: string;
@@ -76,6 +76,7 @@ interface ActivityNode {
 	task?: string;
 	children: ActivityNode[];
 	kind?: "subagent";
+	subagentMode?: SubagentDetailsLike["mode"];
 	agentScope?: AgentScopeLike;
 }
 
@@ -109,6 +110,17 @@ function trimPreview(text: string, max = 140): string {
 	const normalized = text.replace(/\s+/g, " ").trim();
 	if (normalized.length <= max) return normalized;
 	return `${normalized.slice(0, Math.max(1, max - 1))}…`;
+}
+
+const TASK_PREVIEW_WIDTH = 100;
+
+function formatStableTaskPreview(task: string | undefined): string {
+	return trimPreview(task ?? "", TASK_PREVIEW_WIDTH);
+}
+
+function formatStableTaskColumn(task: string | undefined): string {
+	const preview = formatStableTaskPreview(task);
+	return preview ? preview.padEnd(TASK_PREVIEW_WIDTH) : "";
 }
 
 function parseParentEscalationDetails(value: unknown): ParentEscalationDetails | null {
@@ -430,14 +442,20 @@ export function getMaxSubagentRelativeDepth(details: SubagentDetailsLike): numbe
 	);
 }
 
+function buildRequestedChainStepActivityNode(step: Record<string, any>, index: number, status: ActivityStatus): ActivityNode {
+	return {
+		label: `step ${index + 1}: ${typeof step.agent === "string" ? step.agent : "unknown"}`,
+		status,
+		task: typeof step.task === "string" ? step.task.replace(/\{previous\}/g, "").trim() : undefined,
+		children: [],
+	};
+}
+
 function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNode[] {
 	if (Array.isArray(args.chain) && args.chain.length > 0) {
-		return args.chain.filter(isRecord).map((step, index) => ({
-			label: `step ${index + 1}: ${typeof step.agent === "string" ? step.agent : "unknown"}`,
-			status: "running" as const,
-			task: typeof step.task === "string" ? step.task.replace(/\{previous\}/g, "").trim() : undefined,
-			children: [],
-		}));
+		return args.chain
+			.filter(isRecord)
+			.map((step, index) => buildRequestedChainStepActivityNode(step, index, index === 0 ? "running" : "waiting"));
 	}
 	if (Array.isArray(args.tasks) && args.tasks.length > 0) {
 		return args.tasks.filter(isRecord).map((task) => ({
@@ -451,6 +469,27 @@ function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNod
 		return [{ label: args.agent, status: "running" as const, task: args.task, children: [] }];
 	}
 	return [];
+}
+
+function getSubagentModeFromArgs(args: Record<string, any>): SubagentDetailsLike["mode"] {
+	if (Array.isArray(args.chain) && args.chain.length > 0) return "chain";
+	if (Array.isArray(args.tasks) && args.tasks.length > 0) return "parallel";
+	return "single";
+}
+
+function buildSubagentChildActivityNodes(
+	mode: SubagentDetailsLike["mode"],
+	args: Record<string, any>,
+	details: SubagentDetailsLike | null,
+): ActivityNode[] {
+	const children = details ? details.results.map(buildResultActivityNode) : buildRequestedTaskActivityNodes(args);
+	if (mode !== "chain" || !Array.isArray(args.chain)) return children;
+
+	const chainSteps = args.chain.filter(isRecord);
+	for (let i = children.length; i < chainSteps.length; i++) {
+		children.push(buildRequestedChainStepActivityNode(chainSteps[i], i, "waiting"));
+	}
+	return children;
 }
 
 function getToolResultsByCallId(messages: MessageLike[]): Map<string, MessageLike> {
@@ -492,21 +531,23 @@ function buildNestedActivityNodes(messages: MessageLike[]): ActivityNode[] {
 				const resultMessage = callId ? toolResults.get(callId) : undefined;
 				const nestedDetails = resultMessage && isRecord(resultMessage) ? parseSubagentDetails(resultMessage.details) : null;
 				const nestedArgs = isRecord(part.arguments) ? part.arguments : {};
-				const status: ActivityStatus = nestedDetails
-					? getAggregateActivityStatus(nestedDetails.results)
-					: resultMessage && isRecord(resultMessage) && resultMessage.isError
+				const subagentMode = nestedDetails?.mode ?? getSubagentModeFromArgs(nestedArgs);
+				const children = buildSubagentChildActivityNodes(subagentMode, nestedArgs, nestedDetails);
+				const status: ActivityStatus =
+					resultMessage && isRecord(resultMessage) && resultMessage.isError
 						? "failed"
-						: resultMessage
-							? "done"
-							: "running";
+						: children.length > 0
+							? getAggregateNodeStatus(children)
+							: resultMessage
+								? "done"
+								: "running";
 				nodes.push({
 					kind: "subagent",
+					subagentMode,
 					label: getSubagentCallLabel(nestedArgs),
 					status,
 					agentScope: nestedDetails?.agentScope ?? normalizeAgentScopeLike(nestedArgs.agentScope),
-					children: nestedDetails
-						? nestedDetails.results.map(buildResultActivityNode)
-						: buildRequestedTaskActivityNodes(nestedArgs),
+					children,
 				});
 				continue;
 			}
@@ -528,7 +569,15 @@ function buildNestedActivityNodes(messages: MessageLike[]): ActivityNode[] {
 }
 
 function getActivityStatusColor(status: ActivityStatus): string {
-	return status === "done" ? "success" : status === "failed" ? "error" : status === "running" ? "warning" : "accent";
+	return status === "done"
+		? "success"
+		: status === "failed"
+			? "error"
+			: status === "running"
+				? "warning"
+				: status === "waiting"
+					? "muted"
+					: "accent";
 }
 
 function formatActivityStatus(status: ActivityStatus, themeFg: ThemeFg): string {
@@ -541,6 +590,7 @@ function formatBareActivityStatus(status: ActivityStatus, themeFg: ThemeFg): str
 
 function formatActivityStatusSummary(statuses: ActivityStatus[]): string {
 	const counts: Record<ActivityStatus, number> = {
+		waiting: 0,
 		running: 0,
 		done: 0,
 		failed: 0,
@@ -555,6 +605,7 @@ function formatActivityStatusSummary(statuses: ActivityStatus[]): string {
 	if (counts.done > 0) parts.push(`${counts.done} done`);
 	if (counts.failed > 0) parts.push(`${counts.failed} failed`);
 	if (counts.running > 0) parts.push(`${counts.running} running`);
+	if (counts.waiting > 0) parts.push(`${counts.waiting} waiting`);
 	if (counts.escalated > 0) parts.push(`${counts.escalated} escalated`);
 	if (counts["waiting on parent/user"] > 0) parts.push(`${counts["waiting on parent/user"]} waiting on parent/user`);
 	return parts.join(", ") || "0 tasks";
@@ -568,47 +619,8 @@ function formatNodeStatusSummary(node: ActivityNode): string {
 	return formatActivityStatusSummary(node.children.length > 0 ? node.children.map((child) => child.status) : [node.status]);
 }
 
-const TASK_PATH_PATTERN = /(?:^|\s)((?:\/[^\s,;:)\]}]+|(?:~|\.{1,2}|[\w.-]+)[/\\][^\s,;:)\]}]+))/;
-const TASK_LEADING_ACTION_PATTERN =
-	/^(?:inspect|review|analy[sz]e|check|map|gather|find|look(?:\s+at|\s+for)?|read|scan|investigate|audit|explore|summari[sz]e|plan|implement|fix|update)\b[\s:,-]*/i;
-const TASK_LEADING_RELATION_PATTERN = /^(?:for|about|regarding|re|on|to|and)\s+/i;
-
-function stripLeadingTaskRelation(text: string): string {
-	return text.replace(/^[\s,;:.-]+/, "").replace(TASK_LEADING_RELATION_PATTERN, "").trim();
-}
-
-function stripLeadingTaskAction(text: string): string {
-	return text.replace(TASK_LEADING_ACTION_PATTERN, "").trim();
-}
-
-function getPathLeaf(rawPath: string): string {
-	const cleaned = rawPath.replace(/[.,;:)\]}]+$/, "");
-	const parts = cleaned.split(/[\\/]/).filter(Boolean);
-	return parts[parts.length - 1] ?? cleaned;
-}
-
-function formatParallelTaskPreview(task: string | undefined): string {
-	const normalized = typeof task === "string" ? task.replace(/\s+/g, " ").trim() : "";
-	if (!normalized) return "";
-
-	const pathMatch = normalized.match(TASK_PATH_PATTERN);
-	if (!pathMatch || pathMatch.index === undefined) return trimPreview(normalized, 72);
-
-	const rawPath = pathMatch[1];
-	const pathOffset = pathMatch[0].indexOf(rawPath);
-	const pathStart = pathMatch.index + Math.max(0, pathOffset);
-	const pathEnd = pathStart + rawPath.length;
-	const target = getPathLeaf(rawPath);
-	const topic = stripLeadingTaskRelation(normalized.slice(pathEnd));
-	if (topic) return trimPreview(`${target} · ${topic}`, 72);
-
-	const leadIn = stripLeadingTaskAction(normalized.slice(0, pathStart));
-	if (leadIn) return trimPreview(`${target} · ${leadIn}`, 72);
-	return trimPreview(target, 72);
-}
-
 function shouldFlattenNestedSubagentNode(node: ActivityNode): boolean {
-	return node.kind === "subagent" && node.children.length > 0 && node.status !== "failed";
+	return node.kind === "subagent" && node.subagentMode === "single" && node.children.length > 0;
 }
 
 function renderFlattenedActivityNodes(
@@ -640,6 +652,9 @@ function renderActivityNode(
 	if (!isRoot && shouldFlattenNestedSubagentNode(node)) {
 		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, false);
 	}
+	if (!isRoot && node.kind === "subagent" && node.subagentMode !== "single") {
+		return renderCompactSubagentGroupNode(node, themeFg, prefix, isLast);
+	}
 
 	const connector = isRoot ? "" : themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
 	const task = node.task ? themeFg("dim", `: ${trimPreview(node.task, 90)}`) : "";
@@ -657,27 +672,34 @@ function formatCompactSubagentHeader(
 	aggregateStatus: ActivityStatus,
 	agentScope: AgentScopeLike | undefined,
 	themeFg: ThemeFg,
+	mode?: SubagentDetailsLike["mode"],
 ): string {
+	const modeText = mode === "parallel" || mode === "chain" ? themeFg("muted", ` · ${mode}`) : "";
 	return (
 		themeFg("toolTitle", "subagents") +
+		modeText +
 		themeFg("muted", " · ") +
 		themeFg(getActivityStatusColor(aggregateStatus), statusSummary) +
 		themeFg("muted", ` · scope: ${agentScope ?? "user"}`)
 	);
 }
 
+function formatCompactNodeLabel(label: string): string {
+	return label.replace(/^step\s+\d+:\s*/i, "");
+}
+
 function renderCompactActivityNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
 	if (shouldFlattenNestedSubagentNode(node)) {
 		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, true);
 	}
-	if (node.kind === "subagent" && node.status === "running") {
+	if (node.kind === "subagent") {
 		return renderCompactSubagentGroupNode(node, themeFg, prefix, isLast);
 	}
 
 	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
-	const taskPreview = formatParallelTaskPreview(node.task);
+	const taskPreview = formatStableTaskColumn(node.task);
 	const task = taskPreview ? themeFg("dim", `  ${taskPreview}`) : "";
-	const line = `${connector}${themeFg("accent", node.label)}${task}   ${formatBareActivityStatus(node.status, themeFg)}`;
+	const line = `${connector}${themeFg("accent", formatCompactNodeLabel(node.label))}${task}   ${formatBareActivityStatus(node.status, themeFg)}`;
 	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
 	const lines = [line];
 	for (let i = 0; i < node.children.length; i++) {
@@ -688,7 +710,9 @@ function renderCompactActivityNode(node: ActivityNode, themeFg: ThemeFg, prefix 
 
 function renderCompactSubagentGroupNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
 	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
-	const lines = [connector + formatCompactSubagentHeader(formatNodeStatusSummary(node), node.status, node.agentScope, themeFg)];
+	const lines = [
+		connector + formatCompactSubagentHeader(formatNodeStatusSummary(node), node.status, node.agentScope, themeFg, node.subagentMode),
+	];
 	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
 	for (let i = 0; i < node.children.length; i++) {
 		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1));
@@ -696,25 +720,49 @@ function renderCompactSubagentGroupNode(node: ActivityNode, themeFg: ThemeFg, pr
 	return lines;
 }
 
-function formatCompactSubagentActivityTree(details: SubagentDetailsLike, themeFg: ThemeFg): string {
+function buildTopLevelActivityNodes(details: SubagentDetailsLike, args: Record<string, any> = {}): ActivityNode[] {
+	return buildSubagentChildActivityNodes(details.mode, args, details);
+}
+
+function formatCompactSubagentActivityTree(
+	details: SubagentDetailsLike,
+	themeFg: ThemeFg,
+	args: Record<string, any> = {},
+): string {
+	const children = buildTopLevelActivityNodes(details, args);
+	const aggregateStatus = children.length > 0 ? getAggregateNodeStatus(children) : getAggregateActivityStatus(details.results);
 	const lines = [
 		formatCompactSubagentHeader(
-			formatResultStatusSummary(details.results),
-			getAggregateActivityStatus(details.results),
+			formatActivityStatusSummary(children.length > 0 ? children.map((child) => child.status) : details.results.map(getResultActivityStatus)),
+			aggregateStatus,
 			details.agentScope,
 			themeFg,
+			details.mode,
 		),
 	];
-	const children = details.results.map(buildResultActivityNode);
 	for (let i = 0; i < children.length; i++) {
 		lines.push(...renderCompactActivityNode(children[i], themeFg, "", i === children.length - 1));
 	}
 	return lines.join("\n");
 }
 
-export function formatSubagentActivityTree(details: SubagentDetailsLike, themeFg: ThemeFg): string {
-	if (details.mode === "parallel" || (details.mode === "single" && getAggregateActivityStatus(details.results) === "running")) {
-		return formatCompactSubagentActivityTree(details, themeFg);
+function getAggregateNodeStatus(nodes: ActivityNode[]): ActivityStatus {
+	if (nodes.some((node) => node.status === "waiting on parent/user")) return "waiting on parent/user";
+	if (nodes.some((node) => node.status === "running")) return "running";
+	if (nodes.some((node) => node.status === "failed")) return "failed";
+	if (nodes.some((node) => node.status === "escalated")) return "escalated";
+	if (nodes.some((node) => node.status === "waiting")) return "waiting";
+	return "done";
+}
+
+export function formatSubagentActivityTree(
+	details: SubagentDetailsLike,
+	themeFg: ThemeFg,
+	args: Record<string, any> = {},
+): string {
+	const aggregateStatus = getAggregateActivityStatus(details.results);
+	if (details.mode === "parallel" || details.mode === "chain" || (details.mode === "single" && aggregateStatus === "running")) {
+		return formatCompactSubagentActivityTree(details, themeFg, args);
 	}
 	const root: ActivityNode = {
 		label: getSubagentRootLabel(details),

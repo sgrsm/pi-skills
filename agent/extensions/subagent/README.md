@@ -246,6 +246,7 @@ Tool display:
 
 - Calls show `subagent <agent> [scope]`, `subagent parallel (<n> tasks) [scope]`, or `subagent chain (<n> steps) [scope]` with short task previews.
 - Results include an activity tree with statuses such as `[running]`, `[done]`, `[failed]`, and `[waiting on parent/user]`.
+- Compact rows show stable one-line task previews, padded to a consistent width and truncated when needed.
 - Icons summarize outcome: `✓` success, `✗` failure, `⏳` running, and `◐` mixed parallel results.
-- Collapsed results show recent output and tool calls; `Ctrl+O` expands full task/output details where available.
-- Very large visible outputs are truncated using Pi's standard limits, with the full output saved to a temporary file and linked in the truncation marker.
+- Completed result displays stay compact; `Ctrl+O` shows task, error, and usage details without inlining child logs/output.
+- Large child outputs sent back to the parent agent are truncated using Pi's standard limits, with the full output saved to a temporary file and linked in the truncation marker.
