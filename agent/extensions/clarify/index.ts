@@ -103,6 +103,63 @@ export function canUseClarifyCustomSelector(ctx: { mode: string }): boolean {
 const ENABLE_MOUSE_SCROLL = "\x1b[?1000h\x1b[?1006h";
 const DISABLE_MOUSE_SCROLL = "\x1b[?1000l\x1b[?1006l";
 const MOUSE_WHEEL_SEQUENCE = /^\x1b\[<(\d+);\d+;\d+[Mm]$/;
+const CLARIFY_SELECTED_OPTION_COLOR = "#0066CC";
+const CLARIFY_MAX_VISIBLE_OPTIONS = 8;
+
+type ClarifySelectorTheme = { fg(color: string, text: string): string };
+
+function fgHex(hex: string, text: string): string {
+	const match = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+	if (!match) return text;
+	const value = match[1];
+	const r = Number.parseInt(value.slice(0, 2), 16);
+	const g = Number.parseInt(value.slice(2, 4), 16);
+	const b = Number.parseInt(value.slice(4, 6), 16);
+	return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
+}
+
+function boldAnsi(text: string): string {
+	return `\x1b[1m${text}\x1b[22m`;
+}
+
+export function styleClarifyOptionLine(text: string, selected: boolean, theme: ClarifySelectorTheme): string {
+	return selected ? fgHex(CLARIFY_SELECTED_OPTION_COLOR, boldAnsi(text)) : theme.fg("accent", text);
+}
+
+export function renderClarifyOptionLines(
+	items: SelectItem[],
+	selectedValue: string | undefined,
+	width: number,
+	theme: ClarifySelectorTheme,
+	maxVisible = CLARIFY_MAX_VISIBLE_OPTIONS,
+): string[] {
+	if (items.length === 0) return [theme.fg("warning", "  No matching options")];
+
+	const visibleCount = Math.max(1, Math.min(maxVisible, items.length));
+	const selectedIndex = Math.max(
+		0,
+		items.findIndex((item) => item.value === selectedValue),
+	);
+	const startIndex = Math.max(0, Math.min(selectedIndex - Math.floor(visibleCount / 2), items.length - visibleCount));
+	const endIndex = Math.min(startIndex + visibleCount, items.length);
+	const lineWidth = Math.max(1, width);
+	const lines: string[] = [];
+
+	for (let index = startIndex; index < endIndex; index++) {
+		const item = items[index];
+		if (!item) continue;
+		const selected = index === selectedIndex;
+		const prefix = selected ? "→ " : "  ";
+		const line = truncateToWidth(`${prefix}${item.label}`, lineWidth, "");
+		lines.push(styleClarifyOptionLine(line, selected, theme));
+	}
+
+	if (startIndex > 0 || endIndex < items.length) {
+		lines.push(theme.fg("dim", truncateToWidth(`  (${selectedIndex + 1}/${items.length})`, lineWidth, "")));
+	}
+
+	return lines;
+}
 
 function parseMouseWheelDirection(data: string): -1 | 1 | null {
 	const match = data.match(MOUSE_WHEEL_SEQUENCE);
@@ -171,7 +228,7 @@ async function showClarifySelector(
 	const descriptionsByValue = new Map(optionItems.map((item) => [item.value, item.description]));
 
 	return ctx.ui.custom<ClarifySelection | undefined>((tui, theme, _keybindings, done) => {
-		const selectList = new SelectList(items, Math.min(items.length, 8), {
+		const selectList = new SelectList(items, Math.min(items.length, CLARIFY_MAX_VISIBLE_OPTIONS), {
 			selectedPrefix: (text: string) => theme.fg("accent", text),
 			selectedText: (text: string) => theme.fg("accent", text),
 			description: (text: string) => theme.fg("muted", text),
@@ -228,10 +285,10 @@ async function showClarifySelector(
 
 				const innerWidth = Math.max(1, width - 2);
 				questionLines = wrapTextWithAnsi(theme.fg("text", question), innerWidth);
-				const selectLines = selectList.render(innerWidth);
+				const selectedItem = selectList.getSelectedItem();
+				const selectLines = renderClarifyOptionLines(items, selectedItem?.value, innerWidth, theme);
 
 				const maxDialogHeight = Math.max(1, tui.terminal.rows - 1);
-				const selectedItem = selectList.getSelectedItem();
 				const previewLines = buildDescriptionPreviewLines(
 					selectedItem ? descriptionsByValue.get(selectedItem.value) : undefined,
 					innerWidth,

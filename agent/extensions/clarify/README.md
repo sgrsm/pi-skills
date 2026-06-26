@@ -94,6 +94,7 @@ Interactive selector in TUI mode:
 
 - title: `Clarify`
 - shows the question, numbered options, and the selected option's description preview
+- non-selected options use the theme accent color; the selected option uses fixed blue `#0066CC` and bold text
 - keys: `↑` / `↓` navigate, `Enter` selects, `Esc` cancels
 - long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or mouse wheel
 - choosing `Custom instructions` opens the editor
