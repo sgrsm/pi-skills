@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	formatParentEscalationSummary,
 	formatSubagentActivityTree,
@@ -14,15 +15,32 @@ import {
 } from "./ux.ts";
 
 const TASK_PREVIEW_WIDTH = 100;
+const COMPACT_LABEL_TASK_GAP = 2;
+const COMPACT_TASK_STATUS_GAP = 3;
+const COMPACT_STATUS_COLUMN = 96;
 
-function taskPreview(text: string): string {
+function taskPreview(text: string, width = TASK_PREVIEW_WIDTH): string {
+	if (width <= 0) return "";
 	const normalized = text.replace(/\s+/g, " ").trim();
-	const preview = normalized.length <= TASK_PREVIEW_WIDTH ? normalized : `${normalized.slice(0, TASK_PREVIEW_WIDTH - 1)}…`;
-	return preview.padEnd(TASK_PREVIEW_WIDTH);
+	const preview = normalized.length <= width ? normalized : width === 1 ? "…" : `${normalized.slice(0, width - 1)}…`;
+	return preview.padEnd(width);
 }
 
-function compactRow(prefix: string, agent: string, task: string, status: string): string {
-	return `${prefix}${agent}  ${taskPreview(task)}   ${status}`;
+interface CompactRowExpectation {
+	prefix: string;
+	agent: string;
+	task: string;
+	status: string;
+}
+
+function compactRows(rows: CompactRowExpectation[]): string[] {
+	const maxLabelWidth = Math.max(0, ...rows.map((row) => visibleWidth(`${row.prefix}${row.agent}`)));
+	const statusColumn = Math.max(COMPACT_STATUS_COLUMN, maxLabelWidth + COMPACT_LABEL_TASK_GAP + COMPACT_TASK_STATUS_GAP);
+	return rows.map((row) => {
+		const label = `${row.prefix}${row.agent}`;
+		const taskWidth = Math.max(0, statusColumn - visibleWidth(label) - COMPACT_LABEL_TASK_GAP - COMPACT_TASK_STATUS_GAP);
+		return `${label}${" ".repeat(COMPACT_LABEL_TASK_GAP)}${taskPreview(row.task, taskWidth)}${" ".repeat(COMPACT_TASK_STATUS_GAP)}${row.status}`;
+	});
 }
 
 function makeResult(overrides: Partial<SingleResultLike> = {}): SingleResultLike {
@@ -167,9 +185,11 @@ test("activity tree renders nested subagent hierarchy and escalation status", ()
 			"subagent reviewer [waiting on parent/user]",
 			"└─ reviewer: review agent/extensions/subagent/index.ts [waiting on parent/user]",
 			"   └─ subagents · parallel · 1 done, 1 waiting on parent/user · scope: user",
-			compactRow("      ├─ ", "scout", "gather context", "done"),
-			compactRow("      └─ ", "planner", "suggest review angles", "waiting on parent/user"),
-			compactRow("         └─ ", "escalate_to_parent", "Need parent decision", "waiting on parent/user"),
+			...compactRows([
+				{ prefix: "      ├─ ", agent: "scout", task: "gather context", status: "done" },
+				{ prefix: "      └─ ", agent: "planner", task: "suggest review angles", status: "waiting on parent/user" },
+				{ prefix: "         └─ ", agent: "escalate_to_parent", task: "Need parent decision", status: "waiting on parent/user" },
+			]),
 		].join("\n"),
 	);
 });
@@ -198,8 +218,20 @@ test("parallel activity tree uses compact running view with stable task descript
 		tree,
 		[
 			"subagents · parallel · 2 running · scope: user",
-			compactRow("├─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_4_1 for Kafka producer config", "running"),
-			compactRow("└─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config", "running"),
+			...compactRows([
+				{
+					prefix: "├─ ",
+					agent: "scout",
+					task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_4_1 for Kafka producer config",
+					status: "running",
+				},
+				{
+					prefix: "└─ ",
+					agent: "scout",
+					task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config",
+					status: "running",
+				},
+			]),
 		].join("\n"),
 	);
 });
@@ -223,7 +255,9 @@ test("single activity tree uses compact running view", () => {
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			compactRow("└─ ", "worker", "Implement the agreed refactoring for Kafka producer wiring", "running"),
+			...compactRows([
+				{ prefix: "└─ ", agent: "worker", task: "Implement the agreed refactoring for Kafka producer wiring", status: "running" },
+			]),
 		].join("\n"),
 	);
 });
@@ -253,10 +287,80 @@ test("running activity rows use stable task descriptions instead of child output
 		tree,
 		[
 			"subagents · parallel · 2 running · scope: user",
-			compactRow("├─ ", "scout", "Inspect core/src/main/java/com/example/Alpha.java for import issues", "running"),
-			compactRow("└─ ", "reviewer-readonly", "Review core/src/main/java/com/example/Beta.java for wildcard imports", "running"),
+			...compactRows([
+				{ prefix: "├─ ", agent: "scout", task: "Inspect core/src/main/java/com/example/Alpha.java for import issues", status: "running" },
+				{ prefix: "└─ ", agent: "reviewer-readonly", task: "Review core/src/main/java/com/example/Beta.java for wildcard imports", status: "running" },
+			]),
 		].join("\n"),
 	);
+});
+
+test("compact activity tree uses provided width to keep statuses on the same line", () => {
+	const width = 100;
+	const details: SubagentDetailsLike = {
+		mode: "chain",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({
+				agent: "worker",
+				task: "Implement the requested test refactor for module5_7. Scope: do not change production code. Refactor tests only.",
+				exitCode: -1,
+			}),
+		],
+	};
+
+	const tree = formatSubagentActivityTree(details, (_color, text) => text, {
+		chain: [
+			{
+				agent: "worker",
+				task: "Implement the requested test refactor for module5_7. Scope: do not change production code. Refactor tests only.",
+			},
+			{
+				agent: "reviewer-readonly",
+				task: "Review the implementation diff from the previous step for correctness. Focus on checked-in module5_7 tests.",
+			},
+		],
+	}, width);
+	const lines = tree.split("\n");
+	const statusColumns = lines.slice(1).map((line) => Math.max(line.indexOf("running"), line.indexOf("waiting")));
+
+	assert.ok(lines.every((line) => visibleWidth(line) <= width));
+	assert.ok(statusColumns.every((column) => column === statusColumns[0]));
+	assert.match(lines[1], /^├─ worker  Implement the requested test refactor/);
+	assert.match(lines[1], /…\s+running$/);
+	assert.match(lines[2], /…\s+waiting$/);
+});
+
+test("compact activity tree keeps status column aligned without padding before task text", () => {
+	const scoutTask = "Inspect alpha config";
+	const reviewerTask = "Review beta config";
+	const baseDetails: SubagentDetailsLike = {
+		mode: "parallel",
+		agentScope: "user",
+		projectAgentsDir: null,
+		results: [
+			makeResult({ agent: "scout", task: scoutTask, exitCode: -1 }),
+			makeResult({ agent: "scout", task: "Inspect gamma config", exitCode: -1 }),
+		],
+	};
+	const expandedDetails: SubagentDetailsLike = {
+		...baseDetails,
+		results: [
+			makeResult({ agent: "scout", task: scoutTask, exitCode: -1 }),
+			makeResult({ agent: "reviewer-readonly", task: reviewerTask, exitCode: -1 }),
+			makeResult({ agent: "scout", task: "Inspect gamma config", exitCode: -1 }),
+		],
+	};
+
+	const baseLines = formatSubagentActivityTree(baseDetails, (_color, text) => text).split("\n");
+	const expandedLines = formatSubagentActivityTree(expandedDetails, (_color, text) => text).split("\n");
+	const baseStatusColumn = baseLines[1].indexOf("running");
+	const expandedStatusColumns = expandedLines.slice(1).map((line) => line.indexOf("running"));
+
+	assert.ok(expandedStatusColumns.every((column) => column === expandedStatusColumns[0]));
+	assert.equal(expandedStatusColumns[0], baseStatusColumn);
+	assert.match(expandedLines[1], /^├─ scout  Inspect alpha config/);
 });
 
 test("running activity rows truncate long task descriptions to a fixed width", () => {
@@ -280,7 +384,7 @@ test("running activity rows truncate long task descriptions to a fixed width", (
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			compactRow("└─ ", "worker", longTask, "running"),
+			...compactRows([{ prefix: "└─ ", agent: "worker", task: longTask, status: "running" }]),
 		].join("\n"),
 	);
 });
@@ -322,14 +426,24 @@ test("nested running parallel subagent keeps group in compact view", () => {
 	};
 
 	const tree = formatSubagentActivityTree(details, (_color, text) => text);
+	const expectedRows = compactRows([
+		{ prefix: "└─ ", agent: "worker", task: "Align bean method names for semantics", status: "running" },
+		{
+			prefix: "      ├─ ",
+			agent: "scout",
+			task: "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config",
+			status: "running",
+		},
+		{ prefix: "      └─ ", agent: "scout", task: "Doing other stuff", status: "running" },
+	]);
 	assert.equal(
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			compactRow("└─ ", "worker", "Align bean method names for semantics", "running"),
+			expectedRows[0],
 			"   └─ subagents · parallel · 2 running · scope: user",
-			compactRow("      ├─ ", "scout", "Inspect core/src/main/java/com/fiftyhz/sxp/smb/modules/module5_7 for Kafka producer config", "running"),
-			compactRow("      └─ ", "scout", "Doing other stuff", "running"),
+			expectedRows[1],
+			expectedRows[2],
 		].join("\n"),
 	);
 });
@@ -377,8 +491,10 @@ test("completed nested subagent flattens child rows in compact view", () => {
 		tree,
 		[
 			"subagents · 1 running · scope: user",
-			compactRow("└─ ", "worker", "Review producers", "running"),
-			compactRow("   └─ ", "scout", "Inspect config tests", "done"),
+			...compactRows([
+				{ prefix: "└─ ", agent: "worker", task: "Review producers", status: "running" },
+				{ prefix: "   └─ ", agent: "scout", task: "Inspect config tests", status: "done" },
+			]),
 		].join("\n"),
 	);
 });
@@ -433,10 +549,12 @@ test("running chain uses compact view and flattens nested subagent rows", () => 
 		tree,
 		[
 			"subagents · chain · 1 running, 2 waiting · scope: user",
-			compactRow("├─ ", "worker", "Implement finding-5 refactor in monthly-balancing", "running"),
-			compactRow("│  └─ ", "scout", "Inspect monthly-balancing module5_7 persistence", "done"),
-			compactRow("├─ ", "scout", "Verify generated config/tests", "waiting"),
-			compactRow("└─ ", "reviewer-readonly", "Review final diff and risks", "waiting"),
+			...compactRows([
+				{ prefix: "├─ ", agent: "worker", task: "Implement finding-5 refactor in monthly-balancing", status: "running" },
+				{ prefix: "│  └─ ", agent: "scout", task: "Inspect monthly-balancing module5_7 persistence", status: "done" },
+				{ prefix: "├─ ", agent: "scout", task: "Verify generated config/tests", status: "waiting" },
+				{ prefix: "└─ ", agent: "reviewer-readonly", task: "Review final diff and risks", status: "waiting" },
+			]),
 		].join("\n"),
 	);
 });

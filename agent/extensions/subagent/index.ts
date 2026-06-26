@@ -26,7 +26,7 @@ import {
 	getSettingsListTheme,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, Text, type AutocompleteItem, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text, truncateToWidth, type AutocompleteItem, type Component, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "./agents.ts";
@@ -1288,6 +1288,22 @@ interface SubagentDetails {
 	results: SingleResult[];
 	footerActivity?: SubagentFooterActivitySnapshot;
 	parentEscalationResolutions?: ParentEscalationResolution[];
+}
+
+function createSubagentActivityTreeComponent(
+	details: SubagentDetails,
+	themeFg: ThemeFg,
+	args: Record<string, any> = {},
+): Component {
+	return {
+		render(width: number): string[] {
+			if (width <= 0) return [""];
+			return formatSubagentActivityTreeFromUx(details, themeFg, args, width)
+				.split("\n")
+				.map((line) => truncateToWidth(line, width, ""));
+		},
+		invalidate() {},
+	};
 }
 
 function parseSubagentDetails(value: unknown): SubagentDetails | null {
@@ -3384,11 +3400,20 @@ export default function (pi: ExtensionAPI) {
 				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
 			}
 
-			const activityTree = formatSubagentActivityTreeFromUx(details, theme.fg.bind(theme), context.args ?? {});
+			const activityTreeArgs = isRecord(context.args) ? context.args : {};
+			const createActivityTree = () => createSubagentActivityTreeComponent(details, theme.fg.bind(theme), activityTreeArgs);
+			const createActivityTreeWithText = (text: string): Container => {
+				const container = new Container();
+				container.addChild(createActivityTree());
+				container.addChild(new Spacer(1));
+				container.addChild(new Text(text, 0, 0));
+				return container;
+			};
+
 			const escalatedResults = details.results.filter(hasParentEscalations);
 			if (escalatedResults.length > 0) {
 				const summary = formatParentEscalationSummaryFromUx(details.results, details.parentEscalationResolutions ?? []);
-				return new Text(`${activityTree}\n\n${summary}`, 0, 0);
+				return createActivityTreeWithText(summary);
 			}
 
 			const formatFailureSummary = (r: SingleResult): string => {
@@ -3431,7 +3456,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (details.mode === "single" && details.results.length === 1) {
 				const r = details.results[0];
-				if (isRunningResult(r)) return new Text(activityTree, 0, 0);
+				if (isRunningResult(r)) return createActivityTree();
 
 				const header = formatResultHeader(r);
 				const failure = isFailedResult(r) ? formatFailureSummary(r) : "";
@@ -3442,7 +3467,7 @@ export default function (pi: ExtensionAPI) {
 					container.addChild(new Text(header, 0, 0));
 					if (failure) container.addChild(new Text(theme.fg("error", `Error: ${failure}`), 0, 0));
 					container.addChild(new Spacer(1));
-					container.addChild(new Text(activityTree, 0, 0));
+					container.addChild(createActivityTree());
 					container.addChild(new Spacer(1));
 					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
 					container.addChild(new Text(theme.fg("dim", r.task), 0, 0));
@@ -3453,15 +3478,15 @@ export default function (pi: ExtensionAPI) {
 					return container;
 				}
 
-				let text = `${activityTree}\n\n${header}`;
+				let text = header;
 				if (failure) text += `\n${theme.fg("error", `Error: ${failure}`)}`;
 				if (usage) text += `\n${theme.fg("dim", usage)}`;
-				return new Text(text, 0, 0);
+				return createActivityTreeWithText(text);
 			}
 
 			if (details.mode === "chain") {
 				const isRunning = details.results.some((r) => isRunningResult(r));
-				if (isRunning) return new Text(activityTree, 0, 0);
+				if (isRunning) return createActivityTree();
 
 				const successCount = details.results.filter((r) => !isFailedResult(r)).length;
 				const icon = successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
@@ -3475,7 +3500,7 @@ export default function (pi: ExtensionAPI) {
 					const container = new Container();
 					container.addChild(new Text(header, 0, 0));
 					container.addChild(new Spacer(1));
-					container.addChild(new Text(activityTree, 0, 0));
+					container.addChild(createActivityTree());
 					for (const r of details.results) {
 						appendResultSummary(container, r, `─── Step ${r.step}: `);
 					}
@@ -3487,14 +3512,14 @@ export default function (pi: ExtensionAPI) {
 					return container;
 				}
 
-				let text = `${activityTree}\n\n${header}`;
+				let text = header;
 				for (const r of details.results.filter(isFailedResult)) {
 					const failure = formatFailureSummary(r);
 					if (failure) text += `\n${theme.fg("error", `Step ${r.step ?? "?"} ${r.agent}: ${failure}`)}`;
 				}
 				const usage = formatUsageStats(aggregateUsage(details.results));
 				if (usage) text += `\n${theme.fg("dim", `Total: ${usage}`)}`;
-				return new Text(text, 0, 0);
+				return createActivityTreeWithText(text);
 			}
 
 			if (details.mode === "parallel") {
@@ -3511,14 +3536,14 @@ export default function (pi: ExtensionAPI) {
 					? `${successCount + failCount}/${details.results.length} done, ${running} running`
 					: `${successCount}/${details.results.length} tasks`;
 
-				if (isRunning) return new Text(activityTree, 0, 0);
+				if (isRunning) return createActivityTree();
 
 				const header = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
 				if (expanded) {
 					const container = new Container();
 					container.addChild(new Text(header, 0, 0));
 					container.addChild(new Spacer(1));
-					container.addChild(new Text(activityTree, 0, 0));
+					container.addChild(createActivityTree());
 					for (const r of details.results) {
 						appendResultSummary(container, r, "─── ");
 					}
@@ -3530,14 +3555,14 @@ export default function (pi: ExtensionAPI) {
 					return container;
 				}
 
-				let text = `${activityTree}\n\n${header}`;
+				let text = header;
 				for (const r of details.results.filter(isFailedResult)) {
 					const failure = formatFailureSummary(r);
 					if (failure) text += `\n${theme.fg("error", `${r.agent}: ${failure}`)}`;
 				}
 				const usage = formatUsageStats(aggregateUsage(details.results));
 				if (usage) text += `\n${theme.fg("dim", `Total: ${usage}`)}`;
-				return new Text(text, 0, 0);
+				return createActivityTreeWithText(text);
 			}
 
 			const text = result.content[0];

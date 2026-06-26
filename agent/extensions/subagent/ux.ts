@@ -1,3 +1,4 @@
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isFailedResult, isRunningResult } from "./resultState.ts";
 
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
@@ -80,6 +81,11 @@ interface ActivityNode {
 	agentScope?: AgentScopeLike;
 }
 
+interface CompactActivityLayout {
+	statusColumn: number;
+	width?: number;
+}
+
 interface ParentEscalationOccurrence {
 	occurrenceIndex: number;
 	result: SingleResultLike;
@@ -107,20 +113,40 @@ function normalizeEscalationOptions(value: unknown): EscalationOption[] {
 }
 
 function trimPreview(text: string, max = 140): string {
+	if (max <= 0) return "";
 	const normalized = text.replace(/\s+/g, " ").trim();
 	if (normalized.length <= max) return normalized;
-	return `${normalized.slice(0, Math.max(1, max - 1))}…`;
+	if (max === 1) return "…";
+	return `${normalized.slice(0, max - 1)}…`;
 }
 
 const TASK_PREVIEW_WIDTH = 100;
+const COMPACT_LABEL_TASK_GAP = 2;
+const COMPACT_TASK_STATUS_GAP = 3;
+const COMPACT_STATUS_COLUMN = 96;
 
-function formatStableTaskPreview(task: string | undefined): string {
-	return trimPreview(task ?? "", TASK_PREVIEW_WIDTH);
+function truncatePlainTextToWidth(text: string, maxWidth: number): string {
+	if (maxWidth <= 0) return "";
+	if (visibleWidth(text) <= maxWidth) return text;
+	if (maxWidth === 1) return "…";
+	let truncated = "";
+	for (const char of text) {
+		if (visibleWidth(`${truncated}${char}…`) > maxWidth) break;
+		truncated += char;
+	}
+	return `${truncated}…`;
 }
 
-function formatStableTaskColumn(task: string | undefined): string {
-	const preview = formatStableTaskPreview(task);
-	return preview ? preview.padEnd(TASK_PREVIEW_WIDTH) : "";
+function formatStableTaskPreview(task: string | undefined, maxWidth = TASK_PREVIEW_WIDTH): string {
+	if (maxWidth <= 0) return "";
+	const normalized = (task ?? "").replace(/\s+/g, " ").trim();
+	return truncatePlainTextToWidth(normalized, maxWidth);
+}
+
+function formatStableTaskColumn(task: string | undefined, width = TASK_PREVIEW_WIDTH): string {
+	if (width <= 0) return "";
+	const preview = formatStableTaskPreview(task, width);
+	return `${preview}${" ".repeat(Math.max(0, width - visibleWidth(preview)))}`;
 }
 
 function parseParentEscalationDetails(value: unknown): ParentEscalationDetails | null {
@@ -629,13 +655,14 @@ function renderFlattenedActivityNodes(
 	prefix: string,
 	isLast: boolean,
 	compact: boolean,
+	layout?: CompactActivityLayout,
 ): string[] {
 	const lines: string[] = [];
 	for (let i = 0; i < node.children.length; i++) {
 		const childIsLast = i === node.children.length - 1 ? isLast : false;
 		lines.push(
 			...(compact
-				? renderCompactActivityNode(node.children[i], themeFg, prefix, childIsLast)
+				? renderCompactActivityNode(node.children[i], themeFg, prefix, childIsLast, layout)
 				: renderActivityNode(node.children[i], themeFg, prefix, childIsLast)),
 		);
 	}
@@ -688,34 +715,131 @@ function formatCompactNodeLabel(label: string): string {
 	return label.replace(/^step\s+\d+:\s*/i, "");
 }
 
-function renderCompactActivityNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
+function getCompactConnector(prefix: string, isLast: boolean): string {
+	return `${prefix}${isLast ? "└─ " : "├─ "}`;
+}
+
+function getCompactActivityLabelWidth(node: ActivityNode, prefix: string, isLast: boolean): number {
+	return visibleWidth(`${getCompactConnector(prefix, isLast)}${formatCompactNodeLabel(node.label)}`);
+}
+
+function collectCompactActivityMetrics(
+	node: ActivityNode,
+	prefix: string,
+	isLast: boolean,
+	labelWidths: number[],
+	statusWidths: number[],
+): void {
 	if (shouldFlattenNestedSubagentNode(node)) {
-		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, true);
-	}
-	if (node.kind === "subagent") {
-		return renderCompactSubagentGroupNode(node, themeFg, prefix, isLast);
+		for (let i = 0; i < node.children.length; i++) {
+			const childIsLast = i === node.children.length - 1 ? isLast : false;
+			collectCompactActivityMetrics(node.children[i], prefix, childIsLast, labelWidths, statusWidths);
+		}
+		return;
 	}
 
-	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
-	const taskPreview = formatStableTaskColumn(node.task);
-	const task = taskPreview ? themeFg("dim", `  ${taskPreview}`) : "";
-	const line = `${connector}${themeFg("accent", formatCompactNodeLabel(node.label))}${task}   ${formatBareActivityStatus(node.status, themeFg)}`;
+	if (node.kind === "subagent") {
+		const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
+		for (let i = 0; i < node.children.length; i++) {
+			collectCompactActivityMetrics(node.children[i], childPrefix, i === node.children.length - 1, labelWidths, statusWidths);
+		}
+		return;
+	}
+
+	labelWidths.push(getCompactActivityLabelWidth(node, prefix, isLast));
+	statusWidths.push(visibleWidth(node.status));
+	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
+	for (let i = 0; i < node.children.length; i++) {
+		collectCompactActivityMetrics(node.children[i], childPrefix, i === node.children.length - 1, labelWidths, statusWidths);
+	}
+}
+
+function buildCompactActivityLayoutFromWidths(labelWidths: number[], statusWidths: number[], width?: number): CompactActivityLayout {
+	const maxLabelWidth = labelWidths.length > 0 ? Math.max(...labelWidths) : 0;
+	const maxStatusWidth = statusWidths.length > 0 ? Math.max(...statusWidths) : 0;
+	const minStatusColumn = maxLabelWidth + COMPACT_LABEL_TASK_GAP + COMPACT_TASK_STATUS_GAP;
+	if (typeof width === "number" && width > 0) {
+		return { statusColumn: Math.max(0, width - maxStatusWidth), width };
+	}
+	return { statusColumn: Math.max(COMPACT_STATUS_COLUMN, minStatusColumn) };
+}
+
+function buildCompactActivityLayout(nodes: ActivityNode[], width?: number): CompactActivityLayout {
+	const labelWidths: number[] = [];
+	const statusWidths: number[] = [];
+	for (let i = 0; i < nodes.length; i++) {
+		collectCompactActivityMetrics(nodes[i], "", i === nodes.length - 1, labelWidths, statusWidths);
+	}
+	return buildCompactActivityLayoutFromWidths(labelWidths, statusWidths, width);
+}
+
+function buildCompactActivityLayoutForNode(node: ActivityNode, prefix: string, isLast: boolean, width?: number): CompactActivityLayout {
+	const labelWidths: number[] = [];
+	const statusWidths: number[] = [];
+	collectCompactActivityMetrics(node, prefix, isLast, labelWidths, statusWidths);
+	return buildCompactActivityLayoutFromWidths(labelWidths, statusWidths, width);
+}
+
+function getCompactTaskColumnWidth(layout: CompactActivityLayout, labelWidth: number): number {
+	return Math.max(0, layout.statusColumn - labelWidth - COMPACT_LABEL_TASK_GAP - COMPACT_TASK_STATUS_GAP);
+}
+
+function truncateCompactLine(line: string, layout: CompactActivityLayout): string {
+	return typeof layout.width === "number" && layout.width > 0 ? truncateToWidth(line, layout.width, "") : line;
+}
+
+function renderCompactActivityNode(
+	node: ActivityNode,
+	themeFg: ThemeFg,
+	prefix = "",
+	isLast = true,
+	layout?: CompactActivityLayout,
+): string[] {
+	const activeLayout = layout ?? buildCompactActivityLayoutForNode(node, prefix, isLast);
+	if (shouldFlattenNestedSubagentNode(node)) {
+		return renderFlattenedActivityNodes(node, themeFg, prefix, isLast, true, activeLayout);
+	}
+	if (node.kind === "subagent") {
+		return renderCompactSubagentGroupNode(node, themeFg, prefix, isLast, activeLayout);
+	}
+
+	const connectorText = getCompactConnector(prefix, isLast);
+	const label = formatCompactNodeLabel(node.label);
+	const labelWidth = visibleWidth(`${connectorText}${label}`);
+	const status = formatBareActivityStatus(node.status, themeFg);
+	const statusColumn = activeLayout.statusColumn;
+	const leftTargetWidth = Math.max(0, statusColumn - COMPACT_TASK_STATUS_GAP);
+	const taskPreview = formatStableTaskColumn(node.task, getCompactTaskColumnWidth(activeLayout, labelWidth));
+	const task = taskPreview ? themeFg("dim", taskPreview) : "";
+	const rawLeft = `${themeFg("muted", connectorText)}${themeFg("accent", label)}${" ".repeat(COMPACT_LABEL_TASK_GAP)}${task}`;
+	const left = typeof activeLayout.width === "number" && activeLayout.width > 0 ? truncateToWidth(rawLeft, leftTargetWidth, "") : rawLeft;
+	const line = truncateCompactLine(`${left}${" ".repeat(Math.max(0, statusColumn - visibleWidth(left)))}${status}`, activeLayout);
 	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
 	const lines = [line];
 	for (let i = 0; i < node.children.length; i++) {
-		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1));
+		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1, activeLayout));
 	}
 	return lines;
 }
 
-function renderCompactSubagentGroupNode(node: ActivityNode, themeFg: ThemeFg, prefix = "", isLast = true): string[] {
-	const connector = themeFg("muted", `${prefix}${isLast ? "└─ " : "├─ "}`);
+function renderCompactSubagentGroupNode(
+	node: ActivityNode,
+	themeFg: ThemeFg,
+	prefix = "",
+	isLast = true,
+	layout?: CompactActivityLayout,
+): string[] {
+	const activeLayout = layout ?? buildCompactActivityLayoutForNode(node, prefix, isLast);
+	const connector = themeFg("muted", getCompactConnector(prefix, isLast));
 	const lines = [
-		connector + formatCompactSubagentHeader(formatNodeStatusSummary(node), node.status, node.agentScope, themeFg, node.subagentMode),
+		truncateCompactLine(
+			connector + formatCompactSubagentHeader(formatNodeStatusSummary(node), node.status, node.agentScope, themeFg, node.subagentMode),
+			activeLayout,
+		),
 	];
 	const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
 	for (let i = 0; i < node.children.length; i++) {
-		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1));
+		lines.push(...renderCompactActivityNode(node.children[i], themeFg, childPrefix, i === node.children.length - 1, activeLayout));
 	}
 	return lines;
 }
@@ -728,20 +852,25 @@ function formatCompactSubagentActivityTree(
 	details: SubagentDetailsLike,
 	themeFg: ThemeFg,
 	args: Record<string, any> = {},
+	width?: number,
 ): string {
 	const children = buildTopLevelActivityNodes(details, args);
 	const aggregateStatus = children.length > 0 ? getAggregateNodeStatus(children) : getAggregateActivityStatus(details.results);
+	const layout = buildCompactActivityLayout(children, width);
 	const lines = [
-		formatCompactSubagentHeader(
-			formatActivityStatusSummary(children.length > 0 ? children.map((child) => child.status) : details.results.map(getResultActivityStatus)),
-			aggregateStatus,
-			details.agentScope,
-			themeFg,
-			details.mode,
+		truncateCompactLine(
+			formatCompactSubagentHeader(
+				formatActivityStatusSummary(children.length > 0 ? children.map((child) => child.status) : details.results.map(getResultActivityStatus)),
+				aggregateStatus,
+				details.agentScope,
+				themeFg,
+				details.mode,
+			),
+			layout,
 		),
 	];
 	for (let i = 0; i < children.length; i++) {
-		lines.push(...renderCompactActivityNode(children[i], themeFg, "", i === children.length - 1));
+		lines.push(...renderCompactActivityNode(children[i], themeFg, "", i === children.length - 1, layout));
 	}
 	return lines.join("\n");
 }
@@ -759,15 +888,17 @@ export function formatSubagentActivityTree(
 	details: SubagentDetailsLike,
 	themeFg: ThemeFg,
 	args: Record<string, any> = {},
+	width?: number,
 ): string {
 	const aggregateStatus = getAggregateActivityStatus(details.results);
 	if (details.mode === "parallel" || details.mode === "chain" || (details.mode === "single" && aggregateStatus === "running")) {
-		return formatCompactSubagentActivityTree(details, themeFg, args);
+		return formatCompactSubagentActivityTree(details, themeFg, args, width);
 	}
 	const root: ActivityNode = {
 		label: getSubagentRootLabel(details),
 		status: getAggregateActivityStatus(details.results),
 		children: details.results.map(buildResultActivityNode),
 	};
-	return renderActivityNode(root, themeFg, "", true, true).join("\n");
+	const lines = renderActivityNode(root, themeFg, "", true, true);
+	return typeof width === "number" && width > 0 ? lines.map((line) => truncateToWidth(line, width, "")).join("\n") : lines.join("\n");
 }
