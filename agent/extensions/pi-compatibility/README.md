@@ -10,6 +10,13 @@ Developer/internal compatibility checks for local Pi extensions. This directory 
 
 ## Current checks
 
+### `config-paths.test.ts`
+
+Protects rebrand-safe config path handling across local extensions.
+
+- Scans focused runtime files in `clarify`, `web-search`, `handoff`, and `subagent`.
+- The invariant is that config-sensitive runtime code uses Pi's public helpers such as `getAgentDir()` and `CONFIG_DIR_NAME` instead of hardcoded `.pi` literals or direct `PI_CODING_AGENT_DIR` fallbacks.
+
 ### `extension-api.test.ts`
 
 Protects Pi custom-tool API assumptions used by extensions that register tools.
@@ -39,6 +46,7 @@ Good candidates:
 - version-specific Pi extension API contracts, such as tool execution error semantics;
 - prompt metadata requirements that matter because of how Pi composes tool documentation;
 - mode/transport distinctions such as `ctx.mode` versus `ctx.hasUI`;
+- config-dir or agent-dir contracts where public helpers must be used instead of hardcoded paths;
 - narrow helper-level checks shared by several extension behaviors.
 
 Prefer the owning extension's own test file for normal feature behavior. Keep this directory focused on compatibility invariants, not broad coverage.
@@ -50,6 +58,7 @@ Prefer the owning extension's own test file for normal feature behavior. Keep th
 - If scanning source text, keep the scanned file list narrow and explain the host contract in the test name.
 - When adding a new custom tool that follows the Pi custom-tool failure contract, either add its file to the scoped list in `extension-api.test.ts` or add a more targeted assertion if a source scan would be too brittle.
 - If a new TUI-only surface is added, expose a small `can...` helper and extend `ui-mode-guards.test.ts` so `rpc` with `hasUI: true` remains covered.
+- If a runtime extension starts reading or writing Pi config paths directly, extend `config-paths.test.ts` so helper-based path resolution stays enforced.
 
 ## Commands
 

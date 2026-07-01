@@ -3,9 +3,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import subagentExtension, { getProjectAgentTrustBlockReason } from "./index.ts";
 
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
+
+function escapeRegex(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function writeJson(filePath: string, value: unknown): void {
 	mkdirSync(path.dirname(filePath), { recursive: true });
@@ -84,7 +89,7 @@ function createCtx(cwd: string, trusted: boolean) {
 
 test("before_agent_start ignores project subagent settings unless the context is trusted", async () => {
 	await withIsolatedSettingsFiles(async ({ cwd }) => {
-		writeJson(path.join(cwd, ".pi", "settings.json"), {
+		writeJson(path.join(cwd, CONFIG_DIR_NAME, "settings.json"), {
 			subagents: {
 				maxParallelTasks: 2,
 				maxConcurrency: 1,
@@ -178,7 +183,7 @@ test("project trust gate blocks project/both scopes but not user scope", () => {
 
 	const projectReason = getProjectAgentTrustBlockReason("project", false);
 	assert.match(projectReason ?? "", /agentScope="project"/);
-	assert.match(projectReason ?? "", /\.pi\/agents/);
+	assert.match(projectReason ?? "", new RegExp(escapeRegex(`${CONFIG_DIR_NAME}/agents`)));
 	assert.match(projectReason ?? "", /confirmProjectAgents/);
 
 	const bothReason = getProjectAgentTrustBlockReason("both", false);

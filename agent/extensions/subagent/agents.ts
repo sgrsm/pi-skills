@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -26,6 +26,9 @@ export interface AgentDiscoveryResult {
 }
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+export const USER_AGENTS_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/agent/agents`;
+export const PROJECT_AGENTS_DISPLAY_PATH = `${CONFIG_DIR_NAME}/agents`;
 
 function normalizeNonEmptyString(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
@@ -102,7 +105,7 @@ function isDirectory(p: string): boolean {
 function findNearestProjectAgentsDir(cwd: string): string | null {
 	let currentDir = cwd;
 	while (true) {
-		const candidate = path.join(currentDir, ".pi", "agents");
+		const candidate = path.join(currentDir, CONFIG_DIR_NAME, "agents");
 		if (isDirectory(candidate)) return candidate;
 
 		const parentDir = path.dirname(currentDir);

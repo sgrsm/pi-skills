@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import {
 	ProjectAgentConfirmationPolicyCoverage,
 	buildApprovalPrompt,
@@ -56,6 +57,10 @@ function projectParallelSummary() {
 		requestedAgents: ["repo-reviewer"],
 		projectAgents: ["repo-reviewer"],
 	};
+}
+
+function escapeRegex(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function writeCapableParallelSummary() {
@@ -208,7 +213,7 @@ test("non-explicit project-local agents require approval in auto-equivalent poli
 test("non-explicit project-local policy approval covers the same-call project confirmation", () => {
 	const projectSummary = projectParallelSummary();
 	const decision = evaluateSubagentPolicy("auto", projectSummary, false, "Audit this", true, "none", false);
-	const projectAgentsRequested = [{ name: "repo-reviewer", dir: "/work/repo/.pi/agents" }];
+	const projectAgentsRequested = [{ name: "repo-reviewer", dir: `/work/repo/${CONFIG_DIR_NAME}/agents` }];
 	const details = buildProjectAgentConfirmationDetails(projectAgentsRequested);
 
 	assert.equal(decision.action, "ask");
@@ -219,7 +224,7 @@ test("non-explicit project-local policy approval covers the same-call project co
 	const prompt = buildApprovalPrompt("auto", projectSummary, decision.reason, "Audit this", false, details);
 	assert.match(prompt, /Project-local agent confirmation/);
 	assert.match(prompt, /Agents: repo-reviewer/);
-	assert.match(prompt, /Source: \/work\/repo\/\.pi\/agents/);
+	assert.match(prompt, new RegExp(`Source: /work/repo/${escapeRegex(CONFIG_DIR_NAME)}/agents`));
 	assert.match(prompt, /repo-controlled/);
 });
 
@@ -247,7 +252,7 @@ test("explicit project-local requests still use the project confirmation path", 
 		"none",
 		false,
 	);
-	const projectAgentsRequested = [{ name: "repo-reviewer", dir: "/work/repo/.pi/agents" }];
+	const projectAgentsRequested = [{ name: "repo-reviewer", dir: `/work/repo/${CONFIG_DIR_NAME}/agents` }];
 
 	assert.equal(explicitDecision.action, "allow");
 	assert.equal(

@@ -29,8 +29,16 @@ import {
 import { Container, Spacer, Text, truncateToWidth, type AutocompleteItem, type Component, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
-import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "./agents.ts";
 import {
+	PROJECT_AGENTS_DISPLAY_PATH,
+	USER_AGENTS_DISPLAY_PATH,
+	type AgentConfig,
+	type AgentDiscoveryResult,
+	type AgentScope,
+	discoverAgents,
+} from "./agents.ts";
+import {
+	SUBAGENT_POLICY_STATE_DISPLAY_PATH,
 	loadSubagentPolicyState,
 	normalizeSubagentPolicyMode,
 	saveSubagentPolicyState,
@@ -45,8 +53,10 @@ import {
 	type SubagentFooterActivitySnapshot,
 } from "./footerActivity.ts";
 import {
+	SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH,
 	SUBAGENT_MAX_CONCURRENCY_LIMIT,
 	SUBAGENT_MAX_PARALLEL_TASKS_LIMIT,
+	SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH,
 	formatSubagentSettingsSource,
 	loadSubagentExecutionSettings,
 	mergeSubagentAgentDefaults,
@@ -388,9 +398,9 @@ export function getProjectAgentTrustBlockReason(agentScope: AgentScope, isProjec
 	if (agentScope === "user" || isProjectTrusted) return null;
 
 	// Safer/simple behavior: if a call opts into project-local agents from an untrusted
-	// project, block the whole call before reading .pi/agents instead of trying to
-	// degrade `both` to user-only and risk ambiguous agent-name resolution.
-	return `Blocked: project-local agents require project trust. Current project is not trusted, so agentScope="${agentScope}" cannot load agents from .pi/agents. Trust the project before using project-local subagents, or use agentScope="user". confirmProjectAgents only controls the extra confirmation shown after project trust is established and cannot bypass project trust.`;
+	// project, block the whole call before reading project-local agent files instead of
+	// trying to degrade `both` to user-only and risk ambiguous agent-name resolution.
+	return `Blocked: project-local agents require project trust. Current project is not trusted, so agentScope="${agentScope}" cannot load agents from ${PROJECT_AGENTS_DISPLAY_PATH}. Trust the project before using project-local subagents, or use agentScope="user". confirmProjectAgents only controls the extra confirmation shown after project trust is established and cannot bypass project trust.`;
 }
 
 function normalizeAgentNameForScopeLookup(agentName: string): string {
@@ -742,10 +752,10 @@ function buildSubagentSummaryText(
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
 		"- maxDelegationDepth, inherited approval overrides, and per-agent model defaults are currently edited manually in settings.json",
-		"- concurrency/max-tasks overrides save to ~/.pi/agent/settings.json by default; trusted project .pi/settings.json overrides still apply to the effective subagent settings for the current project",
+		`- concurrency/max-tasks overrides save to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH} by default; trusted project ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH} overrides still apply to the effective subagent settings for the current project`,
 		"- delegated child sessions inherit read-only nested delegation approval by default unless overridden per child agent in settings.json",
 		`- delegated child sessions can use ${PARENT_ESCALATION_TOOL_NAME} to ask the parent agent for user input or broader approval`,
-		"- policy mode is still stored in ~/.pi/agent/subagent-policy.json",
+		`- policy mode is still stored in ${SUBAGENT_POLICY_STATE_DISPLAY_PATH}`,
 	];
 
 	const sessionApprovalLines: string[] = [];
@@ -768,7 +778,7 @@ function buildSubagentSummaryText(
 	}
 
 	if (hasProjectLimitOverride(executionSettings)) {
-		lines.push("- current project overrides one or more limit values via .pi/settings.json");
+		lines.push(`- current project overrides one or more limit values via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}`);
 	}
 
 	if (executionSettings.warnings.length > 0) {
@@ -2400,10 +2410,10 @@ export default function (pi: ExtensionAPI) {
 				);
 				noteText.setText(
 					hasProjectLimitOverride(executionSettings)
-						? theme.fg("warning", "Project .pi/settings.json overrides one or more current limit values. UI saves global defaults only.")
+						? theme.fg("warning", `Project ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH} overrides one or more current limit values. UI saves global defaults only.`)
 						: theme.fg(
 								"dim",
-								"Mode saves to ~/.pi/agent/subagent-policy.json. Concurrency/max-tasks overrides save to ~/.pi/agent/settings.json. maxDelegationDepth, inheritedApprovalScopes, and agentDefaults remain manual settings.json keys.",
+								`Mode saves to ${SUBAGENT_POLICY_STATE_DISPLAY_PATH}. Concurrency/max-tasks overrides save to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. maxDelegationDepth, inheritedApprovalScopes, and agentDefaults remain manual settings.json keys.`,
 							),
 				);
 				warningText.setText(
@@ -2453,7 +2463,7 @@ export default function (pi: ExtensionAPI) {
 						) {
 							ctx.ui.notify(
 								hasProjectLimitOverride(executionSettings)
-									? "Saved to ~/.pi/agent/settings.json, but the current project still overrides the effective limit via .pi/settings.json."
+									? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}, but the current project still overrides the effective limit via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
 									: "Saved, but the effective value is currently constrained by the other subagent limit.",
 								"warning",
 							);
@@ -2783,7 +2793,7 @@ export default function (pi: ExtensionAPI) {
 				{
 					value: "reset-limits",
 					label: "reset-limits",
-					description: "Remove global limit overrides from ~/.pi/agent/settings.json",
+					description: `Remove global limit overrides from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}`,
 				},
 				{
 					value: "cancel-session-approval",
@@ -2860,7 +2870,7 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await setPolicyMode(nextMode, ctx);
 				notifyCommand(
 					ctx,
-					`${buildCurrentSummaryText()}\n\nSaved mode to ~/.pi/agent/subagent-policy.json`,
+					`${buildCurrentSummaryText()}\n\nSaved mode to ${SUBAGENT_POLICY_STATE_DISPLAY_PATH}`,
 				);
 				return;
 			}
@@ -2880,8 +2890,8 @@ export default function (pi: ExtensionAPI) {
 					executionSettings = await resetGlobalExecutionSettings(ctx, ["maxConcurrency"]);
 					const note =
 						executionSettings.sources.maxConcurrency === "project"
-							? "Cleared the global maxConcurrency override from ~/.pi/agent/settings.json. The current project still overrides the effective value via .pi/settings.json."
-							: "Cleared the global maxConcurrency override from ~/.pi/agent/settings.json.";
+							? `Cleared the global maxConcurrency override from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. The current project still overrides the effective value via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
+							: `Cleared the global maxConcurrency override from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 					notifyCommand(
 						ctx,
 						`${buildCurrentSummaryText()}\n\n${note}`,
@@ -2900,10 +2910,10 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await saveGlobalExecutionSettings(ctx, { maxConcurrency: requested });
 				const note =
 					executionSettings.sources.maxConcurrency === "project"
-						? "Saved to ~/.pi/agent/settings.json, but the current project still overrides the effective concurrency via .pi/settings.json."
+						? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}, but the current project still overrides the effective concurrency via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
 						: executionSettings.limits.maxConcurrency !== requested
-							? `Saved to ~/.pi/agent/settings.json. Effective concurrency is currently ${executionSettings.limits.maxConcurrency} because max parallel tasks is ${executionSettings.limits.maxParallelTasks}.`
-							: `Saved maxConcurrency=${requested} to ~/.pi/agent/settings.json.`;
+							? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. Effective concurrency is currently ${executionSettings.limits.maxConcurrency} because max parallel tasks is ${executionSettings.limits.maxParallelTasks}.`
+							: `Saved maxConcurrency=${requested} to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 				notifyCommand(
 					ctx,
 					`${buildCurrentSummaryText()}\n\n${note}`,
@@ -2920,8 +2930,8 @@ export default function (pi: ExtensionAPI) {
 					executionSettings = await resetGlobalExecutionSettings(ctx, ["maxParallelTasks"]);
 					const note =
 						executionSettings.sources.maxParallelTasks === "project"
-							? "Cleared the global maxParallelTasks override from ~/.pi/agent/settings.json. The current project still overrides the effective value via .pi/settings.json."
-							: "Cleared the global maxParallelTasks override from ~/.pi/agent/settings.json.";
+							? `Cleared the global maxParallelTasks override from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. The current project still overrides the effective value via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
+							: `Cleared the global maxParallelTasks override from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 					notifyCommand(
 						ctx,
 						`${buildCurrentSummaryText()}\n\n${note}`,
@@ -2940,8 +2950,8 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await saveGlobalExecutionSettings(ctx, { maxParallelTasks: requested });
 				const note =
 					executionSettings.sources.maxParallelTasks === "project"
-						? "Saved to ~/.pi/agent/settings.json, but the current project still overrides the effective max-tasks value via .pi/settings.json."
-						: `Saved maxParallelTasks=${requested} to ~/.pi/agent/settings.json.`;
+						? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}, but the current project still overrides the effective max-tasks value via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
+						: `Saved maxParallelTasks=${requested} to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 				notifyCommand(
 					ctx,
 					`${buildCurrentSummaryText()}\n\n${note}`,
@@ -2953,8 +2963,8 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await resetGlobalExecutionSettings(ctx, ["maxConcurrency", "maxParallelTasks"]);
 				const note =
 					hasProjectLimitOverride(executionSettings)
-						? "Cleared global subagent limit overrides from ~/.pi/agent/settings.json. The current project still overrides one or more effective values via .pi/settings.json."
-						: "Cleared global subagent limit overrides from ~/.pi/agent/settings.json.";
+						? `Cleared global subagent limit overrides from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. The current project still overrides one or more effective values via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
+						: `Cleared global subagent limit overrides from ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 				notifyCommand(
 					ctx,
 					`${buildCurrentSummaryText()}\n\n${note}`,
@@ -2975,8 +2985,8 @@ export default function (pi: ExtensionAPI) {
 			"Per-subagent model and thinking overrides are supported; otherwise child sessions inherit the workflow-start model and thinking level.",
 			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 			"Default policy mode is ask: valid explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
-			'Default agent scope is "user" (from ~/.pi/agent/agents).',
-			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
+			`Default agent scope is "user" (from ${USER_AGENTS_DISPLAY_PATH}).`,
+			`To enable project-local agents in ${PROJECT_AGENTS_DISPLAY_PATH}, set agentScope: "both" (or "project").`,
 		].join(" "),
 		promptSnippet: "Delegate work to isolated subagents in single, parallel, or chain mode.",
 		promptGuidelines: [
@@ -2987,7 +2997,7 @@ export default function (pi: ExtensionAPI) {
 			"If a delegated child requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
 			"Prefer scout for codebase discovery, planner for saved Markdown plan artifacts, planner-readonly for read-only nested planning, reviewer for writable report workflows, reviewer-readonly for read-only nested review, worker for general implementation, and consolidator for synthesis/report artifacts.",
-			"Use subagent agentScope set to both only when project-local agents under .pi/agents are needed and the repository is trusted.",
+			`Use subagent agentScope set to both only when project-local agents under ${PROJECT_AGENTS_DISPLAY_PATH} are needed and the repository is trusted.`,
 		],
 		parameters: SubagentParams,
 

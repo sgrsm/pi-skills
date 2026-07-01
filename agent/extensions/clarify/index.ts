@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	Key,
 	matchesKey,
@@ -36,7 +35,7 @@ type ClarifyModeState = {
 	enabled: boolean;
 };
 
-const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const AGENT_DIR = getAgentDir();
 const CLARIFY_TOOL_NAME = "clarify";
 const CLARIFY_STATUS_KEY = FOOTER_STATUS_KEYS.clarify;
 const CLARIFY_MODE_STATE_PATH = join(AGENT_DIR, "clarify.json");

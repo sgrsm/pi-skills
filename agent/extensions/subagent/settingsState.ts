@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { SettingsManager, getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, SettingsManager, getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 export type SubagentSettingsScope = "global" | "project";
 export type SubagentLimitSource = "default" | SubagentSettingsScope;
@@ -36,8 +36,9 @@ export type LoadedSubagentExecutionSettings = {
 
 export type SubagentSettingsLoadOptions = {
 	/**
-	 * Whether project-local .pi/settings.json may be read into effective subagent settings.
-	 * Defaults to false so callers without an ExtensionContext fail closed.
+	 * Whether project-local settings.json in the configured project config dir may be read
+	 * into effective subagent settings. Defaults to false so callers without an
+	 * ExtensionContext fail closed.
 	 */
 	projectTrusted?: boolean;
 };
@@ -50,6 +51,8 @@ export const DEFAULT_SUBAGENT_EXECUTION_SETTINGS: SubagentExecutionSettings = {
 
 export const SUBAGENT_MAX_PARALLEL_TASKS_LIMIT = 64;
 export const SUBAGENT_MAX_CONCURRENCY_LIMIT = 32;
+export const SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/agent/settings.json`;
+export const SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH = `${CONFIG_DIR_NAME}/settings.json`;
 
 function isRecord(value: unknown): value is Record<string, any> {
 	return typeof value === "object" && value !== null;
@@ -189,15 +192,15 @@ function getGlobalSettingsPath(): string {
 }
 
 function getProjectSettingsPath(cwd: string): string {
-	return join(cwd, ".pi", "settings.json");
+	return join(cwd, CONFIG_DIR_NAME, "settings.json");
 }
 
 export function formatSubagentSettingsSource(source: SubagentLimitSource): string {
 	switch (source) {
 		case "global":
-			return "~/.pi/agent/settings.json";
+			return SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH;
 		case "project":
-			return ".pi/settings.json";
+			return SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH;
 		default:
 			return "default";
 	}

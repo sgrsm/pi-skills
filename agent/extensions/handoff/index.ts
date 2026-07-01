@@ -1,12 +1,13 @@
 import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { complete } from "@earendil-works/pi-ai/compat"
-import { buildSessionContext, CustomEditor, convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent"
+import { CONFIG_DIR_NAME, buildSessionContext, CustomEditor, convertToLlm, getAgentDir, serializeConversation } from "@earendil-works/pi-coding-agent"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
 
-const HANDOFF_DIR = join(homedir(), ".pi", "handoff")
+const HANDOFF_DIR = join(dirname(getAgentDir()), "handoff")
+const HANDOFF_DIR_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/handoff`
 const HANDOFF_FILE_PATTERN = /^(\d{8}-\d{6})(?:-(.+))?\.md$/i
 const MAX_FALLBACK_EXCERPT_CHARS = 6000
 const MAX_RELEVANT_FILES = 12
@@ -1222,7 +1223,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("handoff", {
-		description: "Create a handoff document in ~/.pi/handoff for a fresh session",
+		description: `Create a handoff document in ${HANDOFF_DIR_DISPLAY_PATH} for a fresh session`,
 		handler: async (args, ctx) => {
 			clearInlineHandoffWarning(ctx)
 			const normalizedArgs = normalizeInlineText(args)
@@ -1252,7 +1253,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("handoff-clear", {
-		description: "Delete all handoff documents from ~/.pi/handoff",
+		description: `Delete all handoff documents from ${HANDOFF_DIR_DISPLAY_PATH}`,
 		handler: async (args, ctx) => {
 			clearInlineHandoffWarning(ctx)
 			if (normalizeInlineText(args)) {
@@ -1269,7 +1270,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("continue", {
-		description: "Continue from a handoff document in ~/.pi/handoff",
+		description: `Continue from a handoff document in ${HANDOFF_DIR_DISPLAY_PATH}`,
 		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
 			clearInlineHandoffWarning(ctx)
@@ -1307,7 +1308,7 @@ export default function handoffExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("continue-new", {
-		description: "Start a fresh session and continue from a handoff document in ~/.pi/handoff",
+		description: `Start a fresh session and continue from a handoff document in ${HANDOFF_DIR_DISPLAY_PATH}`,
 		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
 			clearInlineHandoffWarning(ctx)

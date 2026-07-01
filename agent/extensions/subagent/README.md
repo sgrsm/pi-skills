@@ -4,7 +4,7 @@ Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child
 
 ## What it does
 
-- Runs named agent prompts from `~/.pi/agent/agents` and, when opted in, project-local `.pi/agents`.
+- Runs named agent prompts from the global agent dir (`~/.pi/agent/agents` by default) and, when opted in, project-local config-dir agents (`.pi/agents` by default).
 - Supports one child, parallel children, or a sequential chain that passes prior output with `{previous}`.
 - Streams partial child results back to the parent and tracks nested subagent activity with a compact live task view.
 - Applies policy, depth, trust, and concurrency guardrails before spawning children.
@@ -38,8 +38,8 @@ Examples:
 Behavior:
 
 - `ui` opens a TUI settings screen for mode, max concurrency, and max parallel tasks. It is available only in TUI mode.
-- `off|manual|ask|auto` saves the global policy mode to `~/.pi/agent/subagent-policy.json`.
-- `concurrency` and `max-tasks` save global defaults to `~/.pi/agent/settings.json`.
+- `off|manual|ask|auto` saves the global policy mode to the Pi agent policy file (`~/.pi/agent/subagent-policy.json` by default).
+- `concurrency` and `max-tasks` save global defaults to the Pi agent settings file (`~/.pi/agent/settings.json` by default).
 - `reset-limits` removes the global `maxConcurrency` and `maxParallelTasks` overrides.
 - `cancel-session-approval` clears current-session approvals created by `Allow for current session`, including ask-mode non-explicit approval and write-capable subagent approval.
 
@@ -110,8 +110,8 @@ Execution settings live under the `subagents` key:
 
 Sources:
 
-- Global settings: `~/.pi/agent/settings.json`
-- Trusted project override: `.pi/settings.json`
+- Global settings: the Pi agent settings file (`~/.pi/agent/settings.json` by default)
+- Trusted project override: the project config settings file (`.pi/settings.json` by default)
 
 Project settings are ignored unless the project is trusted. Project values override global values; `maxConcurrency` is also clipped to `maxParallelTasks`. Hard caps are 64 parallel tasks per call and 32 concurrent child processes.
 

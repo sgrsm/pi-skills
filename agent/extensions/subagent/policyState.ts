@@ -1,4 +1,4 @@
-import { getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ export type SubagentPolicyState = {
 };
 
 export const SUBAGENT_POLICY_STATE_PATH = join(getAgentDir(), "subagent-policy.json");
+export const SUBAGENT_POLICY_STATE_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/agent/subagent-policy.json`;
 
 export const DEFAULT_SUBAGENT_POLICY_STATE: SubagentPolicyState = {
 	mode: "ask",

@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
@@ -11,10 +10,7 @@ const DEFAULT_BASE_URL = "https://agentsearch.area55.me";
 const MAX_RESULTS = 10;
 const WEB_SEARCH_TOOL_NAME = "web_search";
 const WEB_SEARCH_STATUS_KEY = FOOTER_STATUS_KEYS.webSearch;
-const WEB_SEARCH_STATE_PATH = join(
-	process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-	"web-search.json",
-);
+const WEB_SEARCH_STATE_PATH = join(getAgentDir(), "web-search.json");
 
 type WebSearchMode = "on" | "off";
 

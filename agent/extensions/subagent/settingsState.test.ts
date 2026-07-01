@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import {
 	extractSubagentAgentDefaults,
 	loadSubagentExecutionSettings,
@@ -109,7 +110,7 @@ test("loadSubagentExecutionSettings ignores project settings when project trust 
 				agentDefaults: { scout: { model: "global/model", thinking: "low" } },
 			},
 		});
-		writeJson(path.join(cwd, ".pi", "settings.json"), {
+		writeJson(path.join(cwd, CONFIG_DIR_NAME, "settings.json"), {
 			subagents: {
 				maxParallelTasks: 2,
 				maxConcurrency: 1,
@@ -141,7 +142,7 @@ test("loadSubagentExecutionSettings ignores project settings when project trust 
 
 test("loadSubagentExecutionSettings defaults to untrusted project settings when no context is supplied", () => {
 	withIsolatedSettingsFiles(({ cwd }) => {
-		writeJson(path.join(cwd, ".pi", "settings.json"), {
+		writeJson(path.join(cwd, CONFIG_DIR_NAME, "settings.json"), {
 			subagents: {
 				maxParallelTasks: 1,
 				maxConcurrency: 1,
@@ -177,7 +178,7 @@ test("loadSubagentExecutionSettings applies trusted project settings over global
 				},
 			},
 		});
-		writeJson(path.join(cwd, ".pi", "settings.json"), {
+		writeJson(path.join(cwd, CONFIG_DIR_NAME, "settings.json"), {
 			subagents: {
 				maxParallelTasks: 7,
 				maxConcurrency: 6,

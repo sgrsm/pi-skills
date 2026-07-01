@@ -27,10 +27,7 @@ Examples:
 
 Autocomplete is provided for `on` and `off`.
 
-State is saved to:
-
-- `$PI_CODING_AGENT_DIR/web-search.json`, when `PI_CODING_AGENT_DIR` is set
-- otherwise `~/.pi/agent/web-search.json`
+State is saved in the Pi agent dir (`~/.pi/agent/web-search.json` by default).
 
 Default state is enabled when no saved state exists.
 

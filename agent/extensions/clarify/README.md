@@ -7,7 +7,7 @@ Adds an interactive `clarify` tool that lets Pi stop and ask the user to choose 
 - Lets the agent ask a focused question with a short list of options.
 - Supports optional option descriptions for trade-offs or consequences.
 - Allows a custom answer by default, unless the tool call sets `allowCustom: false`.
-- Saves the global on/off state in `~/.pi/agent/clarify.json`.
+- Saves the global on/off state in the Pi agent dir (`~/.pi/agent/clarify.json` by default).
 - Falls back to plain-text asking in non-interactive modes because the tool requires UI.
 
 ## When it is used
