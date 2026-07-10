@@ -94,7 +94,7 @@ function normalizeNonEmptyString(value: unknown): string | undefined {
 function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim().toLowerCase();
-	return ["off", "minimal", "low", "medium", "high", "xhigh"].includes(normalized)
+	return ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(normalized)
 		? (normalized as ThinkingLevel)
 		: undefined;
 }

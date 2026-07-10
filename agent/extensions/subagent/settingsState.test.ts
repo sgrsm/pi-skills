@@ -43,6 +43,9 @@ test("extractSubagentAgentDefaults reads object and string forms", () => {
 					model: "anthropic/claude-sonnet-4-5",
 					thinking: "high",
 				},
+				consolidator: {
+					thinking: "max",
+				},
 				invalid: 42,
 			},
 		},
@@ -51,6 +54,7 @@ test("extractSubagentAgentDefaults reads object and string forms", () => {
 	assert.deepEqual(extracted, {
 		scout: { model: "anthropic/claude-haiku-4-5" },
 		planner: { model: "anthropic/claude-sonnet-4-5", thinking: "high" },
+		consolidator: { thinking: "max" },
 	});
 });
 

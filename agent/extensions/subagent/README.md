@@ -60,7 +60,7 @@ Common parameters:
 - `chain` - array of sequential steps; `{previous}` is replaced with the previous step's final output.
 - `cwd` - optional working directory for a child process, resolved relative to the parent `cwd`.
 - `model` - optional per-child model override using the same values as `pi --model`.
-- `thinking` - optional `off`, `minimal`, `low`, `medium`, `high`, or `xhigh` override.
+- `thinking` - optional `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` override.
 - `agentScope` - `user` by default; use `project` or `both` to load project-local agents.
 - `confirmProjectAgents` - defaults to `true`; prompts before running repo-controlled project agents.
 

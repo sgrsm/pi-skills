@@ -16,7 +16,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
@@ -96,7 +96,7 @@ const subagentFooterActivity = new SubagentFooterActivityTracker();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
 const APPROVAL_OPTION_DENY = "Deny";
-const THINKING_LEVEL_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_LEVEL_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ThinkingLevel[];
 const EXPLICIT_SUBAGENT_PATTERNS = [
 	/\bsub-?agents?\b/i,
 	/\bmulti-agent\b/i,
@@ -110,8 +110,6 @@ const EXPLICIT_SUBAGENT_PATTERNS = [
 	/\b(?:run|use|launch)\b[\s\S]{0,24}\b(?:sub-?agents?|agents?)\b/i,
 ];
 const SIMPLE_PR_REVIEW_PATTERN = /\b(review|reviewing|inspect|check|analyze)\b[\s\S]{0,120}\b(pr|pull request|diff|changes?)\b/i;
-
-type ThinkingLevel = (typeof THINKING_LEVEL_VALUES)[number];
 
 type SubagentRequestMode = "single" | "parallel" | "chain";
 

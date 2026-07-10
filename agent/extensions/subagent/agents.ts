@@ -25,7 +25,7 @@ export interface AgentDiscoveryResult {
 	projectAgentsDir: string | null;
 }
 
-const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 export const USER_AGENTS_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/agent/agents`;
 export const PROJECT_AGENTS_DISPLAY_PATH = `${CONFIG_DIR_NAME}/agents`;
