@@ -1,6 +1,8 @@
 ---
 name: consolidator
 description: Consolidates reviewer outputs into one final report artifact and may delegate to read-only helpers
+model: openai-codex/gpt-5.6-luna
+thinking: low
 tools: read, grep, find, ls, write, subagent, escalate_to_parent
 ---
 

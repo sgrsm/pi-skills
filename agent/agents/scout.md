@@ -1,6 +1,8 @@
 ---
 name: scout
 description: Fast codebase recon that can delegate to read-only helper subagents when useful
+model: openai-codex/gpt-5.6-luna
+thinking: minimal
 tools: read, grep, find, ls, bash, subagent, escalate_to_parent
 ---
 

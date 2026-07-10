@@ -1,6 +1,8 @@
 ---
 name: reviewer-readonly
 description: Read-only review specialist for correctness, security, and maintainability analysis
+model: openai-codex/gpt-5.6-terra
+thinking: high
 tools: read, grep, find, ls, bash, subagent, escalate_to_parent
 ---
 

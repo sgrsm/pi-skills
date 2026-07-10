@@ -1,6 +1,8 @@
 ---
 name: worker
 description: General-purpose subagent with full built-in coding tools and optional nested delegation
+model: openai-codex/gpt-5.6-terra
+thinking: high
 tools: read, bash, edit, write, grep, find, ls, subagent, escalate_to_parent
 ---
 
