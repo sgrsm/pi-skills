@@ -1,4 +1,12 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	createBashToolDefinition,
+	createLocalBashOperations,
+	type BashOperations,
+	type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
 	AgentBranchRegistry,
 	GitPermissionStore,
@@ -29,13 +37,17 @@ import {
 	type PermissionRequest,
 } from "./permissions.ts";
 import { createPiTempWorkspace, isPathInsideWorkspaceChild, type PiTempWorkspace } from "./tempWorkspace.ts";
+import { analyzeCatastrophicDeletion, type CatastrophicDeletionDecision } from "./catastrophicDeletion.ts";
+import { createGuardedBashOperations, formatCatastrophicDeletionBlock } from "./bashGuard.ts";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { isHideToolOutputEnabled } from "../hide-tool-output/state.ts";
 
 const STATUS_KEY = FOOTER_STATUS_KEYS.permissions;
 const PERMISSION_CHOICES = ["Allow once", "Allow for current session", "Deny", "Custom instructions"];
 const AGENT_BRANCH_PREFIXES = ["pi/", "agent/", "codex/"];
 const AGENT_BRANCH_ENTRY_TYPE = "permissions-agent-branch";
 const LEGACY_AGENT_BRANCH_ENTRY_TYPES = new Set([AGENT_BRANCH_ENTRY_TYPE, "guardrails-agent-branch"]);
+const PERMISSIONS_EXTENSION_PATH = realpathSync(fileURLToPath(import.meta.url));
 
 type PermissionStatusTheme = {
 	fg(color: "dim" | "error" | "syntaxComment", text: string): string;
@@ -48,7 +60,15 @@ type PermissionStatusGrantCounts = {
 	deps: number;
 };
 
-export default function (pi: ExtensionAPI) {
+export interface PermissionsExtensionOptions {
+	systemTempDir?: string;
+	bashOperations?: BashOperations;
+	localBashOperationsFactory?: (options?: { shellPath?: string }) => BashOperations;
+	home?: string;
+	hideToolOutputEnabled?: () => boolean;
+}
+
+export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions = {}) {
 	const filePermissions = new PermissionStore();
 	const gitPermissions = new GitPermissionStore();
 	const packagePermissions = new PackagePermissionStore();
@@ -58,9 +78,33 @@ export default function (pi: ExtensionAPI) {
 	const packageProjectResolver = createPackageProjectResolver(pi);
 	let permissionsEnabled = true;
 	let tempWorkspace: PiTempWorkspace | undefined;
+	const localBashOperationsFactory = options.localBashOperationsFactory ?? createLocalBashOperations;
+	const bashDelegate = options.bashOperations ?? localBashOperationsFactory();
+	const hideToolOutputEnabled = options.hideToolOutputEnabled ?? isHideToolOutputEnabled;
+	const builtInBash = createBashToolDefinition(process.cwd());
+
+	pi.registerTool({
+		...builtInBash,
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			const sessionCwd = typeof ctx?.cwd === "string" && ctx.cwd.length > 0 ? ctx.cwd : process.cwd();
+			const guardedOperations = createGuardedBashOperations(bashDelegate, { home: options.home });
+			const guardedBash = createBashToolDefinition(sessionCwd, { operations: guardedOperations });
+			return guardedBash.execute(toolCallId, params, signal, onUpdate, ctx);
+		},
+		renderResult(result, renderOptions, theme, context) {
+			if (!builtInBash.renderResult) return new Container();
+			const state = context.state as Record<string, unknown>;
+			const builtInComponent = (builtInBash.renderResult as any)(result, renderOptions, theme, {
+				...context,
+				lastComponent: state.permissionsBuiltInBashResultComponent,
+			});
+			state.permissionsBuiltInBashResultComponent = builtInComponent;
+			return hideToolOutputEnabled() ? new Container() : builtInComponent;
+		},
+	});
 
 	pi.on("session_start", (_event, ctx) => {
-		tempWorkspace = createTempWorkspaceForContext(ctx);
+		tempWorkspace = createTempWorkspaceForContext(ctx, options.systemTempDir);
 		restoreAgentBranches(ctx, agentBranches);
 		updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 	});
@@ -75,7 +119,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {
-		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx);
+		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx, options.systemTempDir);
 		tempWorkspace = workspace;
 		return { systemPrompt: `${event.systemPrompt}\n\n${formatTempWorkspacePrompt(workspace)}` };
 	});
@@ -89,13 +133,21 @@ export default function (pi: ExtensionAPI) {
 				const nextEnabled = action === "on";
 				if (permissionsEnabled === nextEnabled) {
 					updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
-					ctx.ui.notify(`Permission guards are already ${formatPermissionMode(permissionsEnabled)}.`, "info");
+					ctx.ui.notify(
+						`Ordinary permission guards are already ${formatPermissionMode(permissionsEnabled)}; catastrophic protection remains active.`,
+						"info",
+					);
 					return;
 				}
 
 				permissionsEnabled = nextEnabled;
 				updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
-				ctx.ui.notify(`Permission guards ${permissionsEnabled ? "enabled" : "disabled"}.`, "info");
+				ctx.ui.notify(
+					permissionsEnabled
+						? "Ordinary permission guards enabled. Catastrophic protection remains active."
+						: "Ordinary permission guards disabled; catastrophic protection remains active.",
+					"info",
+				);
 				return;
 			}
 
@@ -119,7 +171,7 @@ export default function (pi: ExtensionAPI) {
 			const trackedBranches = agentBranches.listTracked();
 			if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
 				ctx.ui.notify(
-					`Permission guards are ${formatPermissionMode(permissionsEnabled)}. No active session permissions or tracked agent branches.`,
+					`Ordinary permission guards are ${formatPermissionMode(permissionsEnabled)}; catastrophic protection remains active. No active session permissions or tracked agent branches.`,
 					"info",
 				);
 				return;
@@ -142,8 +194,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName === "bash") {
+			const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
+			if (typeof input.command !== "string") {
+				return { block: true, reason: "Blocked Bash call (P0_INVALID_BASH_INPUT): command must be a string" };
+			}
+			const catastrophic = await analyzeCatastrophicDeletion(input.command, { cwd: ctx.cwd, home: options.home });
+			if (catastrophic.kind === "hard-deny") {
+				return { block: true, reason: formatCatastrophicDeletionBlock(catastrophic) };
+			}
+			if (!hasExpectedBashOwnership(pi)) {
+				return { block: true, reason: "Blocked Bash call (P0_BASH_OWNERSHIP_UNEXPECTED): permissions does not own the active model Bash definition" };
+			}
+		}
+
 		const refreshStatus = () => updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
-		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx);
+		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx, options.systemTempDir);
 		tempWorkspace = workspace;
 		const fileRequest = fileRequestForToolCall(event, ctx.cwd);
 		const tempWorkspaceAutoApproved = fileRequest
@@ -196,6 +262,31 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	});
 
+	pi.on("user_bash", async (event) => {
+		let catastrophic: CatastrophicDeletionDecision;
+		try {
+			catastrophic = await analyzeCatastrophicDeletion(event.command, { cwd: event.cwd, home: options.home });
+		} catch {
+			catastrophic = {
+				kind: "hard-deny",
+				reasonCode: "P0_DELETE_CONTEXT_RESOLUTION_FAILED",
+				reason: "catastrophic deletion analysis failed unexpectedly",
+				targets: [],
+			};
+		}
+		if (catastrophic.kind === "hard-deny") {
+			return {
+				result: {
+					output: formatCatastrophicDeletionBlock(catastrophic),
+					exitCode: 1,
+					cancelled: false,
+					truncated: false,
+				},
+			};
+		}
+		return { operations: createGuardedBashOperations(bashDelegate, { home: options.home }) };
+	});
+
 	pi.on("tool_result", async (event, ctx) => {
 		if (event.toolName !== "bash") return undefined;
 		const creations = pendingBranchCreations.get(event.toolCallId);
@@ -238,8 +329,19 @@ function fileRequestForToolCall(event: { toolName: string; input: unknown }, cwd
 	return undefined;
 }
 
-function createTempWorkspaceForContext(ctx: SessionTempContext): PiTempWorkspace {
-	return createPiTempWorkspace(readSessionId(ctx));
+function hasExpectedBashOwnership(pi: ExtensionAPI): boolean {
+	try {
+		const bash = pi.getAllTools().find((tool) => tool.name === "bash");
+		if (!bash) return false;
+		const sourcePath = bash.sourceInfo?.path;
+		return typeof sourcePath === "string" && realpathSync(sourcePath) === PERMISSIONS_EXTENSION_PATH;
+	} catch {
+		return false;
+	}
+}
+
+function createTempWorkspaceForContext(ctx: SessionTempContext, systemTempDir?: string): PiTempWorkspace {
+	return createPiTempWorkspace(readSessionId(ctx), { systemTempDir });
 }
 
 function readSessionId(ctx: SessionTempContext): string | undefined {
@@ -484,7 +586,7 @@ function formatFilePermissionPrompt(request: PermissionRequest, cwd: string): st
 
 function formatGitPermissionPrompt(request: GitPermissionRequest, cwd: string): string {
 	return [
-		"Pi wants to perform a guarded git mutation on an existing non-agent branch.",
+		"Pi wants to perform a guarded git mutation on an existing non-agent branch or its working tree.",
 		"",
 		`Working directory: ${cwd}`,
 		`Tool: ${request.toolName}`,
@@ -582,7 +684,8 @@ function formatGrants(
 ): string {
 	return [
 		"Permission state:",
-		`Permission guards: ${formatPermissionMode(enabled)}`,
+		`Ordinary permission guards: ${formatPermissionMode(enabled)}`,
+		"Catastrophic deletion protection: always on",
 		"",
 		"Active file/path session permissions:",
 		...(fileGrants.length > 0
@@ -646,6 +749,12 @@ function gitOperationLabel(operation: GitProtectedOperation): string {
 			return "git rebase";
 		case "reset":
 			return "git reset";
+		case "clean":
+			return "git clean";
+		case "restore":
+			return "git restore";
+		case "checkout-paths":
+			return "git checkout paths";
 		case "amend":
 			return "git commit --amend";
 		case "force-push":

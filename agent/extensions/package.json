@@ -7,7 +7,7 @@
     "sync:pi-host-deps": "node pi-host-deps/piHostDeps.ts sync",
     "check:pi-host-deps": "node pi-host-deps/piHostDeps.ts check",
     "typecheck": "npm run check:pi-host-deps && tsc -p tsconfig.json --noEmit",
-    "test:permissions": "node --test permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/tempWorkspace.test.ts permissions/index.test.ts",
+    "test:permissions": "node --test permissions/testScratch.test.ts permissions/permissions.test.ts permissions/git.test.ts permissions/package.test.ts permissions/tempWorkspace.test.ts permissions/catastrophicDeletion.test.ts permissions/bashGuard.test.ts permissions/index.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts",
     "test:subagent": "node --test subagent/resultState.test.ts subagent/ux.test.ts subagent/settingsState.test.ts subagent/outputTruncation.test.ts subagent/footerActivity.test.ts subagent/policy.test.ts"
   },
   "dependencies": {

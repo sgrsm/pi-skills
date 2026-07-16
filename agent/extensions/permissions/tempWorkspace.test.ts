@@ -1,25 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { withTestScratchFixture } from "./testScratch.ts";
 import { createPiTempWorkspace, isPathInsideWorkspaceChild } from "./tempWorkspace.ts";
 
-async function withTempRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
-	const root = await mkdtemp(join(tmpdir(), "pi-temp-workspace-test-"));
-	try {
-		return await fn(root);
-	} finally {
-		await rm(root, { recursive: true, force: true });
-	}
-}
-
 test("pi temp workspace uses a sanitized session child under the configured temp root", async () => {
-	await withTempRoot(async (root) => {
-		const workspace = createPiTempWorkspace("session/with spaces", { systemTempDir: root });
+	await withTestScratchFixture(async (fixture) => {
+		const workspace = createPiTempWorkspace("session/with spaces", { systemTempDir: fixture.sessionTemp });
 
-		assert.equal(workspace.baseDir, join(root, "pi"));
-		assert.equal(workspace.sessionDir, join(root, "pi", "session-session-with-spaces"));
+		assert.equal(workspace.baseDir, join(fixture.sessionTemp, "pi"));
+		assert.equal(workspace.sessionDir, join(fixture.sessionTemp, "pi", "session-session-with-spaces"));
 		assert.equal(isPathInsideWorkspaceChild(join(workspace.sessionDir, "out.txt"), workspace), true);
 		assert.equal(isPathInsideWorkspaceChild(join(workspace.sessionDir, "nested", "out.txt"), workspace), true);
 		assert.equal(isPathInsideWorkspaceChild(workspace.sessionDir, workspace), false);
@@ -29,8 +20,8 @@ test("pi temp workspace uses a sanitized session child under the configured temp
 });
 
 test("pi temp workspace is created on demand with private permissions", async () => {
-	await withTempRoot(async (root) => {
-		const workspace = createPiTempWorkspace("permissions-temp-test", { systemTempDir: root });
+	await withTestScratchFixture(async (fixture) => {
+		const workspace = createPiTempWorkspace("permissions-temp-test", { systemTempDir: fixture.sessionTemp });
 
 		await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
 		await workspace.ensureCreated();
@@ -47,13 +38,13 @@ test("pi temp workspace is created on demand with private permissions", async ()
 });
 
 test("pi temp workspace refuses an unsafe symlinked base directory", async () => {
-	await withTempRoot(async (root) => {
-		const target = join(root, "target");
-		await mkdir(target);
-		await writeFile(join(target, "sentinel"), "ok");
-		await symlink(target, join(root, "pi"));
+	await withTestScratchFixture(async (fixture) => {
+		const target = join(fixture.protectedDir, "target");
+		await fixture.mkdir(target);
+		await fixture.writeFile(join(target, "sentinel"), "ok");
+		await fixture.symlink(target, join(fixture.sessionTemp, "pi"));
 
-		const workspace = createPiTempWorkspace("permissions-temp-test", { systemTempDir: root });
+		const workspace = createPiTempWorkspace("permissions-temp-test", { systemTempDir: fixture.sessionTemp });
 		await assert.rejects(workspace.ensureCreated(), /Refusing to use Pi temp workspace directory/);
 	});
 });

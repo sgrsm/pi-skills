@@ -1,5 +1,4 @@
 import {
-  createBashToolDefinition,
   createEditToolDefinition,
   createFindToolDefinition,
   createGrepToolDefinition,
@@ -55,7 +54,6 @@ export default function (pi: ExtensionAPI) {
   const initialCwd = process.cwd();
   const toolFactories: BuiltInToolFactory[] = [
     createReadToolDefinition,
-    createBashToolDefinition,
     createEditToolDefinition,
     createWriteToolDefinition,
     createGrepToolDefinition,

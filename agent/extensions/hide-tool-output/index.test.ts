@@ -1,38 +1,27 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { withTestScratchFixture } from "../permissions/testScratch.ts";
 import hideToolOutputExtension from "./index.ts";
 
-test("wrapped built-in tools execute relative to ctx.cwd instead of extension load cwd", async () => {
-  const tempRoot = await mkdtemp(join(tmpdir(), "hide-tool-output-cwd-"));
-  const extensionLoadCwd = join(tempRoot, "extension-load");
-  const sessionCwd = join(tempRoot, "session");
+test("wrapped built-in ls resolves a relative path against ctx.cwd", async () => {
+  await withTestScratchFixture(async (fixture) => {
+    const sessionCwd = join(fixture.root, "session");
+    await fixture.mkdir(sessionCwd);
+    await fixture.writeFile(join(sessionCwd, "session-only.txt"), "right cwd\n");
 
-  await mkdir(extensionLoadCwd);
-  await mkdir(sessionCwd);
-  await writeFile(join(extensionLoadCwd, "process-only.txt"), "wrong cwd\n", "utf-8");
-  await writeFile(join(sessionCwd, "session-only.txt"), "right cwd\n", "utf-8");
+    const registeredTools = new Map<string, ToolDefinition<any, any, any>>();
+    const pi = {
+      registerTool(tool: ToolDefinition<any, any, any>) {
+        registeredTools.set(tool.name, tool);
+      },
+      registerCommand() {},
+    } as Partial<ExtensionAPI> as ExtensionAPI;
 
-  const registeredTools = new Map<string, ToolDefinition<any, any, any>>();
-  const pi = {
-    registerTool(tool: ToolDefinition<any, any, any>) {
-      registeredTools.set(tool.name, tool);
-    },
-    registerCommand() {},
-  } as Partial<ExtensionAPI> as ExtensionAPI;
-
-  const originalCwd = process.cwd();
-  try {
-    process.chdir(extensionLoadCwd);
     hideToolOutputExtension(pi);
-  } finally {
-    process.chdir(originalCwd);
-  }
 
-  try {
+    assert.equal(registeredTools.has("bash"), false, "hide-tool-output must not compete for Bash ownership");
     const lsTool = registeredTools.get("ls");
     assert.ok(lsTool, "ls tool should be registered");
 
@@ -48,8 +37,5 @@ test("wrapped built-in tools execute relative to ctx.cwd instead of extension lo
       .join("\n");
 
     assert.match(output, /session-only\.txt/);
-    assert.doesNotMatch(output, /process-only\.txt/);
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
+  });
 });

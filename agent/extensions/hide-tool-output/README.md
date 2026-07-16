@@ -37,12 +37,15 @@ The command provides `on` and `off` completions.
 The extension re-registers these built-in tools with custom rendering:
 
 - `read`
-- `bash`
 - `edit`
 - `write`
 - `grep`
 - `find`
 - `ls`
+
+It no longer registers or owns `bash`. The global permissions extension owns the model Bash definition and composes Pi's full built-in Bash call renderer with this extension's persisted `isHideToolOutputEnabled()` state: results are empty when hiding is on and normal when hiding is off. The permissions wrapper keeps Pi's mutable built-in Bash result component in row-local renderer state, so a live row can move from hidden to visible without passing the empty placeholder back to Pi's built-in renderer. This avoids competing Bash definitions while preserving the existing UI behavior.
+
+That ownership supports the permissions extension's practical catastrophic-deletion accident guard; it is not a sandbox or hostile-code guarantee. `hide-tool-output` changes rendering only and adds no execution protection. The permissions-owned model Bash uses Pi's standard local shell operations, but permissions-provided guarded operations cannot currently forward a configured `shellPath` for either model Bash or TUI Bash. The model override also cannot forward its configured `shellCommandPrefix`; TUI `shellCommandPrefix` is still applied by Pi before the returned operations run and is final-checked by permissions.
 
 It does not add new agent-facing tools, flags, or events.
 
@@ -52,7 +55,7 @@ When `hide-tool` is `on`:
 
 - result output for the wrapped tools is suppressed in the conversation UI
 - the tool call row remains visible
-- `bash` keeps Pi's built-in call renderer so the full command remains visible; only the result output is hidden
+- permissions-owned `bash` keeps Pi's built-in call renderer so the full command remains visible; only the result output is hidden through renderer composition
 - non-`bash` tools use compact one-line summaries such as `read <path>`, `grep /pattern/ in <path>`, or `write <path>`
 - compact path display follows the shared `short-paths` state when that extension is available
 

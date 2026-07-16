@@ -5,6 +5,9 @@ export type GitProtectedOperation =
 	| "pull"
 	| "rebase"
 	| "reset"
+	| "clean"
+	| "restore"
+	| "checkout-paths"
 	| "amend"
 	| "force-push"
 	| "cherry-pick"
@@ -243,7 +246,7 @@ export async function buildGitPermissionRequest(
 
 	return {
 		toolName: "bash",
-		summary: "git command mutates an existing non-agent branch",
+		summary: "git command mutates an existing non-agent branch or its working tree",
 		command,
 		operations: dedupeOperations(operations),
 	};
@@ -281,6 +284,14 @@ function analyzeGitInvocation(subcommand: string, args: string[], cwd: string): 
 		case "reset":
 			protectedActions.push(protectedCurrentBranchAction("reset", subcommand, cwd, "git reset mutates the current branch or index"));
 			break;
+		case "clean":
+			if (!hasCleanDryRunOption(args)) {
+				protectedActions.push(protectedCurrentBranchAction("clean", subcommand, cwd, "git clean deletes untracked working-tree files"));
+			}
+			break;
+		case "restore":
+			protectedActions.push(protectedCurrentBranchAction("restore", subcommand, cwd, "git restore mutates the working tree or index"));
+			break;
 		case "cherry-pick":
 			protectedActions.push(protectedCurrentBranchAction("cherry-pick", subcommand, cwd, "git cherry-pick adds commits to the current branch"));
 			break;
@@ -302,6 +313,11 @@ function analyzeGitInvocation(subcommand: string, args: string[], cwd: string): 
 			break;
 		case "checkout":
 			analyzeCheckoutOrSwitch(args, cwd, "checkout", protectedActions, branchCreations);
+			if (hasExplicitCheckoutPaths(args)) {
+				protectedActions.push(
+					protectedCurrentBranchAction("checkout-paths", subcommand, cwd, "git checkout -- <paths> overwrites working-tree files"),
+				);
+			}
 			break;
 		case "switch":
 			analyzeCheckoutOrSwitch(args, cwd, "switch", protectedActions, branchCreations);
@@ -466,6 +482,19 @@ function getOptionValue(args: string[], names: readonly string[]): string | unde
 
 function hasForcePushOption(args: string[]): boolean {
 	return args.some((arg) => arg === "-f" || /^-[^-]*f/.test(arg) || arg === "--force" || arg.startsWith("--force-with-lease"));
+}
+
+function hasCleanDryRunOption(args: string[]): boolean {
+	for (const arg of args) {
+		if (arg === "--") return false;
+		if (arg === "--dry-run" || /^-[^-]*n/.test(arg)) return true;
+	}
+	return false;
+}
+
+function hasExplicitCheckoutPaths(args: string[]): boolean {
+	const delimiterIndex = args.indexOf("--");
+	return delimiterIndex >= 0 && delimiterIndex < args.length - 1;
 }
 
 function hasLongOption(args: string[], option: string): boolean {

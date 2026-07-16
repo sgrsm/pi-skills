@@ -1,19 +1,52 @@
 # Permissions extension
 
-Adds interactive guards around selected mutating actions. It is enabled by default for each Pi session and stores approvals only for the current session.
+Adds interactive guards around selected mutating actions. It is enabled by default for each Pi session and stores ordinary approvals only for the current session. A separate Priority 0 catastrophic-deletion guard is always active and non-grantable.
 
-## What it guards
+## Priority 0 catastrophic-deletion guard
+
+The extension applies an always-on, non-grantable catastrophic-deletion check to model Bash and TUI `!`/`!!` commands, including a final check before local execution. Recognized hard denials cannot be bypassed with ordinary approvals, session grants, scratch auto-approval, no-UI mode, or `/permissions off`.
+
+Protected canonical targets are:
+
+- filesystem root
+- HOME
+- the command `cwd`
+- every ancestor of that `cwd`
+
+The bounded recognizer covers common visible direct deletion, traversal deletion, ordinary command composition, common wrappers, literal nested shell payloads, and visible indirect deletion. It hard-denies exact protected roots and visible destructive operations whose dynamic, malformed, or unsupported targets cannot be classified safely. Concrete noncritical cleanup, including ordinary nonexistent targets, continues through the normal permission policy.
+
+The recognizer intentionally does not emulate complete Bash semantics or infer hidden effects inside scripts, interpreters, or executables. Commands without visible deletion evidence are not blocked merely because unusual syntax could theoretically conceal behavior. Denials include stable `P0_*` diagnostics and actionable guidance. This is a practical accident-prevention classifier, not a shell parser or arbitrary-code containment boundary.
+
+### Scope, trust boundary, and limitations
+
+The guard assumes a trusted Pi host, ordinary local process environment, executable lookup, and global/user extensions. It is not designed to contain deliberate evasion, hostile local state, hidden behavior in arbitrary code, malicious extensions, or filesystem races. Users who need hostile-code containment should run Pi in a suitable container, remote environment, or VM.
+
+Ordinary path permission classification is best-effort and may be conservative or incomplete for nonstandard path forms and symlink-heavy layouts. Prefer explicit conventional paths, and avoid using symlinks as mutation targets or within the session scratch workspace when relying on automatic classification.
+
+The permissions-owned Bash backend uses Pi's standard local operations. Some configured custom-shell behavior cannot be forwarded through the extension API; TUI command prefixes are still included in the final catastrophic check. These compatibility constraints are not security controls.
+
+## Safe test scratch setup
+
+Filesystem-mutating tests require `PI_PERMISSIONS_TEST_SCRATCH_ROOT` with no fallback. The configured directory must already exist as a real, non-symlink, current-user-owned, non-group/world-writable directory that neither equals, contains, nor is contained by the actual HOME, repository, or process cwd. Filesystem `/` is rejected exactly without causing every descendant scratch directory to be rejected. The approved directory must contain a real current-user-owned `.step1-test-root-ready` file created by the approving caller.
+
+Tests create private `permissions-test-*` descendants, pin the approved and generated roots by device/inode, and mutate only strict canonical descendants whose real parent directory already exists. Every mutation helper revalidates both roots' exact identity, ownership, safe/private mode, non-symlink status, and exact canonical location at its boundary and again immediately before path mutation where practical. Cleanup atomically renames the pinned root to a fresh quarantine name inside the approved directory, revalidates identity, non-symlink status, ownership, and canonical containment after the rename and immediately before recursive Node removal, then removes only that quarantine. Any identity, ownership, mode, location, or containment mismatch refuses removal and reports the failure rather than guessing at recovery. Tests never create, rename, or remove the approved base or sentinel.
+
+Path-based checks cannot eliminate a malicious same-user race between validation and mutation. The helper narrows that window by actively enforcing pinned identities at each helper boundary and immediately before mutations, but this is not an OS sandbox or descriptor-relative filesystem transaction.
+
+Run `npm run test:permissions` only with that environment variable set to an explicitly approved Pi session scratch directory. The broader `all-tests` command now has the same prerequisite because it discovers these test files.
+
+## What ordinary permissions guard
 
 ### File/path mutations outside the current working directory
 
 Prompts before:
 
 - `write` or `edit` tool calls targeting paths outside `cwd`
-- `bash` commands that appear to mutate paths outside `cwd`, including deletes, write redirections, `mv`, `mkdir`, `touch`, `truncate`, `ln`, `chmod`, `chown`, `chgrp`, `cp`/`install` destinations, `tee`, `sed -i`, and `find -delete`
+- recognized Bash mutations outside `cwd`, including common deletion, redirection, move/copy, creation, metadata-change, and in-place-edit forms
 
-Output suppression to the exact null device (`>/dev/null`, `2>/dev/null`, `&>/dev/null`, append variants, or `tee /dev/null`) is ignored. Other destructive or metadata-changing operations against `/dev/null`, such as `rm /dev/null` or `chmod /dev/null`, are still guarded.
+Conventional output suppression to the null device is ignored; destructive or metadata-changing operations against the null device remain guarded.
 
-Paths inside the current working directory are not guarded by this extension.
+Paths inside the current working directory are not guarded by the ordinary prompt policy. Exact deletion of canonical `cwd` or a protected ancestor is still hard-denied by Priority 0.
 
 The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir instead of /tmp: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
 
@@ -22,6 +55,9 @@ The extension also provides a per-session Pi temp workspace under `join(os.tmpdi
 Prompts before protected `git` operations on an existing branch that is not considered agent-created:
 
 - `git merge`, `git pull`, `git rebase`, `git reset`
+- non-dry-run `git clean` (`git clean -n` and `git clean --dry-run` are exempt)
+- all `git restore` commands
+- explicit path checkout with `git checkout -- <paths>`
 - `git cherry-pick`, `git revert`
 - `git commit --amend`
 - force pushes
@@ -80,7 +116,7 @@ Examples:
 Arguments:
 
 - `on` - enable permission guards
-- `off` - disable permission guards for the current session
+- `off` - disable ordinary permission prompts for the current session; catastrophic deletion protection remains active
 - `clear` - clear file, git, and dependency session grants
 
 Running `/permissions` with active grants opens a small UI choice to keep or clear grants. Agent-created branch tracking is kept when grants are cleared.
@@ -101,42 +137,13 @@ npx create-vite@latest
 sudo apt-get install ripgrep
 ```
 
-These examples are normally not guarded by this extension:
-
-```bash
-npm test
-npm run build
-mvn test
-gradle build
-some-command >/dev/null
-some-command 2>/dev/null
-some-command | tee /dev/null
-# Also not guarded: mutations below the session temp workspace path shown in Pi's prompt.
-```
+Read-only, test, and build commands without a recognized guarded mutation normally continue without a prompt. Conventional null-output suppression is not treated as a filesystem mutation, and eligible mutations below the session temp workspace are auto-approved.
 
 ## Tools, flags, and events
 
-Registered tools:
+The extension owns the model-facing `bash` tool and observes `write`, `edit`, and `bash` calls. It uses Pi session, agent-start, tool-call/result, user-Bash, and shutdown events to maintain session-local permission state, advertise the scratch workspace, evaluate guarded actions, and track agent-created branches.
 
-- none
-
-Observed tool calls:
-
-- `write`
-- `edit`
-- `bash`
-
-Extension-specific CLI flags/settings:
-
-- none; use `/permissions on` and `/permissions off` for session-local control
-
-Pi events used:
-
-- `session_start` - restore tracked agent-created branches, compute the session temp workspace path, and update footer status
-- `before_agent_start` - tell Pi the current session temp workspace path for scratch files
-- `tool_call` - inspect guarded tool calls before execution and auto-approve mutations below the session temp workspace
-- `tool_result` - record successful agent-created git branches
-- `session_shutdown` - reset enabled state, session grants, temp workspace state, and pending branch tracking work
+There are no extension-specific CLI flags or settings; use `/permissions on` and `/permissions off` for session-local control.
 
 ## Footer status
 
@@ -152,7 +159,7 @@ permissions: 3 (fs, deps×2) •
 Runtime states:
 
 - `permissions: on •` - guards are enabled and there are no active session grants
-- `permissions: off •` - guards are disabled for the current session; this disabled state takes precedence over grant counts in the footer
+- `permissions: off •` - ordinary guards are disabled for the current session; catastrophic deletion protection remains active, and this ordinary disabled state takes precedence over grant counts in the footer
 - `permissions: <n> (...) •` - guards are enabled and there are active session grants from `Allow for current session`
 - no footer item - the terminal UI is unavailable (`hasUI` is false)
 

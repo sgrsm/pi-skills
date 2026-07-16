@@ -41,6 +41,18 @@ test("git analyzer protects merge, rebase, reset, amend, and force push but not 
 	assert.equal(analyzeGitCommands("git push --force-with-lease", cwd).protectedActions[0]?.operation, "force-push");
 });
 
+test("git analyzer guards working-tree mutations except clean dry runs", () => {
+	assert.equal(analyzeGitCommands("git clean -fd", cwd).protectedActions[0]?.operation, "clean");
+	assert.equal(analyzeGitCommands("git restore", cwd).protectedActions[0]?.operation, "restore");
+	assert.equal(analyzeGitCommands("git restore --staged src/file.ts", cwd).protectedActions[0]?.operation, "restore");
+	assert.equal(analyzeGitCommands("git checkout -- src/file.ts README.md", cwd).protectedActions[0]?.operation, "checkout-paths");
+
+	assert.deepEqual(analyzeGitCommands("git clean -n", cwd).protectedActions, []);
+	assert.deepEqual(analyzeGitCommands("git clean --dry-run", cwd).protectedActions, []);
+	assert.deepEqual(analyzeGitCommands("git checkout main", cwd).protectedActions, []);
+	assert.deepEqual(analyzeGitCommands("git checkout --", cwd).protectedActions, []);
+});
+
 test("git analyzer tracks branch creation commands and target-branch mutations", () => {
 	const checkout = analyzeGitCommands("git checkout -b pi/demo", cwd);
 	assert.deepEqual(checkout.branchCreations.map((creation) => creation.branch), ["pi/demo"]);
@@ -96,6 +108,30 @@ test("git permission requests skip agent branches and protect existing branches"
 	assert.deepEqual(userBranchRequest.operations.map((operation) => ({ operation: operation.operation, branch: operation.branch })), [
 		{ operation: "reset", branch: "main" },
 	]);
+});
+
+test("working-tree guards preserve prefixed and tracked agent-branch exemptions", async () => {
+	const registry = new AgentBranchRegistry(["pi/"]);
+	registry.add("/repo/project", "generated", 123);
+	const analysis = analyzeGitCommands("git clean -fd && git restore file.txt && git checkout -- other.txt", cwd);
+
+	for (const currentBranch of ["pi/demo", "generated"]) {
+		const request = await buildGitPermissionRequest(
+			analysis.protectedActions,
+			"git clean -fd && git restore file.txt && git checkout -- other.txt",
+			makeStateProvider({ currentBranch, existingBranches: [currentBranch] }),
+			registry,
+		);
+		assert.equal(request, undefined);
+	}
+
+	const request = await buildGitPermissionRequest(
+		analysis.protectedActions,
+		"git clean -fd && git restore file.txt && git checkout -- other.txt",
+		makeStateProvider({ currentBranch: "main", existingBranches: ["main"] }),
+		registry,
+	);
+	assert.deepEqual(request?.operations.map((operation) => operation.operation), ["clean", "restore", "checkout-paths"]);
 });
 
 test("tracked branch creations only record branches that did not already exist before execution", async () => {
