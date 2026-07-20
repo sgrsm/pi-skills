@@ -4,7 +4,7 @@
  * `FOOTER_STATUS_KEYS` encodes this order with sortable numeric prefixes so Pi
  * displays managed statuses left-to-right in the order listed here.
  */
-export const FOOTER_STATUS_ORDER = ["responseTimer", "permissions", "clarify", "webSearch", "subagents", "mcp"] as const;
+export const FOOTER_STATUS_ORDER = ["permissions", "clarify", "webSearch", "subagents", "mcp", "responseTimer"] as const;
 
 /** Names of local-extension footer statuses managed by the shared key helper. */
 export type FooterStatusName = (typeof FOOTER_STATUS_ORDER)[number];
@@ -16,12 +16,12 @@ export type FooterStatusName = (typeof FOOTER_STATUS_ORDER)[number];
  * prefixes preserve `FOOTER_STATUS_ORDER` while keeping readable key suffixes.
  */
 export const FOOTER_STATUS_KEYS: Record<FooterStatusName, string> = {
-	responseTimer: "-1-response-timer",
 	permissions: "0-permissions",
 	clarify: "1-clarify",
 	webSearch: "2-web-search",
 	subagents: "3-subagents",
 	mcp: "4-mcp",
+	responseTimer: "5-response-timer",
 };
 
 /**
@@ -31,12 +31,12 @@ export const FOOTER_STATUS_KEYS: Record<FooterStatusName, string> = {
  * after the managed display order or key naming changes.
  */
 export const LEGACY_FOOTER_STATUS_KEYS: Record<FooterStatusName, readonly string[]> = {
-	responseTimer: [],
 	permissions: ["3-permissions"],
 	clarify: ["2-clarify"],
 	webSearch: ["1-web-search"],
 	subagents: ["0-subagents"],
 	mcp: ["mcp"],
+	responseTimer: ["-1-response-timer"],
 };
 
 type FooterStatusContext = {

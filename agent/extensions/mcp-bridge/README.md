@@ -135,6 +135,7 @@ Footer status uses the shared `mcp` footer key from `../shared/footerStatus.ts` 
 - `mcp: <name>` appears when one or more connectors are registered; multiple connectors are ordered by connector id/key and the rendered display names are separated with `, `.
 - Connector names are dim when disabled.
 - Connector names are accent-colored whenever enabled, including enabled-but-disconnected or connection-failed states.
+- The compact MCP segment ends with `•`, separating it from the rightmost response timer status.
 
 Detailed connection errors, connection state, and tool counts are intentionally kept in command notifications/status lines, not the compact footer.
 

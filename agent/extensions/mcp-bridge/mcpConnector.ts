@@ -96,6 +96,7 @@ type McpSessionStateContext = McpStatusContext & { sessionManager: { getBranch: 
 
 const MCP_STATUS_KEY = FOOTER_STATUS_KEYS.mcp;
 const ENABLED_MCP_SEPARATOR = ", ";
+const FOOTER_STATUS_DELIMITER = " •";
 const MCP_SESSION_STATE_CUSTOM_TYPE = "mcp-connector-state";
 
 type McpConnectorRuntime = {
@@ -386,7 +387,7 @@ function statusDisplayName(connector: { name: string; displayName: string }): st
 }
 
 export function formatMcpFooterStatus(connectors: readonly McpFooterConnectorStatus[], theme: McpStatusTheme): string {
-	if (connectors.length === 0) return theme.fg(INACTIVE_MCP_STATUS_COLOR, "mcp: none");
+	if (connectors.length === 0) return theme.fg(INACTIVE_MCP_STATUS_COLOR, `mcp: none${FOOTER_STATUS_DELIMITER}`);
 
 	const labelColor = connectors.some((connector) => connector.enabled) ? ACTIVE_MCP_STATUS_COLOR : INACTIVE_MCP_STATUS_COLOR;
 	let text = theme.fg(labelColor, "mcp: ");
@@ -397,7 +398,7 @@ export function formatMcpFooterStatus(connectors: readonly McpFooterConnectorSta
 		text += theme.fg(connector.enabled ? ACTIVE_MCP_STATUS_COLOR : INACTIVE_MCP_STATUS_COLOR, statusDisplayName(connector));
 	}
 
-	return text;
+	return text + theme.fg(INACTIVE_MCP_STATUS_COLOR, FOOTER_STATUS_DELIMITER);
 }
 
 function updateMcpStatus(manager: McpManager, ctx: McpStatusContext): void {

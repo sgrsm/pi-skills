@@ -31,7 +31,7 @@ test("aggregate MCP footer colors the label like active connectors when any conn
 		{ fg: (color: string, text: string) => `<${color}>${text}</${color}>` },
 	);
 
-	assert.equal(footerStatus, "<accent>mcp: </accent><dim>alpha</dim><dim>, </dim><accent>zeta</accent>");
+	assert.equal(footerStatus, "<accent>mcp: </accent><dim>alpha</dim><dim>, </dim><accent>zeta</accent><dim> •</dim>");
 });
 
 test("aggregate MCP footer separates multiple connector display names with comma-space", async () => {
@@ -85,7 +85,7 @@ test("aggregate MCP footer separates multiple connector display names with comma
 		}
 
 		const footerStatus = statuses.get(FOOTER_STATUS_KEYS.mcp) ?? "";
-		assert.equal(footerStatus, "mcp: alpha, zeta");
+		assert.equal(footerStatus, "mcp: alpha, zeta •");
 		assert.doesNotMatch(footerStatus, / · /);
 	} finally {
 		rmSync(tempDir, { recursive: true, force: true });

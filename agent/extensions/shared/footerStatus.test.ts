@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS, FOOTER_STATUS_ORDER } from "./footerStatus.ts";
 
-const EXPECTED_DISPLAY_ORDER = ["response-timer", "permissions", "clarify", "web-search", "subagents", "mcp"];
+const EXPECTED_DISPLAY_ORDER = ["permissions", "clarify", "web-search", "subagents", "mcp", "response-timer"];
 const DISPLAY_LABEL_BY_STATUS_NAME = {
 	responseTimer: "response-timer",
 	permissions: "permissions",
@@ -44,5 +44,6 @@ test("legacy footer status keys are cleared when managed statuses refresh", () =
 		["1-web-search", undefined],
 		["0-subagents", undefined],
 		["mcp", undefined],
+		["-1-response-timer", undefined],
 	]);
 });

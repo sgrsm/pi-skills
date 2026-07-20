@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   formatElapsedTime,
   formatResponseTimerText,
   registerResponseTimerExtension,
-  RESPONSE_TIMER_LEGACY_STATUS_KEY,
+  RESPONSE_TIMER_STATUS_KEY,
   RESPONSE_TIMER_UPDATE_INTERVAL_MS,
-  rightAlignOnLine,
   type ResponseTimerDependencies,
 } from "./index.ts";
 
@@ -38,15 +36,7 @@ test("formatResponseTimerText uses requested running and stopped symbols without
   );
 });
 
-test("rightAlignOnLine places the timer at the right edge and truncates the cwd side", () => {
-  const rendered = rightAlignOnLine("/very/long/project/path", "⏱ 1m 05s", 28, "...");
-
-  assert.equal(visibleWidth(rendered), 28);
-  assert.ok(rendered.endsWith("⏱ 1m 05s"));
-  assert.match(rendered, /^\/very\/long.*\s+⏱ 1m 05s$/);
-});
-
-test("response timer renders on the first footer line, updates live, and keeps final duration visible", async () => {
+test("response timer publishes live and final durations through the status API", async () => {
   let now = 1_000;
   let intervalCallback: (() => void) | undefined;
   const clearCalls: unknown[] = [];
@@ -67,7 +57,6 @@ test("response timer renders on the first footer line, updates live, and keeps f
 
   const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown | Promise<unknown>>>();
   const pi = {
-    getThinkingLevel: () => "off",
     on(eventName: string, handler: (event: unknown, ctx: any) => unknown | Promise<unknown>) {
       const existing = handlers.get(eventName) ?? [];
       existing.push(handler);
@@ -76,19 +65,9 @@ test("response timer renders on the first footer line, updates live, and keeps f
   } as Partial<ExtensionAPI> as ExtensionAPI;
 
   const statuses = new Map<string, string | undefined>();
-  let footerFactory: any;
+  let footerSet = false;
   const ctx = {
-    mode: "tui",
     hasUI: true,
-    cwd: "/Users/example/project",
-    model: { id: "test-model", provider: "test-provider", contextWindow: 100_000, reasoning: false },
-    modelRegistry: { isUsingOAuth: () => false },
-    getContextUsage: () => ({ tokens: 1_000, contextWindow: 100_000, percent: 1 }),
-    sessionManager: {
-      getEntries: () => [],
-      getCwd: () => "/Users/example/project",
-      getSessionName: () => undefined,
-    },
     ui: {
       theme: {
         fg(_color: "accent" | "syntaxComment" | "dim", text: string) {
@@ -98,8 +77,8 @@ test("response timer renders on the first footer line, updates live, and keeps f
           return text;
         },
       },
-      setFooter(factory: unknown) {
-        footerFactory = factory;
+      setFooter() {
+        footerSet = true;
       },
       setStatus(key: string, value: string | undefined) {
         statuses.set(key, value);
@@ -111,82 +90,31 @@ test("response timer renders on the first footer line, updates live, and keeps f
     for (const handler of handlers.get(eventName) ?? []) await handler({}, ctx);
   };
 
-  initTheme(undefined, false);
   registerResponseTimerExtension(pi, deps);
   await emit("session_start");
 
-  assert.equal(statuses.get(RESPONSE_TIMER_LEGACY_STATUS_KEY), undefined);
-  assert.equal(typeof footerFactory, "function");
-
-  let renderRequests = 0;
-  const footer = footerFactory(
-    { requestRender: () => renderRequests++ },
-    ctx.ui.theme,
-    {
-      getGitBranch: () => null,
-      getAvailableProviderCount: () => 1,
-      getExtensionStatuses: () => new Map(),
-      onBranchChange: () => () => undefined,
-    },
-  );
-
-  const initialLines = footer.render(60);
-  assert.ok(initialLines[0].endsWith("✓ 0s"));
-  assert.doesNotMatch(initialLines.join("\n"), /\(auto\)/);
+  assert.equal(footerSet, false);
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("✓ 0s"));
 
   await emit("before_agent_start");
   assert.deepEqual(intervalDelays, [RESPONSE_TIMER_UPDATE_INTERVAL_MS]);
-  assert.equal(renderRequests, 1);
-  assert.ok(footer.render(60)[0].endsWith("⏱ 0s"));
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("⏱ 0s"));
 
   now = 66_000;
   intervalCallback?.();
-  assert.equal(renderRequests, 2);
-  assert.ok(footer.render(60)[0].endsWith("⏱ 1m 05s"));
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("⏱ 1m 05s"));
 
   await emit("agent_start");
   assert.deepEqual(intervalDelays, [RESPONSE_TIMER_UPDATE_INTERVAL_MS], "agent_start must not reset after before_agent_start");
-  assert.ok(footer.render(60)[0].endsWith("⏱ 1m 05s"));
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("⏱ 1m 05s"));
 
-  await emit("agent_end");
+  await emit("agent_settled");
   assert.deepEqual(clearCalls, [intervalHandle]);
-  assert.ok(footer.render(60)[0].endsWith("✓ 1m 05s"));
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("✓ 1m 05s"));
 
   now = 100_000;
   await emit("before_agent_start");
-  assert.ok(footer.render(60)[0].endsWith("⏱ 0s"));
-});
-
-test("response timer does not install a custom footer outside TUI mode", async () => {
-  let footerSet = false;
-  const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown | Promise<unknown>>>();
-  const pi = {
-    on(eventName: string, handler: (event: unknown, ctx: any) => unknown | Promise<unknown>) {
-      const existing = handlers.get(eventName) ?? [];
-      existing.push(handler);
-      handlers.set(eventName, existing);
-    },
-  } as Partial<ExtensionAPI> as ExtensionAPI;
-  const ctx = {
-    mode: "rpc",
-    hasUI: true,
-    ui: {
-      setFooter() {
-        footerSet = true;
-      },
-      setStatus() {},
-    },
-  };
-
-  registerResponseTimerExtension(pi, {
-    now: () => 0,
-    setInterval: () => ({}),
-    clearInterval: () => undefined,
-  });
-
-  for (const handler of handlers.get("session_start") ?? []) await handler({}, ctx);
-
-  assert.equal(footerSet, false);
+  assert.ok(statuses.get(RESPONSE_TIMER_STATUS_KEY)?.endsWith("⏱ 0s"));
 });
 
 test("response timer clears a running interval on session shutdown", async () => {
@@ -211,10 +139,16 @@ test("response timer clears a running interval on session shutdown", async () =>
     },
   } as Partial<ExtensionAPI> as ExtensionAPI;
   const ctx = {
-    mode: "tui",
     hasUI: true,
     ui: {
-      setFooter() {},
+      theme: {
+        fg(_color: "accent" | "syntaxComment" | "dim", text: string) {
+          return text;
+        },
+        bold(text: string) {
+          return text;
+        },
+      },
       setStatus() {},
     },
   };
