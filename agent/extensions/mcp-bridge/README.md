@@ -217,6 +217,23 @@ Do not put connector-specific user docs in `mcp-bridge`; keep this folder as sha
 
 ## Maintenance and testing
 
+### Known production audit findings
+
+As of 2026-07-22, `npm audit --omit=dev` reports unresolved transitive findings through `@modelcontextprotocol/sdk@1.29.0`.
+
+The findings are temporarily accepted for the current IDEA connector because:
+
+- it imports only MCP client functionality;
+- its endpoint is loopback-only and the connector is disabled by default;
+- the MCP server is the trusted local IntelliJ IDEA process;
+- the Hono, Node server, and body-parser findings affect unused server paths.
+
+`fast-uri` is loaded by the client's AJV validator, so this acceptance must not be extended to remote or untrusted MCP servers.
+
+Do not apply npm's suggested SDK downgrade or cross-major overrides without running the MCP bridge tests, typecheck, and a real client connection smoke test. Re-evaluate when the MCP SDK updates its dependency ranges or if connector usage expands beyond a trusted local server.
+
+Upstream tracking: [modelcontextprotocol/typescript-sdk#2036](https://github.com/modelcontextprotocol/typescript-sdk/issues/2036).
+
 Run commands from `agent/extensions`:
 
 ```bash
