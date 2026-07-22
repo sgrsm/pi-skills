@@ -11,7 +11,8 @@ Applies to work in this local `.pi` config repo.
 
 - New extensions/skills must include a directory-local `README.md`; update it when behavior, usage, requirements, commands/tools, examples, or troubleshooting changes.
 - Skill READMEs: quickstart cheat sheets with when to use, useful inputs, example prompts, expected output, and links to deeper files. Avoid copying `SKILL.md` except brief summaries that save navigation.
-- Extension READMEs: fuller usage docs covering purpose, commands/tools, configuration, requirements, how-tos, behavior notes, and troubleshooting.
+- Extension READMEs: lean, task-oriented, human-friendly guides covering purpose, requirements, quickstart, common commands/configuration/workflows, user-visible behavior, examples, and troubleshooting.
+- Include technical details only when they affect what users do, configure, expect, or troubleshoot; keep internal wiring, lifecycles, test invariants, policy permutations, and process mechanics in code/tests or maintainer docs.
 - Follow nearby READMEs for style.
 
 ## Testing and Validation
