@@ -344,7 +344,7 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 		name: WEB_SEARCH_TOOL_NAME,
 		label: "Web Search",
 		description: "Search the web using a self-hosted SearXNG instance and return snippets with source URLs.",
-		promptSnippet: "Search the live web using SearXNG for current information, external docs, or sources outside the local workspace.",
+		promptSnippet: "Use web_search to search the live web using SearXNG for current information, external docs, or sources outside the local workspace.",
 		promptGuidelines: [
 			"Use web_search when the user asks for current web information or when the answer is not available in local files.",
 			"After using web_search, cite the returned URLs in the final answer.",

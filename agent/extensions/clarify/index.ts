@@ -516,14 +516,14 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 		description:
 			"Ask the user to choose between different paths or confirm/adjust an assumption. Use when multiple meaningful ways forward exist or when a non-trivial assumption needs confirmation.",
 		promptSnippet:
-			"Ask the user to choose between materially different approaches or confirm/adjust a non-trivial assumption.",
+			"Use clarify to ask the user to choose between materially different approaches or confirm/adjust a non-trivial assumption.",
 		promptGuidelines: [
 			"Use clarify when you detect multiple materially different ways to proceed, or when a non-trivial assumption would affect correctness, behavior, scope, safety, or user intent.",
-			"Prefer asking the user instead of silently choosing whenever the branch you pick would materially change the outcome.",
+			"Prefer clarify instead of silently choosing whenever the branch you pick would materially change the outcome.",
 			"Keep clarify options concise and distinct. Prefer around 2-5 options plus the custom-instructions path.",
-			"Use option descriptions to explain trade-offs or consequences, not to repeat the label.",
+			"Use clarify option descriptions to explain trade-offs or consequences, not to repeat the label.",
 			"Do not use clarify for trivial defaults, obvious next steps, or issues the user has already decided.",
-			"After the user answers, follow that choice and continue without re-asking the same question unless the requirements change.",
+			"After clarify receives the user's answer, follow that choice and continue without re-asking the same question unless the requirements change.",
 		],
 		parameters: ClarifyParamsSchema,
 
