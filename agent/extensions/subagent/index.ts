@@ -47,11 +47,8 @@ import {
 import { truncateSubagentVisibleOutput } from "./outputTruncation.ts";
 import {
 	ChildUsageAccumulator,
-	FailedUsageRecoveryStore,
-	UsageRecoveryScope,
 	aggregateUsageStats,
 	createUsageStats,
-	mergeBillableUsage,
 	toBillableUsage,
 	type UsageStats,
 } from "./usageAccounting.ts";
@@ -76,6 +73,9 @@ import {
 	type SubagentDelegationApprovalScope,
 	type SubagentExecutionSettings,
 } from "./settingsState.ts";
+import { waitForChildProcess } from "./childProcessLifecycle.ts";
+import { createProcessTreeTerminator } from "./processTreeTermination.ts";
+import { createAbortError, mapWithConcurrencyLimit } from "./scheduler.ts";
 import {
 	getFailureDiagnosticOutput as getFailureDiagnosticOutputForState,
 	getResultOutput as getResultOutputForState,
@@ -93,6 +93,8 @@ import {
 const COMMON_CONCURRENCY_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32] as const;
 const COMMON_MAX_TASK_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32, 48, 64] as const;
 const SUBAGENT_TERMINATION_GRACE_MS = 5000;
+const SUBAGENT_TERMINATION_CONFIRMATION_MS = 5000;
+const SUBAGENT_CLOSE_CONFIRMATION_MS = 5000;
 const SUBAGENT_STATUS_KEY = FOOTER_STATUS_KEYS.subagents;
 const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
@@ -1763,32 +1765,6 @@ function formatSubagentActivityTree(details: SubagentDetails, themeFg: ThemeFg):
 	return renderActivityNode(root, themeFg, "", true, true).join("\n");
 }
 
-async function mapWithConcurrencyLimit<TIn, TOut>(
-	items: TIn[],
-	concurrency: number,
-	fn: (item: TIn, index: number) => Promise<TOut>,
-): Promise<TOut[]> {
-	if (items.length === 0) return [];
-	const limit = Math.max(1, Math.min(concurrency, items.length));
-	const results: TOut[] = new Array(items.length);
-	let nextIndex = 0;
-	let firstError: unknown;
-	const workers = new Array(limit).fill(null).map(async () => {
-		while (firstError === undefined) {
-			const current = nextIndex++;
-			if (current >= items.length) return;
-			try {
-				results[current] = await fn(items[current], current);
-			} catch (error) {
-				firstError ??= error;
-			}
-		}
-	});
-	await Promise.all(workers);
-	if (firstError !== undefined) throw firstError;
-	return results;
-}
-
 async function writePromptToTempFile(agentName: string, prompt: string): Promise<{ dir: string; filePath: string }> {
 	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-"));
 	const safeName = agentName.replace(/[^\w.-]+/g, "_");
@@ -1807,7 +1783,7 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	}
 
 	const execName = path.basename(process.execPath).toLowerCase();
-	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
+	const isGenericRuntime = /^(node|bun)$/.test(execName);
 	if (!isGenericRuntime) {
 		return { command: process.execPath, args };
 	}
@@ -1828,8 +1804,9 @@ async function runSingleAgent(
 	executionSettings: LoadedSubagentExecutionSettings,
 	inheritSubagentApprovalScope: DelegationApprovalScope,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
-	usageRecoveryScope?: UsageRecoveryScope,
 ): Promise<SingleResult> {
+	if (signal?.aborted) throw createAbortError();
+
 	const agentName = request.agent;
 	const task = request.task;
 	const cwd = request.cwd;
@@ -1876,7 +1853,6 @@ async function runSingleAgent(
 		model: effectiveModelSelection.model,
 		step,
 	};
-	usageRecoveryScope?.register(currentResult.usage);
 
 	const emitUpdate = () => {
 		if (onUpdate) {
@@ -1895,10 +1871,13 @@ async function runSingleAgent(
 			args.push("--append-system-prompt", tmpPromptPath);
 		}
 
+		if (signal?.aborted) throw createAbortError();
 		const promptInput = `Task: ${task}`;
 		const executionCwd = resolveExecutionCwd(defaultCwd, cwd);
 		let wasAborted = false;
-		const childDepth = getCurrentSubagentDepth() + 1;
+		const currentDepth = getCurrentSubagentDepth();
+		const childDepth = currentDepth + 1;
+		const ownsDedicatedProcessGroup = currentDepth === 0;
 		const childEnv: NodeJS.ProcessEnv = {
 			...process.env,
 			[SUBAGENT_DEPTH_ENV]: String(childDepth),
@@ -1912,12 +1891,12 @@ async function runSingleAgent(
 		else delete childEnv[SUBAGENT_WORKFLOW_THINKING_ENV];
 
 		const exitCode = await new Promise<number>((resolve, reject) => {
+			if (signal?.aborted) {
+				reject(createAbortError());
+				return;
+			}
 			const invocation = getPiInvocation(args);
-			let buffer = "";
-			let closed = false;
 			let settled = false;
-			let killTimer: ReturnType<typeof setTimeout> | undefined;
-			let abortHandler: (() => void) | undefined;
 
 			const formatProcessError = (prefix: string, error: unknown) => {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1928,21 +1907,14 @@ async function runSingleAgent(
 				if (!text) return;
 				currentResult.stderr += currentResult.stderr && !currentResult.stderr.endsWith("\n") ? `\n${text}` : text;
 			};
-			const cleanup = () => {
-				if (killTimer) clearTimeout(killTimer);
-				if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
-			};
 			const finish = (code: number) => {
 				if (settled) return;
 				settled = true;
-				cleanup();
 				resolve(code);
 			};
 			const fail = (error: unknown) => {
 				if (settled) return;
 				settled = true;
-				cleanup();
-				if (!closed) proc?.kill("SIGTERM");
 				reject(error);
 			};
 
@@ -2003,13 +1975,9 @@ async function runSingleAgent(
 						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
 						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
 					} else if (msg.role === "toolResult") {
-						usageAccumulator.addToolResultUsage(msg.toolCallId, msg.usage);
+						usageAccumulator.addToolResultUsage(msg.usage);
 					}
 					emitUpdate();
-				}
-
-				if (event.type === "tool_execution_end") {
-					usageAccumulator.addTerminalToolResultUsage(event.toolCallId, event.result?.usage);
 				}
 
 				if (event.type === "compaction_end") {
@@ -2028,6 +1996,7 @@ async function runSingleAgent(
 					cwd: executionCwd,
 					env: childEnv,
 					shell: false,
+					detached: ownsDedicatedProcessGroup,
 					stdio: ["pipe", "pipe", "pipe"],
 				}) as ChildProcessWithoutNullStreams;
 			} catch (error) {
@@ -2039,67 +2008,67 @@ async function runSingleAgent(
 				return;
 			}
 
-			proc.stdout.on("data", (data) => {
-				try {
-					buffer += data.toString();
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
-					for (const line of lines) processLine(line);
-				} catch (error) {
-					fail(error);
-				}
-			});
-
-			proc.stderr.on("data", (data) => {
-				currentResult.stderr += data.toString();
-			});
-
-			proc.stdin.on("error", (error) => {
-				const code = getErrorCode(error);
-				if (!settled && code !== "EPIPE") appendDiagnostic(formatProcessError("Failed to write subagent prompt", error));
-			});
-
-			proc.on("close", (code, termSignal) => {
-				closed = true;
-				try {
-					if (buffer.trim()) processLine(buffer);
-				} catch (error) {
-					fail(error);
-					return;
-				}
-				if (wasAborted) {
+			const lifecycle = waitForChildProcess(proc, {
+				signal,
+				terminationGraceMs: SUBAGENT_TERMINATION_GRACE_MS,
+				terminationConfirmationMs: SUBAGENT_TERMINATION_CONFIRMATION_MS,
+				closeConfirmationMs: SUBAGENT_CLOSE_CONFIRMATION_MS,
+				terminator: createProcessTreeTerminator(proc, ownsDedicatedProcessGroup),
+				processLine,
+				onStderr: (data) => {
+					currentResult.stderr += data;
+				},
+				onStdinError: (error) => {
+					const code = getErrorCode(error);
+					if (code !== "EPIPE") appendDiagnostic(formatProcessError("Failed to write subagent prompt", error));
+				},
+				onAbort: () => {
+					wasAborted = true;
 					currentResult.stopReason = "aborted";
-					const abortMessage = termSignal
-						? `Subagent was aborted (terminated by ${termSignal}).`
-						: "Subagent was aborted.";
-					if (!currentResult.errorMessage || currentResult.errorMessage === "Subagent was aborted.") {
-						currentResult.errorMessage = abortMessage;
+					currentResult.errorMessage ??= "Subagent was aborted.";
+				},
+				onClose: (code, termSignal) => {
+					if (wasAborted) {
+						currentResult.stopReason = "aborted";
+						const abortMessage = termSignal
+							? `Subagent was aborted (terminated by ${termSignal}).`
+							: "Subagent was aborted.";
+						if (!currentResult.errorMessage || currentResult.errorMessage === "Subagent was aborted.") {
+							currentResult.errorMessage = abortMessage;
+						}
+						return 1;
 					}
-					finish(1);
-					return;
-				}
-				if (termSignal) {
+					if (termSignal) {
+						currentResult.stopReason = "error";
+						currentResult.errorMessage ??= `Subagent terminated by signal ${termSignal}.`;
+						return 1;
+					}
+					if (code === null) {
+						currentResult.stopReason = "error";
+						currentResult.errorMessage ??= "Subagent exited without an exit code.";
+						return 1;
+					}
+					return code;
+				},
+				onProcessError: (error) => {
+					const message = `${formatProcessError("Subagent process error", error)} [cwd: ${executionCwd}]`;
 					currentResult.stopReason = "error";
-					currentResult.errorMessage ??= `Subagent terminated by signal ${termSignal}.`;
-					finish(1);
-					return;
-				}
-				if (code === null) {
-					currentResult.stopReason = "error";
-					currentResult.errorMessage ??= "Subagent exited without an exit code.";
-					finish(1);
-					return;
-				}
-				finish(code);
-			});
-
-			proc.on("error", (error) => {
-				closed = true;
-				const message = `${formatProcessError("Subagent process error", error)} [cwd: ${executionCwd}]`;
-				currentResult.stopReason = "error";
-				currentResult.errorMessage = message;
-				appendDiagnostic(message);
-				finish(1);
+					currentResult.errorMessage = message;
+					appendDiagnostic(message);
+					return 1;
+				},
+				onTerminationConfirmationFailure: (error) => {
+					const message = `${error.message} [cwd: ${executionCwd}]`;
+					appendDiagnostic(message);
+					if (wasAborted) {
+						currentResult.stopReason = "aborted";
+						currentResult.errorMessage = `Subagent was aborted. ${message}`;
+					} else {
+						currentResult.stopReason = "error";
+						currentResult.errorMessage ??= message;
+					}
+					return 1;
+				},
 			});
 
 			try {
@@ -2108,20 +2077,7 @@ async function runSingleAgent(
 				appendDiagnostic(formatProcessError("Failed to write subagent prompt", error));
 			}
 
-			if (signal) {
-				abortHandler = () => {
-					if (closed || settled) return;
-					wasAborted = true;
-					currentResult.stopReason = "aborted";
-					currentResult.errorMessage ??= "Subagent was aborted.";
-					proc.kill("SIGTERM");
-					killTimer = setTimeout(() => {
-						if (!closed) proc.kill("SIGKILL");
-					}, SUBAGENT_TERMINATION_GRACE_MS);
-				};
-				if (signal.aborted) abortHandler();
-				else signal.addEventListener("abort", abortHandler, { once: true });
-			}
+			void lifecycle.then(finish, fail);
 		});
 
 		currentResult.exitCode = exitCode;
@@ -2275,7 +2231,6 @@ export function resolveDelegatedApprovalScopeForPolicy(
 export default function (pi: ExtensionAPI) {
 	let policyState = loadSubagentPolicyState();
 	const delegatedApprovalByToolCallId = new Map<string, DelegationApprovalScope>();
-	const failedSubagentUsageByToolCallId = new FailedUsageRecoveryStore();
 	const projectAgentConfirmationPolicyCoverage = new ProjectAgentConfirmationPolicyCoverage();
 
 	function getDelegatedApprovalScope(
@@ -2617,7 +2572,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName === "subagent") failedSubagentUsageByToolCallId.clear(event.toolCallId);
 		if (event.toolName === PARENT_ESCALATION_TOOL_NAME && !hasParentEscalationRelay()) {
 			return {
 				block: true,
@@ -2740,16 +2694,6 @@ export default function (pi: ExtensionAPI) {
 		);
 		markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 		return undefined;
-	});
-
-	pi.on("tool_result", async (event) => {
-		if (event.toolName !== "subagent") return undefined;
-		const recoveredUsage = failedSubagentUsageByToolCallId.consume(event.toolCallId);
-		if (!recoveredUsage) return undefined;
-		// A failed execution may be transformed by earlier middleware. Merge rather
-		// than relying on its final isError flag or replacing its existing usage.
-		const usage = mergeBillableUsage(event.usage, recoveredUsage);
-		return usage ? { usage } : undefined;
 	});
 
 	pi.on("tool_execution_end", async (event, ctx) => {
@@ -3026,6 +2970,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: SubagentParams,
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			if (signal?.aborted) throw createAbortError();
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const projectTrusted = ctx.isProjectTrusted();
 			const settingsLoadOptions = { projectTrusted };
@@ -3134,13 +3079,12 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			const usageRecoveryScope = new UsageRecoveryScope();
-			try {
 			if (params.chain && params.chain.length > 0) {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
 
 				for (let i = 0; i < params.chain.length; i++) {
+					if (signal?.aborted) throw createAbortError();
 					const step = params.chain[i];
 					const stepDiscovery = resolveDiscovery(step.cwd);
 					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
@@ -3187,13 +3131,12 @@ export default function (pi: ExtensionAPI) {
 								stepExecutionSettings,
 							),
 							makeDetails("chain"),
-							usageRecoveryScope,
 						),
 					);
 					results.push(result);
 
 					if (hasParentEscalations(result)) {
-						return buildParentEscalationResult("chain", results);
+						return await buildParentEscalationResult("chain", results);
 					}
 
 					const isError = isFailedResult(result);
@@ -3294,18 +3237,18 @@ export default function (pi: ExtensionAPI) {
 									taskExecutionSettings,
 								),
 								makeDetails("parallel"),
-								usageRecoveryScope,
 							),
 						);
 						allResults[index] = result;
 						emitParallelUpdate();
 						return result;
 					},
+					signal,
 				);
 
 				const escalatedResults = results.filter(hasParentEscalations);
 				if (escalatedResults.length > 0) {
-					return buildParentEscalationResult("parallel", results);
+					return await buildParentEscalationResult("parallel", results);
 				}
 
 				const successCount = results.filter((r) => !isFailedResult(r)).length;
@@ -3362,11 +3305,10 @@ export default function (pi: ExtensionAPI) {
 							taskExecutionSettings,
 						),
 						makeDetails("single"),
-						usageRecoveryScope,
 					),
 				);
 				if (hasParentEscalations(result)) {
-					return buildParentEscalationResult("single", [result]);
+					return await buildParentEscalationResult("single", [result]);
 				}
 				const isError = isFailedResult(result);
 				if (isError) {
@@ -3387,10 +3329,6 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
 				details: makeDetails("single")([]),
 			};
-			} catch (error) {
-				failedSubagentUsageByToolCallId.stage(toolCallId, usageRecoveryScope.snapshot());
-				throw error;
-			}
 		},
 
 		renderCall(args, theme, context) {

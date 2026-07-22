@@ -1,94 +1,99 @@
 # Subagent extension
 
-Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child runs in its own `pi` process with an isolated context window.
+Adds multi-agent delegation to Pi through the `subagent` tool. Each delegated child runs in its own `pi` process with an isolated context window.
 
-## What it does
+Use subagents for explicit delegation requests or non-trivial work that benefits from focused investigation or clean decomposition. Avoid them for small tasks and ordinary reviews unless the user asks for delegation.
 
-- Runs named agent prompts from the global agent dir (`~/.pi/agent/agents` by default) and, when opted in, project-local config-dir agents (`.pi/agents` by default).
-- Supports one child, parallel children, or a sequential chain that passes prior output with `{previous}`.
-- Streams partial child results back to the parent and tracks nested subagent activity with a compact live task view.
-- Applies policy, depth, trust, and concurrency guardrails before spawning children.
-- Lets delegated children use `escalate_to_parent` to hand user decisions back to the parent session.
-- Returns the child work's canonical Pi usage to the parent session, so nested delegation is included in Pi usage and cost accounting.
+## Requirements
 
-Use subagents for explicit delegation requests or non-trivial work that benefits from isolated focus or clean decomposition. Avoid them for ordinary PR reviews, small diffs, or simple tasks unless the user asks for subagent work.
+- macOS is the primary host platform.
+- Linux is supported on a best-effort basis.
+- Windows is unsupported.
+- Agent definitions must exist in the user agent directory (`~/.pi/agent/agents` by default) or an enabled project agent directory (`.pi/agents` by default).
 
-## Slash command
+## Quick start
 
-`/subagents` shows the current mode, effective limits, depth, and configured defaults.
+Single agent:
 
-Examples:
+```json
+{ "agent": "scout", "task": "Map the authentication package" }
+```
+
+Parallel investigation:
+
+```json
+{
+  "tasks": [
+    { "agent": "scout", "task": "Inspect authentication" },
+    { "agent": "reviewer-readonly", "task": "Review authentication tests" }
+  ]
+}
+```
+
+Sequential handoff:
+
+```json
+{
+  "chain": [
+    { "agent": "scout", "task": "Inspect the billing module" },
+    { "agent": "planner", "task": "Plan improvements from: {previous}" }
+  ]
+}
+```
+
+## `/subagents` command
+
+`/subagents` shows the current policy mode, limits, delegation depth, and configured defaults.
+
+Common commands:
 
 ```text
-/subagents
-/subagents show
-/subagents help
 /subagents ui
-/subagents off
-/subagents manual
-/subagents ask
-/subagents auto
+/subagents off|manual|ask|auto
 /subagents concurrency 8
-/subagents concurrency default
 /subagents max-tasks 16
-/subagents max-tasks default
 /subagents reset-limits
 /subagents cancel-session-approval
 ```
 
-Behavior:
+- `ui` edits mode and limits in TUI mode.
+- `concurrency default` and `max-tasks default` restore the corresponding defaults.
+- `reset-limits` removes both saved limit overrides.
+- `cancel-session-approval` clears approvals granted with `Allow for current session`.
 
-- `ui` opens a TUI settings screen for mode, max concurrency, and max parallel tasks. It is available only in TUI mode.
-- `off|manual|ask|auto` saves the global policy mode to the Pi agent policy file (`~/.pi/agent/subagent-policy.json` by default).
-- `concurrency` and `max-tasks` save global defaults to the Pi agent settings file (`~/.pi/agent/settings.json` by default).
-- `reset-limits` removes the global `maxConcurrency` and `maxParallelTasks` overrides.
-- `cancel-session-approval` clears current-session approvals created by `Allow for current session`, including ask-mode non-explicit approval and write-capable subagent approval.
+Mode is saved in `~/.pi/agent/subagent-policy.json` by default. Limits are saved under `subagents` in `~/.pi/agent/settings.json`.
 
-Argument completion is provided for the command names and common limit values.
+## `subagent` tool
 
-## Tool: `subagent`
+A call must use exactly one mode:
 
-The tool accepts exactly one execution mode:
+- `agent` and `task` for one child.
+- `tasks` for independent parallel children.
+- `chain` for sequential steps. `{previous}` is replaced with the preceding step's final output.
 
-- Single: `{ "agent": "scout", "task": "Map the auth package" }`
-- Parallel: `{ "tasks": [{ "agent": "scout", "task": "Inspect auth" }, { "agent": "reviewer-readonly", "task": "Review tests" }] }`
-- Chain: `{ "chain": [{ "agent": "scout", "task": "Gather context" }, { "agent": "planner", "task": "Plan from this context: {previous}" }] }`
+Optional fields:
 
-Common parameters:
+- `cwd` - child working directory, resolved relative to the parent working directory.
+- `model` - per-child model override using the same values as `pi --model`.
+- `thinking` - `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+- `agentScope` - `user` (default), `project`, or `both`.
+- `confirmProjectAgents` - whether to confirm before running project-controlled agents; defaults to `true`.
 
-- `agent` / `task` - target agent name and delegated instructions.
-- `tasks` - array of independent parallel tasks.
-- `chain` - array of sequential steps; `{previous}` is replaced with the previous step's final output.
-- `cwd` - optional working directory for a child process, resolved relative to the parent `cwd`.
-- `model` - optional per-child model override using the same values as `pi --model`.
-- `thinking` - optional `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` override.
-- `agentScope` - `user` by default; use `project` or `both` to load project-local agents.
-- `confirmProjectAgents` - defaults to `true`; prompts before running repo-controlled project agents.
+Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewer`, `reviewer-readonly`, `worker`, and `consolidator`. Unknown names are blocked before approval or execution.
 
-Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewer`, `reviewer-readonly`, `worker`, and `consolidator`. Agents are Markdown files with frontmatter such as `name`, `description`, optional `tools`, `model`, and `thinking`. If an agent has a `tools` list, the child process is started with that tool set.
+## Agents and project trust
 
-Unknown agent names are blocked by policy before approval prompts or execution; approval cannot make a missing or misspelled agent valid.
+Agents are Markdown files with frontmatter such as `name`, `description`, `tools`, `model`, and `thinking`. A declared `tools` list controls the tools available to that child.
 
-Project-local agents require a trusted project when `agentScope` is `project` or `both`; `confirmProjectAgents: false` only skips the extra confirmation after trust is established. If a non-explicit project-local request already asks for policy approval, that approval includes the project-agent source/warning and the duplicate project-local confirmation is skipped for that tool call only. Explicit project-local requests still use the normal project-local confirmation path.
+User agents are loaded by default. Project agents require `agentScope: "project"` or `"both"`, a trusted project, and usually confirmation. `confirmProjectAgents: false` skips only the extra agent-source confirmation; it does not bypass trust or policy checks.
 
-## Tool: `escalate_to_parent`
+## Child escalation
 
-`escalate_to_parent` is active only inside delegated child sessions. Top-level calls are blocked.
+Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool.
 
-Parameters:
+The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
 
-- `requestType` - `clarify` by default, or `approval`.
-- `question` - required question for the parent to ask.
-- `options` - optional focused choices with optional descriptions.
-- `allowCustom` - defaults to `true`.
-- `customPrompt` - optional prefilled custom-answer text.
-- `reason` - optional context for why the child is blocked.
-
-After a child calls this tool, it should stop. The parent receives an escalation summary and, for `clarify` requests with a TUI available, Pi can ask the top-level user through the interactive clarify UI. The parent then decides whether to rerun the child or handle the follow-up directly.
-
-## Settings and policy
-
-Execution settings live under the `subagents` key:
+## Settings
 
 ```json
 {
@@ -109,152 +114,41 @@ Execution settings live under the `subagents` key:
 }
 ```
 
-Sources:
+Global settings live in `~/.pi/agent/settings.json` by default; trusted projects can override them in `.pi/settings.json`. Untrusted project settings are ignored. `maxConcurrency` is clipped to `maxParallelTasks`; hard caps are 32 concurrent children and 64 parallel tasks per call.
 
-- Global settings: the Pi agent settings file (`~/.pi/agent/settings.json` by default)
-- Trusted project override: the project config settings file (`.pi/settings.json` by default)
+`maxDelegationDepth: null` means unlimited. `0` blocks delegation. An inherited approval scope is `none`, `read-only`, or `all`; agents without a declared tool list are treated as write-capable.
 
-Project settings are ignored unless the project is trusted. Project values override global values; `maxConcurrency` is also clipped to `maxParallelTasks`. Hard caps are 64 parallel tasks per call and 32 concurrent child processes.
+Model and thinking selection use this order:
 
-Keys:
+1. tool-call override;
+2. `agentDefaults`;
+3. agent frontmatter;
+4. workflow-start model and thinking settings.
 
-- `maxParallelTasks` - maximum length of a `tasks` array; default `8`.
-- `maxConcurrency` - maximum child processes running at once; default `5`.
-- `maxDelegationDepth` - `null` means unlimited; `0` blocks new subagents; `2` means `root -> first -> second`, and the second-level child cannot delegate again.
-- `inheritedApprovalScopes.<agent>` - nested delegation approval passed to that child: `none`, `read-only`, or `all`.
-- `agentDefaults.<agent>` - default child `model` and/or `thinking`; a string value is treated as a model shorthand.
+## Policy modes
 
-The command/UI currently edit only mode, `maxConcurrency`, and `maxParallelTasks`; edit `maxDelegationDepth`, `inheritedApprovalScopes`, and `agentDefaults` by hand.
+- `off` - disables delegation.
+- `manual` - allows only explicit top-level delegation requests.
+- `ask` - default; explicit valid requests run, while other eligible requests require TUI approval.
+- `auto` - may automatically run eligible read-only work.
 
-Model/thinking selection precedence is:
+Depth and task limits always apply. Unknown agents are blocked. Write-capable and project-local agents require an explicit request or approval. Inherited read-only approval applies only to known user agents whose declared tools exclude `edit` and `write`. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
 
-1. tool-call `model` / `thinking`
-2. `subagents.agentDefaults.<agent>`
-3. agent frontmatter defaults
-4. the workflow-start model/thinking lock
+## Output and cancellation
 
-Each top-level `subagent` call snapshots the parent session's current model and thinking level. Per-child overrides affect that child invocation, but do not change the workflow lock inherited by deeper descendants.
+The TUI footer shows the policy mode and compact running/queued counts. Tool results show an activity tree; `Ctrl+O` expands task, error, and usage details.
 
-Policy modes:
+Large child outputs use Pi's standard truncation limits. The complete output is saved to a temporary file and linked from the truncation marker.
 
-- `off` - disables the `subagent` tool.
-- `manual` - uses the same delegation eligibility as `auto`, but top-level use requires an explicit subagent/delegation request; non-explicit calls are blocked instead of prompting.
-- `ask` - default. Uses the same delegation eligibility as `auto`, but valid explicit requests run immediately while non-explicit requests prompt in the TUI with `Allow once`, `Allow for current session`, or `Deny`; current-session approval lets eligible non-explicit calls run. Without UI, non-explicit requests are blocked.
-- `auto` - may auto-approve eligible non-explicit read-only work within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agent names are blocked. When a write-capable approval prompt appears, `Allow for current session` is available and lets future non-explicit write-capable user-scoped subagent calls run in the same session.
+Usage from completed child work is aggregated into the parent session. Usage from failed or cancelled work is best effort.
 
-Delegated sessions can also inherit `read-only` or `all` nested approval from their parent; `manual`, `ask`, and `auto` all pass read-only nested delegation approval to allowed child calls by default, and `off` mode and depth caps still win.
+Top-level children run in POSIX process groups so cancelling them also cleans up nested work. Cancellation is bounded and reports when process cleanup cannot be confirmed.
 
-Shared delegation guardrails for `manual`, `ask`, and `auto`:
+## Troubleshooting
 
-- use subagents for clearly useful, mostly read-only focused work or multi-surface fan-out;
-- single-agent non-explicit read-only delegation is auto-approved when other guardrails pass;
-- parallel/chain task count is governed by configured `maxParallelTasks` and `maxConcurrency`; there is no separate auto-mode agent cap;
-- ordinary PR reviews are not auto-delegated;
-- write-capable and project-local agents require explicit request/approval, or are blocked without UI; a current-session write-capable approval covers future matching user-scoped calls, but not project-local agents; unknown agent names are always blocked.
-
-`ask` prompts before non-explicit calls unless current-session approval applies and auto-equivalent eligibility passes; `manual` blocks non-explicit top-level calls. Write-capable approval prompts in `auto` (and other promptable policy paths) include `Allow for current session`; choosing it auto-approves future non-explicit write-capable user-scoped subagent calls in the same session. `Allow for current session` does not disable future project-local confirmations; a project-local skip only applies to the same tool call whose policy approval included the project-agent warning.
-
-A `read-only` inherited approval scope allows only known user-scoped agents whose declared tools do not include `edit` or `write`; agents without a tool list are treated as write-capable.
-
-## Examples
-
-Parallel investigation:
-
-```json
-{
-  "tasks": [
-    { "agent": "scout", "task": "Map auth entry points" },
-    { "agent": "scout", "task": "Map caching and persistence" },
-    { "agent": "reviewer-readonly", "task": "Look for risky test gaps" }
-  ]
-}
-```
-
-Sequential handoff:
-
-```json
-{
-  "chain": [
-    { "agent": "scout", "task": "Inspect the billing module" },
-    { "agent": "planner", "task": "Create a concise plan from: {previous}" },
-    { "agent": "worker", "task": "Implement the plan: {previous}", "thinking": "high" }
-  ]
-}
-```
-
-Project-local agent:
-
-```json
-{
-  "agent": "repo-reviewer",
-  "task": "Review the local migration guide",
-  "agentScope": "both"
-}
-```
-
-Child escalation:
-
-```json
-{
-  "requestType": "clarify",
-  "question": "Which compatibility path should I assume?",
-  "options": [
-    { "label": "Keep legacy behavior" },
-    { "label": "Use the new behavior" }
-  ],
-  "reason": "The delegated review depends on product direction."
-}
-```
-
-## Events and hooks
-
-The extension registers these Pi events:
-
-- `session_start` - reloads policy, clears runtime activity, enables child-only escalation when applicable, and refreshes active tools/status.
-- `session_tree` - resyncs active tools and status when navigating session branches.
-- `before_agent_start` - appends current subagent policy, limits, depth, and escalation guidance to the agent prompt.
-- `tool_call` - enforces policy, depth, project trust, and child-only escalation rules before execution.
-- `tool_execution_update` - updates nested runtime activity from streaming child results.
-- `tool_execution_end` - clears per-call approval and activity tracking.
-- `tool_result` - merges recovered completed-child usage into Pi's result when a subagent execution throws.
-
-No custom CLI flags or keyboard shortcuts are registered.
-
-## Visual and status indicators
-
-The footer indicator uses the shared local-extension footer status helper at `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`) for its stable status key/order and to clear legacy footer keys.
-
-TUI footer status examples:
-
-```text
-subagents: ask •
-subagents: ask (session-approved) •
-subagents: manual •
-subagents: auto • r:2|q:3 •
-subagents: auto • r:2→3|q:2→4 •
-subagents: off •
-```
-
-Footer state rules:
-
-- In non-TUI contexts, no footer indicator is rendered.
-- Idle TUI sessions show `subagents: <mode> •`, where `<mode>` is `off`, `manual`, `ask`, or `auto`.
-- Ask mode with current-session approval shows `subagents: ask (session-approved) •`.
-- While subagent work is in flight, a runtime activity segment is inserted before the trailing `•`: `r:<counts>` for running children, `q:<counts>` for queued children, or both as `r:<counts>|q:<counts>`.
-- Counts are grouped by delegation depth with `→`; the first number is direct children and later numbers are nested generations. Interior zeroes may appear when deeper generations are active, and trailing zeroes are omitted.
-- When no running or queued tasks remain, the runtime activity segment is omitted.
-
-Tool display:
-
-- Calls show `subagent <agent> [scope]`, `subagent parallel (<n> tasks) [scope]`, or `subagent chain (<n> steps) [scope]` with short task previews.
-- Results include an activity tree with statuses such as `[running]`, `[done]`, `[failed]`, and `[waiting on parent/user]`.
-- Compact rows show stable one-line task previews, padded to a consistent width and truncated when needed.
-- Icons summarize outcome: `✓` success, `✗` failure, `⏳` running, and `◐` mixed parallel results.
-- Completed result displays stay compact; `Ctrl+O` shows task, error, and usage details without inlining child logs/output.
-- Large child outputs sent back to the parent agent are truncated using Pi's standard limits, with the full output saved to a temporary file and linked in the truncation marker.
-
-## Usage accounting
-
-Completed single, parallel, chain, and parent-escalation results return aggregated canonical Pi `Usage` to the parent session when child work consumed billable usage. This includes direct child assistant calls, finalized nested tool results, and compaction summaries. All token fields (`input`, `output`, `cacheRead`, `cacheWrite`, optional `cacheWrite1h` and `reasoning`, and `totalTokens`) plus every cost component are retained. A terminal nested-tool event is a provisional fallback: a later finalized `toolResult` replaces it (or removes it when it has no usage). Correlation is tracked per invocation occurrence, so completed IDs can be reused without lifetime suppression.
-
-The per-child result display remains intentionally different: its `ctx:` value is the latest direct assistant context-token total for that child, not the aggregate `totalTokens` returned to the parent. Calls with no billable child usage omit top-level `usage`. If execution throws after child work has begun—including result formatting or parent-escalation processing—the accumulated completed child usage is attached to Pi's resulting tool message through the host hook. Existing usage added by earlier middleware is merged rather than replaced.
+- **Unknown agent:** check the agent name and configured agent scope.
+- **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
+- **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
+- **Too many tasks:** raise `maxParallelTasks` or reduce the `tasks`/`chain` length.
+- **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
+- **Output truncated:** open the temporary file shown in the result marker.
