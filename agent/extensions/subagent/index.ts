@@ -17,7 +17,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { Message, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
@@ -45,6 +45,16 @@ import {
 	type SubagentPolicyMode,
 } from "./policyState.ts";
 import { truncateSubagentVisibleOutput } from "./outputTruncation.ts";
+import {
+	ChildUsageAccumulator,
+	FailedUsageRecoveryStore,
+	UsageRecoveryScope,
+	aggregateUsageStats,
+	createUsageStats,
+	mergeBillableUsage,
+	toBillableUsage,
+	type UsageStats,
+} from "./usageAccounting.ts";
 import {
 	SubagentFooterActivityTracker,
 	countInitialSubagentTasks,
@@ -1159,25 +1169,14 @@ function formatTokens(count: number): string {
 	return `${(count / 1000000).toFixed(1)}M`;
 }
 
-function formatUsageStats(
-	usage: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-		cost: number;
-		contextTokens?: number;
-		turns?: number;
-	},
-	model?: string,
-): string {
+function formatUsageStats(usage: UsageStats, model?: string): string {
 	const parts: string[] = [];
 	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
 	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
 	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
 	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
+	if (usage.cost.total) parts.push(`$${usage.cost.total.toFixed(4)}`);
 	if (usage.contextTokens && usage.contextTokens > 0) {
 		parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
 	}
@@ -1264,16 +1263,6 @@ function formatToolCall(
 	}
 }
 
-interface UsageStats {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	contextTokens: number;
-	turns: number;
-}
-
 interface SingleResult {
 	agent: string;
 	agentSource: "user" | "project" | "unknown";
@@ -1287,6 +1276,10 @@ interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+}
+
+function aggregateBillableUsage(results: Iterable<{ usage: UsageStats }>): Usage | undefined {
+	return toBillableUsage(aggregateUsageStats(results));
 }
 
 interface SubagentDetails {
@@ -1779,14 +1772,20 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	const limit = Math.max(1, Math.min(concurrency, items.length));
 	const results: TOut[] = new Array(items.length);
 	let nextIndex = 0;
+	let firstError: unknown;
 	const workers = new Array(limit).fill(null).map(async () => {
-		while (true) {
+		while (firstError === undefined) {
 			const current = nextIndex++;
 			if (current >= items.length) return;
-			results[current] = await fn(items[current], current);
+			try {
+				results[current] = await fn(items[current], current);
+			} catch (error) {
+				firstError ??= error;
+			}
 		}
 	});
 	await Promise.all(workers);
+	if (firstError !== undefined) throw firstError;
 	return results;
 }
 
@@ -1829,6 +1828,7 @@ async function runSingleAgent(
 	executionSettings: LoadedSubagentExecutionSettings,
 	inheritSubagentApprovalScope: DelegationApprovalScope,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	usageRecoveryScope?: UsageRecoveryScope,
 ): Promise<SingleResult> {
 	const agentName = request.agent;
 	const task = request.task;
@@ -1844,7 +1844,7 @@ async function runSingleAgent(
 			exitCode: 1,
 			messages: [],
 			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			usage: createUsageStats(),
 			parentEscalations: [],
 			step,
 		};
@@ -1871,11 +1871,12 @@ async function runSingleAgent(
 		exitCode: -1,
 		messages: [],
 		stderr: "",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+		usage: createUsageStats(),
 		parentEscalations: [],
 		model: effectiveModelSelection.model,
 		step,
 	};
+	usageRecoveryScope?.register(currentResult.usage);
 
 	const emitUpdate = () => {
 		if (onUpdate) {
@@ -1910,7 +1911,7 @@ async function runSingleAgent(
 		if (workflowModelLock.thinking) childEnv[SUBAGENT_WORKFLOW_THINKING_ENV] = workflowModelLock.thinking;
 		else delete childEnv[SUBAGENT_WORKFLOW_THINKING_ENV];
 
-		const exitCode = await new Promise<number>((resolve) => {
+		const exitCode = await new Promise<number>((resolve, reject) => {
 			const invocation = getPiInvocation(args);
 			let buffer = "";
 			let closed = false;
@@ -1937,19 +1938,22 @@ async function runSingleAgent(
 				cleanup();
 				resolve(code);
 			};
+			const fail = (error: unknown) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				if (!closed) proc?.kill("SIGTERM");
+				reject(error);
+			};
 
-			const seenToolResultCallIds = new Set<string>();
+			const pendingPartialToolResultIndexes = new Map<string, number[]>();
+			const usageAccumulator = new ChildUsageAccumulator(currentResult.usage);
 			const appendMessage = (msg: Message) => {
 				let replacementIndex = -1;
-				if (isRecord(msg) && msg.role === "toolResult") {
-					const toolCallId = typeof msg.toolCallId === "string" ? msg.toolCallId : undefined;
-					if (toolCallId && seenToolResultCallIds.has(toolCallId)) return;
-					if (toolCallId) {
-						replacementIndex = currentResult.messages.findIndex(
-							(message) => isRecord(message) && message.role === "toolResult" && message.toolCallId === toolCallId,
-						);
-						seenToolResultCallIds.add(toolCallId);
-					}
+				if (isRecord(msg) && msg.role === "toolResult" && typeof msg.toolCallId === "string") {
+					const pendingIndexes = pendingPartialToolResultIndexes.get(msg.toolCallId);
+					replacementIndex = pendingIndexes?.shift() ?? -1;
+					if (pendingIndexes?.length === 0) pendingPartialToolResultIndexes.delete(msg.toolCallId);
 				}
 				for (const escalation of getParentEscalationsFromMessageFromUx(msg)) {
 					currentResult.parentEscalations.push(escalation);
@@ -1959,7 +1963,7 @@ async function runSingleAgent(
 			};
 
 			const upsertPartialToolResult = (toolCallId: string, toolName: string, partialResult: unknown) => {
-				if (!toolCallId || seenToolResultCallIds.has(toolCallId) || !isRecord(partialResult)) return;
+				if (!toolCallId || !isRecord(partialResult)) return;
 				const partialMessage = {
 					role: "toolResult" as const,
 					toolCallId,
@@ -1969,15 +1973,15 @@ async function runSingleAgent(
 					isError: Boolean(partialResult.isError),
 					timestamp: Date.now(),
 				} as Message;
-				const existingIndex = currentResult.messages.findIndex(
-					(message) =>
-						isRecord(message) &&
-						message.role === "toolResult" &&
-						message.toolCallId === toolCallId &&
-						!seenToolResultCallIds.has(toolCallId),
-				);
-				if (existingIndex >= 0) currentResult.messages[existingIndex] = partialMessage;
-				else currentResult.messages.push(partialMessage);
+				const pendingIndexes = pendingPartialToolResultIndexes.get(toolCallId) ?? [];
+				const existingIndex = pendingIndexes[pendingIndexes.length - 1];
+				if (existingIndex === undefined) {
+					pendingIndexes.push(currentResult.messages.length);
+					pendingPartialToolResultIndexes.set(toolCallId, pendingIndexes);
+					currentResult.messages.push(partialMessage);
+				} else {
+					currentResult.messages[existingIndex] = partialMessage;
+				}
 			};
 
 			const processLine = (line: string) => {
@@ -1994,21 +1998,22 @@ async function runSingleAgent(
 					appendMessage(msg);
 
 					if (msg.role === "assistant") {
-						currentResult.usage.turns++;
-						const usage = msg.usage;
-						if (usage) {
-							currentResult.usage.input += usage.input || 0;
-							currentResult.usage.output += usage.output || 0;
-							currentResult.usage.cacheRead += usage.cacheRead || 0;
-							currentResult.usage.cacheWrite += usage.cacheWrite || 0;
-							currentResult.usage.cost += usage.cost?.total || 0;
-							currentResult.usage.contextTokens = usage.totalTokens || 0;
-						}
+						usageAccumulator.addAssistantUsage(msg.usage);
 						if (msg.model) currentResult.model = msg.model;
 						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
 						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
+					} else if (msg.role === "toolResult") {
+						usageAccumulator.addToolResultUsage(msg.toolCallId, msg.usage);
 					}
 					emitUpdate();
+				}
+
+				if (event.type === "tool_execution_end") {
+					usageAccumulator.addTerminalToolResultUsage(event.toolCallId, event.result?.usage);
+				}
+
+				if (event.type === "compaction_end") {
+					usageAccumulator.addCompactionUsage(event.result?.usage);
 				}
 
 				if (event.type === "tool_execution_update" && event.toolName === "subagent" && event.partialResult) {
@@ -2017,7 +2022,7 @@ async function runSingleAgent(
 				}
 			};
 
-			let proc: ChildProcessWithoutNullStreams;
+			let proc: ChildProcessWithoutNullStreams | undefined;
 			try {
 				proc = spawn(invocation.command, invocation.args, {
 					cwd: executionCwd,
@@ -2035,10 +2040,14 @@ async function runSingleAgent(
 			}
 
 			proc.stdout.on("data", (data) => {
-				buffer += data.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) processLine(line);
+				try {
+					buffer += data.toString();
+					const lines = buffer.split("\n");
+					buffer = lines.pop() || "";
+					for (const line of lines) processLine(line);
+				} catch (error) {
+					fail(error);
+				}
 			});
 
 			proc.stderr.on("data", (data) => {
@@ -2052,7 +2061,12 @@ async function runSingleAgent(
 
 			proc.on("close", (code, termSignal) => {
 				closed = true;
-				if (buffer.trim()) processLine(buffer);
+				try {
+					if (buffer.trim()) processLine(buffer);
+				} catch (error) {
+					fail(error);
+					return;
+				}
 				if (wasAborted) {
 					currentResult.stopReason = "aborted";
 					const abortMessage = termSignal
@@ -2261,6 +2275,7 @@ export function resolveDelegatedApprovalScopeForPolicy(
 export default function (pi: ExtensionAPI) {
 	let policyState = loadSubagentPolicyState();
 	const delegatedApprovalByToolCallId = new Map<string, DelegationApprovalScope>();
+	const failedSubagentUsageByToolCallId = new FailedUsageRecoveryStore();
 	const projectAgentConfirmationPolicyCoverage = new ProjectAgentConfirmationPolicyCoverage();
 
 	function getDelegatedApprovalScope(
@@ -2602,6 +2617,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName === "subagent") failedSubagentUsageByToolCallId.clear(event.toolCallId);
 		if (event.toolName === PARENT_ESCALATION_TOOL_NAME && !hasParentEscalationRelay()) {
 			return {
 				block: true,
@@ -2724,6 +2740,16 @@ export default function (pi: ExtensionAPI) {
 		);
 		markSubagentExecutionActive(event.toolCallId, ctx, event.input);
 		return undefined;
+	});
+
+	pi.on("tool_result", async (event) => {
+		if (event.toolName !== "subagent") return undefined;
+		const recoveredUsage = failedSubagentUsageByToolCallId.consume(event.toolCallId);
+		if (!recoveredUsage) return undefined;
+		// A failed execution may be transformed by earlier middleware. Merge rather
+		// than relying on its final isError flag or replacing its existing usage.
+		const usage = mergeBillableUsage(event.usage, recoveredUsage);
+		return usage ? { usage } : undefined;
 	});
 
 	pi.on("tool_execution_end", async (event, ctx) => {
@@ -3054,9 +3080,11 @@ export default function (pi: ExtensionAPI) {
 
 			const buildParentEscalationResult = async (mode: "single" | "parallel" | "chain", results: SingleResult[]) => {
 				const resolutions = await resolveInteractiveParentClarificationsFromUx(ctx.hasUI ? ctx.ui : null, results);
+				const usage = aggregateBillableUsage(results);
 				return {
 					content: [{ type: "text" as const, text: formatParentEscalationSummaryFromUx(results, resolutions) }],
 					details: makeDetails(mode)(results, resolutions),
+					...(usage ? { usage } : {}),
 				};
 			};
 
@@ -3106,6 +3134,8 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			const usageRecoveryScope = new UsageRecoveryScope();
+			try {
 			if (params.chain && params.chain.length > 0) {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
@@ -3157,6 +3187,7 @@ export default function (pi: ExtensionAPI) {
 								stepExecutionSettings,
 							),
 							makeDetails("chain"),
+							usageRecoveryScope,
 						),
 					);
 					results.push(result);
@@ -3175,9 +3206,11 @@ export default function (pi: ExtensionAPI) {
 				const finalOutput = await truncateSubagentVisibleOutput(
 					getFinalOutput(results[results.length - 1].messages) || "(no output)",
 				);
+				const usage = aggregateBillableUsage(results);
 				return {
 					content: [{ type: "text", text: finalOutput.text }],
 					details: makeDetails("chain")(results),
+					...(usage ? { usage } : {}),
 				};
 			}
 
@@ -3205,7 +3238,7 @@ export default function (pi: ExtensionAPI) {
 						exitCode: -1, // -1 = still running
 						messages: [],
 						stderr: "",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+						usage: createUsageStats(),
 						parentEscalations: [],
 					};
 				}
@@ -3261,6 +3294,7 @@ export default function (pi: ExtensionAPI) {
 									taskExecutionSettings,
 								),
 								makeDetails("parallel"),
+								usageRecoveryScope,
 							),
 						);
 						allResults[index] = result;
@@ -3284,6 +3318,7 @@ export default function (pi: ExtensionAPI) {
 						return `### [${r.agent}] ${status}\n\n${output.text}`;
 					}),
 				);
+				const usage = aggregateBillableUsage(results);
 				return {
 					content: [
 						{
@@ -3292,6 +3327,7 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 					details: makeDetails("parallel")(results),
+					...(usage ? { usage } : {}),
 				};
 			}
 
@@ -3326,6 +3362,7 @@ export default function (pi: ExtensionAPI) {
 							taskExecutionSettings,
 						),
 						makeDetails("single"),
+						usageRecoveryScope,
 					),
 				);
 				if (hasParentEscalations(result)) {
@@ -3337,9 +3374,11 @@ export default function (pi: ExtensionAPI) {
 					throw new Error(`Agent ${result.stopReason || "failed"}: ${errorMsg.text}`);
 				}
 				const finalOutput = await truncateSubagentVisibleOutput(getFinalOutput(result.messages) || "(no output)");
+				const usage = aggregateBillableUsage([result]);
 				return {
 					content: [{ type: "text", text: finalOutput.text }],
 					details: makeDetails("single")([result]),
+					...(usage ? { usage } : {}),
 				};
 			}
 
@@ -3348,6 +3387,10 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
 				details: makeDetails("single")([]),
 			};
+			} catch (error) {
+				failedSubagentUsageByToolCallId.stage(toolCallId, usageRecoveryScope.snapshot());
+				throw error;
+			}
 		},
 
 		renderCall(args, theme, context) {
@@ -3449,18 +3492,7 @@ export default function (pi: ExtensionAPI) {
 				if (usage) container.addChild(new Text(theme.fg("dim", usage), 0, 0));
 			};
 
-			const aggregateUsage = (results: SingleResult[]) => {
-				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
-				for (const r of results) {
-					total.input += r.usage.input;
-					total.output += r.usage.output;
-					total.cacheRead += r.usage.cacheRead;
-					total.cacheWrite += r.usage.cacheWrite;
-					total.cost += r.usage.cost;
-					total.turns += r.usage.turns;
-				}
-				return total;
-			};
+			const aggregateUsage = (results: SingleResult[]) => aggregateUsageStats(results);
 
 			if (details.mode === "single" && details.results.length === 1) {
 				const r = details.results[0];

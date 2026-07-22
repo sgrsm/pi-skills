@@ -9,6 +9,7 @@ Adds multi-agent delegation to Pi through the `subagent` tool. A delegated child
 - Streams partial child results back to the parent and tracks nested subagent activity with a compact live task view.
 - Applies policy, depth, trust, and concurrency guardrails before spawning children.
 - Lets delegated children use `escalate_to_parent` to hand user decisions back to the parent session.
+- Returns the child work's canonical Pi usage to the parent session, so nested delegation is included in Pi usage and cost accounting.
 
 Use subagents for explicit delegation requests or non-trivial work that benefits from isolated focus or clean decomposition. Avoid them for ordinary PR reviews, small diffs, or simple tasks unless the user asks for subagent work.
 
@@ -215,6 +216,7 @@ The extension registers these Pi events:
 - `tool_call` - enforces policy, depth, project trust, and child-only escalation rules before execution.
 - `tool_execution_update` - updates nested runtime activity from streaming child results.
 - `tool_execution_end` - clears per-call approval and activity tracking.
+- `tool_result` - merges recovered completed-child usage into Pi's result when a subagent execution throws.
 
 No custom CLI flags or keyboard shortcuts are registered.
 
@@ -250,3 +252,9 @@ Tool display:
 - Icons summarize outcome: `✓` success, `✗` failure, `⏳` running, and `◐` mixed parallel results.
 - Completed result displays stay compact; `Ctrl+O` shows task, error, and usage details without inlining child logs/output.
 - Large child outputs sent back to the parent agent are truncated using Pi's standard limits, with the full output saved to a temporary file and linked in the truncation marker.
+
+## Usage accounting
+
+Completed single, parallel, chain, and parent-escalation results return aggregated canonical Pi `Usage` to the parent session when child work consumed billable usage. This includes direct child assistant calls, finalized nested tool results, and compaction summaries. All token fields (`input`, `output`, `cacheRead`, `cacheWrite`, optional `cacheWrite1h` and `reasoning`, and `totalTokens`) plus every cost component are retained. A terminal nested-tool event is a provisional fallback: a later finalized `toolResult` replaces it (or removes it when it has no usage). Correlation is tracked per invocation occurrence, so completed IDs can be reused without lifetime suppression.
+
+The per-child result display remains intentionally different: its `ctx:` value is the latest direct assistant context-token total for that child, not the aggregate `totalTokens` returned to the parent. Calls with no billable child usage omit top-level `usage`. If execution throws after child work has begun—including result formatting or parent-escalation processing—the accumulated completed child usage is attached to Pi's resulting tool message through the host hook. Existing usage added by earlier middleware is merged rather than replaced.
