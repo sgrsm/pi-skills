@@ -2,6 +2,13 @@
 
 Applies to work in this local `.pi` config repo.
 
+## Project purpose and scope
+- Contains local customization for Pi agent, including extensions, skills, and config.
+
+## Operational guidelines
+- Your role as assistant is to propose, create, and maintain skills and extensions and advise human user about fixes and improvements and Pi's capabilities.
+- Never mutate existing git branches/commits. If needed for testing - create temporary agent-owned branches.
+
 ## Extensions
 
 - New custom extensions go in `agent/extensions/<name>/index.ts`, not `agent/extensions/<name>.ts`.
