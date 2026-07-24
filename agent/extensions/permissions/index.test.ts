@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import permissionsExtension, { formatPermissionStatus, getPermissionsArgumentCompletions } from "./index.ts";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { createPiTempWorkspace } from "./tempWorkspace.ts";
 import { withTestScratchFixture } from "./testScratch.ts";
+import { createTestExtensionCommandContext } from "./testContext.ts";
 
 const markerTheme = {
 	fg(color: string, text: string) {
@@ -15,7 +16,7 @@ const markerTheme = {
 	bold(text: string) {
 		return `<bold>${text}</bold>`;
 	},
-};
+} as unknown as ExtensionUIContext["theme"];
 
 test("permissions command offers mode and clear argument completions", () => {
 	assert.deepEqual(getPermissionsArgumentCompletions(""), [
@@ -270,35 +271,10 @@ function createPermissionsHarness(systemTempDir?: string, home?: string, ownerPa
 }
 
 function createContext(selectChoice: string, sessionId = "permissions-index-test", cwd = "/repo/project") {
-	const ctx = {
+	return createTestExtensionCommandContext({
 		cwd,
-		hasUI: true,
-		statuses: new Map<string, string>(),
-		notifications: [] as string[],
-		selectCalls: 0,
-		sessionManager: { getBranch: () => [], getSessionId: () => sessionId },
-		ui: {} as {
-			theme: typeof markerTheme;
-			setStatus(key: string, value: string | undefined): void;
-			notify(message: string): void;
-			select(): Promise<string>;
-			editor(): Promise<undefined>;
-		},
-	};
-	ctx.ui = {
+		sessionId,
 		theme: markerTheme,
-		setStatus(key: string, value: string | undefined) {
-			if (value === undefined) ctx.statuses.delete(key);
-			else ctx.statuses.set(key, value);
-		},
-		notify(message: string) {
-			ctx.notifications.push(message);
-		},
-		select: async () => {
-			ctx.selectCalls += 1;
-			return selectChoice;
-		},
-		editor: async () => undefined,
-	};
-	return ctx;
+		selectChoice,
+	});
 }

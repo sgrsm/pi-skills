@@ -5,6 +5,7 @@ import { initTheme, type BashOperations, type ToolDefinition } from "@earendil-w
 import permissionsExtension, { type PermissionsExtensionOptions } from "./index.ts";
 import { CatastrophicDeletionBlockedError, createGuardedBashOperations } from "./bashGuard.ts";
 import { withTestScratchFixture } from "./testScratch.ts";
+import { createTestExtensionContext } from "./testContext.ts";
 
 test("guarded operations hard-deny before delegation and pass concrete or harmless commands unchanged", async () => {
 	await withTestScratchFixture(async (fixture) => {
@@ -129,13 +130,15 @@ test("permissions-owned model bash uses ctx.cwd and performs the final non-deleg
 		assert.equal(typeof bash.renderCall, "function", "built-in Bash call rendering must be preserved");
 		assert.equal(typeof bash.renderResult, "function", "permissions must compose hidden Bash results");
 
+		const ctx = createContext(fixture.project);
+
 		await assert.rejects(
-			bash.execute("dangerous-call", { command: "rm ." }, undefined, undefined, { cwd: fixture.project } as any),
+			bash.execute("dangerous-call", { command: "rm ." }, undefined, undefined, ctx),
 			CatastrophicDeletionBlockedError,
 		);
 		assert.equal(calls.length, 0);
 
-		await bash.execute("allowed-call", { command: "printf ok" }, undefined, undefined, { cwd: fixture.project } as any);
+		await bash.execute("allowed-call", { command: "printf ok" }, undefined, undefined, ctx);
 		assert.deepEqual(calls.map(({ command, cwd }) => ({ command, cwd })), [{ command: "printf ok", cwd: fixture.project }]);
 	});
 });
@@ -254,17 +257,5 @@ function createToolHarness(options: PermissionsExtensionOptions) {
 }
 
 function createContext(cwd: string) {
-	return {
-		cwd,
-		hasUI: true,
-		mode: "tui",
-		sessionManager: { getBranch: () => [], getSessionId: () => "bash-guard-test" },
-		ui: {
-			theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
-			setStatus() {},
-			notify() {},
-			select: async () => "Deny",
-			editor: async () => undefined,
-		},
-	};
+	return createTestExtensionContext({ cwd, sessionId: "bash-guard-test" });
 }
