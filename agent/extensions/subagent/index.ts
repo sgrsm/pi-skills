@@ -2961,6 +2961,7 @@ export default function (pi: ExtensionAPI) {
 			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when non-trivial work clearly benefits from isolated delegation under the current policy mode.",
 			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for subagent review.",
 			"Use subagent with the tasks parameter when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
+			"Use exactly one subagent mode per call. Do not mix agent/task with tasks or chain, and omit unused mode fields instead of empty placeholders.",
 			"When the user specifies different speed, cost, or reasoning expectations per subagent, pass model and thinking overrides in the subagent call instead of relying on the current global /model setting.",
 			"If a delegated subagent requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
