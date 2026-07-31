@@ -26,4 +26,14 @@ npm run sync:pi-host-deps
 npm run typecheck
 ```
 
+## Extension verification
+
+First prepare an approved test scratch root as described in the permissions extension's [safe test scratch setup](./permissions/README.md#safe-test-scratch-setup). Then run the combined Pi host declaration, TypeScript, and full test gate from `agent/extensions/`:
+
+```bash
+npm run verify
+```
+
+`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically.
+
 Run npm dependency commands from `agent/extensions/`, not from `agent/`.

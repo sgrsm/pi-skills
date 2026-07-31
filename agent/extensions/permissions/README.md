@@ -33,7 +33,7 @@ Tests create private `permissions-test-*` descendants, pin the approved and gene
 
 Path-based checks cannot eliminate a malicious same-user race between validation and mutation. The helper narrows that window by actively enforcing pinned identities at each helper boundary and immediately before mutations, but this is not an OS sandbox or descriptor-relative filesystem transaction.
 
-Run `npm run test:permissions` only with that environment variable set to an explicitly approved Pi session scratch directory. The broader `all-tests` command now has the same prerequisite because it discovers these test files.
+Run `npm run test:permissions` only with that environment variable set to an explicitly approved Pi session scratch directory. The broader `npm test` and `npm run all-tests` commands, as well as the combined `npm run verify` gate, have the same prerequisite because they discover these test files.
 
 ## What ordinary permissions guard
 
