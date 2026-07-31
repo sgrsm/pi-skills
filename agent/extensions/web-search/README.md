@@ -5,7 +5,7 @@ Adds a `web_search` tool to Pi for live web lookups through a SearXNG endpoint.
 ## What it does
 
 - Searches the web for current information, external docs, or sources outside the local workspace.
-- Returns direct answers, infoboxes, result snippets, source URLs, suggestions, and structured details.
+- Returns direct answers, infoboxes, result snippets, source URLs, and suggestions, with compact metadata and counts in tool details.
 - Tries the SearXNG JSON API first; if unavailable, falls back to parsing the HTML results page.
 - Instructs the agent to cite returned URLs after using the tool.
 
@@ -61,6 +61,18 @@ Search endpoint selection:
 1. `PI_SEARXNG_URL`
 2. `SEARXNG_URL`
 3. `https://agentsearch.area55.me`
+
+### Output limits and full results
+
+Visible `web_search` text is a **head preview** limited to Pi's standard contract: **2,000 lines or 50 KB (51,200 bytes), whichever is hit first**. The truncation marker itself is included in those limits.
+
+If a formatted search response exceeds either limit, the extension:
+
+- saves the exact complete formatted response to a unique external temporary file;
+- returns as many complete leading lines as fit alongside a marker containing that full-output path (or only the marker when the first line exceeds the preview budget); and
+- reports truncation metadata and the path in tool details.
+
+Use Pi's `read` tool on the reported path when the complete response is needed. Full-output files are not automatically deleted at session shutdown so paths in historical tool results remain usable. Tool details intentionally contain compact query/source/mode metadata, warning state, counts, and truncation/path metadata rather than the unbounded raw answers, infoboxes, results, or suggestions.
 
 ## Events and behavior
 

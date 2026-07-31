@@ -1,16 +1,25 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	getAgentDir,
+	type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { truncateWebSearchVisibleOutput } from "./outputTruncation.ts";
 
 const DEFAULT_BASE_URL = "https://agentsearch.area55.me";
 const MAX_RESULTS = 10;
 const WEB_SEARCH_TOOL_NAME = "web_search";
 const WEB_SEARCH_STATUS_KEY = FOOTER_STATUS_KEYS.webSearch;
-const WEB_SEARCH_STATE_PATH = join(getAgentDir(), "web-search.json");
+function getWebSearchStatePath(): string {
+	return join(getAgentDir(), "web-search.json");
+}
 
 type WebSearchMode = "on" | "off";
 
@@ -173,8 +182,10 @@ function formatResults(
 ): { text: string; details: Record<string, unknown> } {
 	const data = payload.data;
 	const answers = (data.answers ?? []).map(normalizeText).filter(Boolean);
-	const infoboxes = (data.infoboxes ?? []).slice(0, 2);
-	const results = (data.results ?? []).slice(0, limit);
+	const sourceInfoboxes = data.infoboxes ?? [];
+	const sourceResults = data.results ?? [];
+	const infoboxes = sourceInfoboxes.slice(0, 2);
+	const results = sourceResults.slice(0, limit);
 	const suggestions = (data.suggestions ?? []).map(normalizeText).filter(Boolean);
 	const lines: string[] = [
 		`Query: ${query}`,
@@ -229,17 +240,20 @@ function formatResults(
 			baseUrl,
 			mode: payload.mode,
 			warning: payload.warning,
-			answers,
-			infoboxes,
-			results,
-			suggestions,
+			counts: {
+				answers: answers.length,
+				infoboxes: sourceInfoboxes.length,
+				results: sourceResults.length,
+				visibleResults: results.length,
+				suggestions: suggestions.length,
+			},
 		},
 	};
 }
 
 function loadWebSearchState(defaultEnabled = true): WebSearchState {
 	try {
-		const parsed = JSON.parse(readFileSync(WEB_SEARCH_STATE_PATH, "utf-8")) as Partial<WebSearchState>;
+		const parsed = JSON.parse(readFileSync(getWebSearchStatePath(), "utf-8")) as Partial<WebSearchState>;
 		return {
 			enabled: typeof parsed.enabled === "boolean" ? parsed.enabled : defaultEnabled,
 		};
@@ -249,8 +263,9 @@ function loadWebSearchState(defaultEnabled = true): WebSearchState {
 }
 
 async function saveWebSearchState(state: WebSearchState): Promise<void> {
-	await mkdir(dirname(WEB_SEARCH_STATE_PATH), { recursive: true });
-	await writeFile(WEB_SEARCH_STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+	const statePath = getWebSearchStatePath();
+	await mkdir(dirname(statePath), { recursive: true });
+	await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
 }
 
 function formatWebSearchMode(enabled: boolean): WebSearchMode {
@@ -336,14 +351,14 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 			else removeWebSearchTool(pi);
 			updateWebSearchStatus(ctx, webSearchEnabled);
 
-			notify(ctx, `web-search ${mode} (saved globally to ${WEB_SEARCH_STATE_PATH})`);
+			notify(ctx, `web-search ${mode} (saved globally to ${getWebSearchStatePath()})`);
 		},
 	});
 
 	pi.registerTool({
 		name: WEB_SEARCH_TOOL_NAME,
 		label: "Web Search",
-		description: "Search the web using a self-hosted SearXNG instance and return snippets with source URLs.",
+		description: `Search the web using a self-hosted SearXNG instance and return snippets with source URLs. Visible text is a head preview bounded to ${DEFAULT_MAX_LINES.toLocaleString()} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first); when truncated, the exact full formatted output is saved to a temporary file path reported in the result. Tool details retain compact metadata, counts, and truncation information.`,
 		promptSnippet: "Use web_search to search the live web using SearXNG for current information, external docs, or sources outside the local workspace.",
 		promptGuidelines: [
 			"Use web_search when the user asks for current web information or when the answer is not available in local files.",
@@ -368,10 +383,16 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 				signal,
 			);
 			const formatted = formatResults(params.query, baseUrl, payload, limit);
+			const visibleOutput = await truncateWebSearchVisibleOutput(formatted.text);
 
 			return {
-				content: [{ type: "text", text: formatted.text }],
-				details: formatted.details,
+				content: [{ type: "text", text: visibleOutput.text }],
+				details: {
+					...formatted.details,
+					truncated: visibleOutput.truncated,
+					truncation: visibleOutput.truncation,
+					fullOutputPath: visibleOutput.fullOutputPath,
+				},
 			};
 		},
 	});
