@@ -40,6 +40,39 @@ type McpTool = {
 	};
 };
 
+type PiToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
+type PiToolSourceInfo = PiToolInfo["sourceInfo"];
+
+type McpToolOwnership = {
+	originalName: string;
+	piName: string;
+	/** Canonical Pi sourceInfo identity observed after registration. */
+	sourceInfoIdentity: string;
+};
+
+type CandidateConnection = {
+	generation: number;
+	client: Client;
+	transport: StreamableHTTPClientTransport;
+	closePromise?: Promise<void>;
+};
+
+type CatalogueRebuildResult = {
+	generation: number;
+	status: "committed" | "superseded";
+	toolCount: number;
+};
+
+class CatalogueRebuildError extends Error {
+	readonly generation: number;
+
+	constructor(generation: number, cause: unknown) {
+		super(errorMessage(cause));
+		this.name = "CatalogueRebuildError";
+		this.generation = generation;
+	}
+}
+
 type ConnectionState = {
 	client?: Client;
 	transport?: StreamableHTTPClientTransport;
@@ -47,8 +80,12 @@ type ConnectionState = {
 	enabled: boolean;
 	lastError?: string;
 	serverName?: string;
+	/** The currently discovered catalogue, keyed by generated Pi tool name. */
 	toolByPiName: Map<string, McpTool>;
-	registeredPiNames: Set<string>;
+	/** Preferred stable generated name for each original MCP name. */
+	ownershipByOriginal: Map<string, McpToolOwnership>;
+	/** All historical registrations, retained because Pi cannot unregister tools. */
+	ownershipByPiName: Map<string, McpToolOwnership>;
 };
 
 export type McpConnectorOptions = {
@@ -107,8 +144,8 @@ type McpConnectorRuntime = {
 	state: ConnectionState;
 	activateTools: () => void;
 	deactivateTools: () => void;
-	setEnabled: (enabled: boolean, persist: boolean) => void;
-	connectAndRegister: () => Promise<number>;
+	setEnabled: (enabled: boolean, persist: boolean) => string | undefined;
+	connectAndRegister: () => Promise<CatalogueRebuildResult>;
 	close: () => Promise<void>;
 	setStatus: (ctx: McpStatusContext) => void;
 	statusLine: () => string;
@@ -285,6 +322,20 @@ function makePiToolName(originalName: string, usedNames: Set<string>, toolPrefix
 	return candidate;
 }
 
+function compareMcpToolNames(left: McpTool, right: McpTool): number {
+	return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+
+function sourceInfoIdentity(sourceInfo: PiToolSourceInfo): string {
+	return JSON.stringify([
+		sourceInfo.path,
+		sourceInfo.source,
+		sourceInfo.scope,
+		sourceInfo.origin,
+		sourceInfo.baseDir ?? null,
+	]);
+}
+
 function asObjectSchema(schema: unknown) {
 	const fallback = { type: "object", properties: {}, additionalProperties: true };
 	if (!schema || typeof schema !== "object") return Type.Unsafe(fallback);
@@ -329,20 +380,19 @@ function formatMcpContent(content: unknown): McpContentBlock[] {
 	return result.length > 0 ? result : [{ type: "text", text: "(empty MCP result)" }];
 }
 
-async function closeConnection(state: ConnectionState) {
-	try {
-		await state.client?.close();
-	} catch {
-		try {
-			await state.transport?.close();
-		} catch {
-			// Ignore cleanup errors.
-		}
-	}
+async function closeResources(client?: Client, transport?: StreamableHTTPClientTransport): Promise<void> {
+	// Client.close normally closes its transport, but also close the transport directly so a
+	// partially connected candidate cannot leak if the client cleanup itself fails.
+	await Promise.allSettled([client?.close(), transport?.close()]);
+}
+
+async function closeConnection(state: ConnectionState): Promise<void> {
+	const { client, transport } = state;
 	state.client = undefined;
 	state.transport = undefined;
 	state.connected = false;
 	state.serverName = undefined;
+	await closeResources(client, transport);
 }
 
 async function listAllTools(client: Client): Promise<McpTool[]> {
@@ -354,10 +404,6 @@ async function listAllTools(client: Client): Promise<McpTool[]> {
 		cursor = page.nextCursor;
 	} while (cursor);
 	return tools;
-}
-
-function isManagedToolName(state: ConnectionState, name: string, toolPrefix: string): boolean {
-	return state.registeredPiNames.size > 0 ? state.registeredPiNames.has(name) : name.startsWith(toolPrefix);
 }
 
 function isMcpCommand(command: string): command is McpCommand {
@@ -612,154 +658,375 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 		writeFileSync(fileURLToPath(options.configUrl), `${JSON.stringify(config, null, 2)}\n`);
 	};
 
-	const initialConfig = readConfig();
+	let initialConfig: McpConfig | undefined;
+	let initialConfigError: string | undefined;
+	try {
+		initialConfig = readConfig();
+	} catch (error) {
+		initialConfigError = errorMessage(error);
+	}
 	const state: ConnectionState = {
 		connected: false,
-		enabled: resolveDefaultEnabled(options, initialConfig),
+		// Invalid startup config must not prevent the runtime and disable command from loading.
+		enabled: initialConfig ? resolveDefaultEnabled(options, initialConfig) : false,
+		lastError: initialConfigError,
 		toolByPiName: new Map(),
-		registeredPiNames: new Set(),
+		ownershipByOriginal: new Map(),
+		ownershipByPiName: new Map(),
 	};
 
+	const canonicalTool = (name: string): PiToolInfo | undefined => pi.getAllTools().find((tool) => tool.name === name);
+	const ownershipIsCanonical = (ownership: McpToolOwnership): boolean => {
+		const canonical = canonicalTool(ownership.piName);
+		return canonical !== undefined && sourceInfoIdentity(canonical.sourceInfo) === ownership.sourceInfoIdentity;
+	};
+	const canonicalHistoricalNames = (): Set<string> => new Set(
+		[...state.ownershipByPiName.values()]
+			.filter(ownershipIsCanonical)
+			.map((ownership) => ownership.piName),
+	);
+	const canonicalCurrentNames = (): string[] => [...state.toolByPiName.entries()]
+		.filter(([piName, tool]) => {
+			const ownership = state.ownershipByPiName.get(piName);
+			return ownership?.originalName === tool.name && ownershipIsCanonical(ownership);
+		})
+		.map(([piName]) => piName);
+
 	const activateTools = () => {
-		pi.setActiveTools([...new Set([...pi.getActiveTools(), ...state.registeredPiNames])]);
+		// Pi's allowlist mode can reactivate every registered allowlisted definition whenever
+		// registerTool refreshes the host registry. Reconcile the full historical ownership set,
+		// then add back only the canonically verified names in the committed current catalogue.
+		const historicalNames = canonicalHistoricalNames();
+		const unrelatedActiveNames = pi.getActiveTools().filter((name) => !historicalNames.has(name));
+		pi.setActiveTools([...new Set([...unrelatedActiveNames, ...canonicalCurrentNames()])]);
 	};
 
 	const deactivateTools = () => {
-		pi.setActiveTools(pi.getActiveTools().filter((name) => !isManagedToolName(state, name, options.toolPrefix)));
+		const historicalNames = canonicalHistoricalNames();
+		pi.setActiveTools(pi.getActiveTools().filter((name) => !historicalNames.has(name)));
 	};
 
-	const setEnabled = (enabled: boolean, persist: boolean) => {
-		if (enabledScope === "global") {
-			writeEnabled(enabled);
-		} else if (persist) {
-			persistSessionEnabledState(pi, connectorName, enabled);
-		}
+	let coordinationGeneration = 0;
+	const setEnabled = (enabled: boolean, persist: boolean): string | undefined => {
+		// Local state changes first so persistence failures cannot leave a connector enabled.
+		// Teardown invalidates the current generation and aborts its candidate separately so the
+		// candidate generation and the resource being closed always stay paired.
 		state.enabled = enabled;
+		if (!persist) return undefined;
+		try {
+			if (enabledScope === "global") {
+				writeEnabled(enabled);
+			} else {
+				persistSessionEnabledState(pi, connectorName, enabled);
+			}
+			return undefined;
+		} catch (error) {
+			return errorMessage(error);
+		}
 	};
 
-	const connectAndRegister = async () => {
-		const config = readConfig();
-		if (!state.enabled) {
-			await closeConnection(state);
-			return 0;
-		}
+	const disconnectCommittedCatalogue = async () => {
+		deactivateTools();
+		state.toolByPiName = new Map();
 		await closeConnection(state);
-		state.toolByPiName.clear();
-		state.registeredPiNames.clear();
+	};
 
-		const transport = new StreamableHTTPClientTransport(new URL(config.url), {
-			requestInit: { headers: config.headers ?? {} },
-		});
-		const client = new Client({ name: clientName, version: clientVersion });
+	let operationTail: Promise<void> = Promise.resolve();
+	const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
+		const result = operationTail.then(operation, operation);
+		operationTail = result.then(() => undefined, () => undefined);
+		return result;
+	};
+	let rebuildFlight: Promise<CatalogueRebuildResult> | undefined;
+	let rebuildFlightGeneration: number | undefined;
+	let candidateConnection: CandidateConnection | undefined;
+	let shuttingDown = false;
+	let connectAndRegister!: () => Promise<CatalogueRebuildResult>;
 
-		await client.connect(transport);
-		state.client = client;
-		state.transport = transport;
-		state.connected = true;
-		state.lastError = undefined;
-		const server = client.getServerVersion();
-		state.serverName = server ? `${server.name} ${server.version}` : config.url;
+	const closeCandidateConnection = (generation: number): Promise<void> => {
+		const candidate = candidateConnection;
+		if (!candidate || candidate.generation !== generation) return Promise.resolve();
+		// Start both close paths immediately. Keeping the promise on the generation-scoped
+		// candidate makes repeated disable/shutdown/error cleanup idempotent and race-safe.
+		candidate.closePromise ??= closeResources(candidate.client, candidate.transport);
+		return candidate.closePromise;
+	};
 
-		const usedNames = new Set<string>();
-		const tools = await listAllTools(client);
-		for (const tool of tools) {
-			const piName = makePiToolName(tool.name, usedNames, options.toolPrefix);
-			state.toolByPiName.set(piName, tool);
-			state.registeredPiNames.add(piName);
+	const releaseCandidateConnection = (candidate: CandidateConnection): void => {
+		if (candidateConnection === candidate) candidateConnection = undefined;
+	};
 
-			pi.registerTool({
-				name: piName,
-				label: tool.annotations?.title ?? tool.title ?? tool.name,
-				description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}\nText output returned to the model is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}. When truncated, the full MCP text output is saved to a temp file path reported in the tool output/details; raw MCP results remain in tool details.rawResult. Image content is passed through unchanged.`,
-				promptSnippet: `Call ${displayName} tool ${tool.name}${tool.description ? `: ${tool.description}` : "."}`,
-				parameters: asObjectSchema(tool.inputSchema),
-				renderResult(result, _options, theme, context) {
-					if (isHideToolOutputEnabled()) {
-						const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
-						component.clear();
-						return component;
-					}
-
-					const output = getMcpTextOutput(result.content, context.showImages);
-					if (!output.trim()) {
-						const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
-						component.clear();
-						return component;
-					}
-
-					const component = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
-					component.setText(theme.fg("toolOutput", output));
+	const registerCandidateTool = (tool: McpTool, piName: string) => {
+		pi.registerTool({
+			name: piName,
+			label: tool.annotations?.title ?? tool.title ?? tool.name,
+			description: `${tool.description ?? `${displayName} tool.`}\n\nOriginal MCP tool name: ${tool.name}\nText output returned to the model is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}. When truncated, the full MCP text output is saved to a temp file path reported in the tool output/details; raw MCP results remain in tool details.rawResult. Image content is passed through unchanged.`,
+			promptSnippet: `Call ${displayName} tool ${tool.name}${tool.description ? `: ${tool.description}` : "."}`,
+			parameters: asObjectSchema(tool.inputSchema),
+			renderResult(result, _options, theme, context) {
+				if (isHideToolOutputEnabled()) {
+					const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+					component.clear();
 					return component;
-				},
-				async execute(_toolCallId, params, signal) {
-					if (!state.enabled) {
-						throw new Error(`${displayName} connector is disabled. Run ${enableCommandText} to enable it.`);
-					}
-					if (!state.client || !state.connected) {
-						await connectAndRegister();
-					}
-					const activeTool = state.toolByPiName.get(piName);
-					if (!activeTool || !state.client) {
-						throw new Error(`${displayName} tool is not available: ${tool.name}`);
-					}
-					const result = await state.client.callTool(
-						{ name: activeTool.name, arguments: params as Record<string, unknown> },
-						undefined,
-						{ signal, timeout: toolCallTimeoutMs },
-					);
-					const content = formatMcpContent("content" in result ? result.content : result);
-					if ("isError" in result && result.isError) {
-						throw new Error(await formatMcpToolErrorMessage(content));
-					}
-					const truncated = await truncateMcpToolContent(content);
-					return {
-						content: truncated.content,
-						details: {
-							mcpConnector: connectorName,
-							mcpServer: state.serverName,
-							mcpTool: activeTool.name,
-							piTool: piName,
-							structuredContent: "structuredContent" in result ? result.structuredContent : undefined,
-							rawResult: result,
-							...(truncated.truncation
-								? {
-									truncation: truncated.truncation,
-									fullTextOutputPath: truncated.fullTextOutputPath,
-								}
-								: {}),
-						},
-					};
-				},
-			});
-		}
+				}
 
-		return tools.length;
+				const output = getMcpTextOutput(result.content, context.showImages);
+				if (!output.trim()) {
+					const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+					component.clear();
+					return component;
+				}
+
+				const component = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+				component.setText(theme.fg("toolOutput", output));
+				return component;
+			},
+			async execute(_toolCallId, params, signal) {
+				if (!state.enabled) {
+					throw new Error(`${displayName} connector is disabled. Run ${enableCommandText} to enable it.`);
+				}
+				if (!state.client || !state.connected) {
+					const rebuild = await connectAndRegister();
+					if (rebuild.status !== "committed" || rebuild.generation !== coordinationGeneration) {
+						throw new Error(`${displayName} connection attempt was superseded.`);
+					}
+				}
+				if (!state.enabled) {
+					throw new Error(`${displayName} connector is disabled. Run ${enableCommandText} to enable it.`);
+				}
+				const activeTool = state.toolByPiName.get(piName);
+				if (!activeTool || !state.client) {
+					throw new Error(`${displayName} tool is not available: ${tool.name}`);
+				}
+				if (activeTool.name !== tool.name) {
+					throw new Error(`${displayName} tool ownership invariant failed for ${piName}: expected ${tool.name}, found ${activeTool.name}`);
+				}
+				const result = await state.client.callTool(
+					{ name: activeTool.name, arguments: params as Record<string, unknown> },
+					undefined,
+					{ signal, timeout: toolCallTimeoutMs },
+				);
+				const content = formatMcpContent("content" in result ? result.content : result);
+				if ("isError" in result && result.isError) {
+					throw new Error(await formatMcpToolErrorMessage(content));
+				}
+				const truncated = await truncateMcpToolContent(content);
+				return {
+					content: truncated.content,
+					details: {
+						mcpConnector: connectorName,
+						mcpServer: state.serverName,
+						mcpTool: activeTool.name,
+						piTool: piName,
+						structuredContent: "structuredContent" in result ? result.structuredContent : undefined,
+						rawResult: result,
+						...(truncated.truncation
+							? {
+								truncation: truncated.truncation,
+								fullTextOutputPath: truncated.fullTextOutputPath,
+							}
+							: {}),
+					},
+				};
+			},
+		});
+	};
+
+	const supersededRebuild = (generation: number): CatalogueRebuildResult => ({
+		generation,
+		status: "superseded",
+		toolCount: 0,
+	});
+
+	const performCatalogueRebuild = async (generation: number): Promise<CatalogueRebuildResult> => {
+		if (generation !== coordinationGeneration) return supersededRebuild(generation);
+		await disconnectCommittedCatalogue();
+		if (generation !== coordinationGeneration || !state.enabled || shuttingDown) return supersededRebuild(generation);
+
+		let candidate: CandidateConnection | undefined;
+		try {
+			const config = readConfig();
+			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) return supersededRebuild(generation);
+
+			const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+				requestInit: { headers: config.headers ?? {} },
+			});
+			const client = new Client({ name: clientName, version: clientVersion });
+			candidate = { generation, client, transport };
+			candidateConnection = candidate;
+			await client.connect(transport);
+			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) {
+				await closeCandidateConnection(generation);
+				releaseCandidateConnection(candidate);
+				return supersededRebuild(generation);
+			}
+
+			const tools = await listAllTools(client);
+			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) {
+				await closeCandidateConnection(generation);
+				releaseCandidateConnection(candidate);
+				return supersededRebuild(generation);
+			}
+			tools.sort(compareMcpToolNames);
+
+			const usedNames = new Set([
+				...pi.getAllTools().map((tool) => tool.name),
+				...state.ownershipByPiName.keys(),
+			]);
+			const retained = new Map<string, McpToolOwnership>();
+			const unavailableOriginalNames = new Set<string>();
+			for (const tool of tools) {
+				const ownership = state.ownershipByOriginal.get(tool.name);
+				if (!ownership || ownership.originalName !== tool.name) continue;
+				const canonical = canonicalTool(ownership.piName);
+				if (!canonical) {
+					// getAllTools() omits allowlist/exclude-list filtered names. Do not evade host
+					// policy by manufacturing a suffix for a historical name hidden by Pi.
+					unavailableOriginalNames.add(tool.name);
+				} else if (sourceInfoIdentity(canonical.sourceInfo) === ownership.sourceInfoIdentity) {
+					retained.set(tool.name, ownership);
+				}
+			}
+
+			const candidateCatalogue = new Map<string, McpTool>();
+			const register = (tool: McpTool, retainedOwnership?: McpToolOwnership): boolean => {
+				const piName = retainedOwnership?.piName ?? makePiToolName(tool.name, usedNames, options.toolPrefix);
+				if (!retainedOwnership && canonicalTool(piName)) return false;
+				registerCandidateTool(tool, piName);
+				const canonical = canonicalTool(piName);
+				if (!canonical) {
+					// Registration may be filtered by Pi's active tool policy (for example
+					// --no-tools or --exclude-tools). Without canonical provenance, neither own
+					// nor activate the name, and never retry with a policy-bypassing suffix.
+					return false;
+				}
+				const canonicalIdentity = sourceInfoIdentity(canonical.sourceInfo);
+				if (retainedOwnership && canonicalIdentity !== retainedOwnership.sourceInfoIdentity) return false;
+
+				const knownConnectorIdentity = [...state.ownershipByPiName.values()]
+					.find(ownershipIsCanonical)?.sourceInfoIdentity;
+				if (!retainedOwnership && knownConnectorIdentity && canonicalIdentity !== knownConnectorIdentity) return false;
+
+				const ownership: McpToolOwnership = {
+					originalName: tool.name,
+					piName,
+					sourceInfoIdentity: canonicalIdentity,
+				};
+				state.ownershipByOriginal.set(tool.name, ownership);
+				state.ownershipByPiName.set(piName, ownership);
+				candidateCatalogue.set(piName, tool);
+				// Dynamic refresh may activate every allowlisted historical connector definition.
+				// Keep all connector-owned names hidden until the candidate catalogue commits.
+				deactivateTools();
+				return true;
+			};
+
+			const unretained: McpTool[] = [];
+			for (const tool of tools) {
+				if (unavailableOriginalNames.has(tool.name)) continue;
+				const ownership = retained.get(tool.name);
+				if (!ownership || !register(tool, ownership)) unretained.push(tool);
+			}
+			for (const tool of unretained) register(tool);
+
+			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) {
+				deactivateTools();
+				await closeCandidateConnection(generation);
+				releaseCandidateConnection(candidate);
+				return supersededRebuild(generation);
+			}
+
+			const server = candidate.client.getServerVersion();
+			state.client = candidate.client;
+			state.transport = candidate.transport;
+			state.connected = true;
+			state.serverName = server ? `${server.name} ${server.version}` : config.url;
+			state.toolByPiName = candidateCatalogue;
+			activateTools();
+			state.lastError = undefined;
+			releaseCandidateConnection(candidate);
+			return { generation, status: "committed", toolCount: candidateCatalogue.size };
+		} catch (error) {
+			if (candidate) {
+				await closeCandidateConnection(candidate.generation);
+				releaseCandidateConnection(candidate);
+			}
+			state.client = undefined;
+			state.transport = undefined;
+			state.connected = false;
+			state.serverName = undefined;
+			state.toolByPiName = new Map();
+			deactivateTools();
+			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) {
+				return supersededRebuild(generation);
+			}
+			state.lastError = errorMessage(error);
+			throw new CatalogueRebuildError(generation, error);
+		}
+	};
+
+	connectAndRegister = () => {
+		if (rebuildFlight) {
+			const flight = rebuildFlight;
+			const generation = rebuildFlightGeneration!;
+			// Callers already awaiting the current generation receive that generation's own
+			// outcome. Only a caller arriving after teardown invalidated the old flight (for
+			// example, a later enable) chains a fresh rebuild behind it.
+			if (generation === coordinationGeneration || !state.enabled || shuttingDown) return flight;
+			return flight.then(connectAndRegister, connectAndRegister);
+		}
+		const generation = ++coordinationGeneration;
+		const flight = serialize(() => performCatalogueRebuild(generation));
+		rebuildFlight = flight;
+		rebuildFlightGeneration = generation;
+		const clearFlight = () => {
+			if (rebuildFlight === flight) {
+				rebuildFlight = undefined;
+				rebuildFlightGeneration = undefined;
+			}
+		};
+		void flight.then(clearFlight, clearFlight);
+		return flight;
+	};
+
+	const disconnectAndClearCatalogue = () => {
+		const invalidatedGeneration = coordinationGeneration;
+		const generation = ++coordinationGeneration;
+		// Closing starts now, before this teardown waits behind the serialized rebuild. A pending
+		// connect/tools-list request therefore aborts promptly instead of holding disable/shutdown.
+		const candidateClose = closeCandidateConnection(invalidatedGeneration);
+		return serialize(async () => {
+			await candidateClose;
+			if (generation === coordinationGeneration) await disconnectCommittedCatalogue();
+		});
+	};
+	const close = async () => {
+		shuttingDown = true;
+		await disconnectAndClearCatalogue();
 	};
 
 	const syncEnabledState = async (ctx?: McpSessionStateContext) => {
-		state.enabled =
-			enabledScope === "session"
-				? (ctx ? getSessionEnabledState(ctx, connectorName) ?? resolveDefaultEnabled(options) : resolveDefaultEnabled(options))
-				: resolveDefaultEnabled(options, readConfig());
-
-		if (!state.enabled) {
-			deactivateTools();
-			await closeConnection(state);
-			return;
-		}
-
-		activateTools();
-		if (state.connected && state.toolByPiName.size > 0) {
-			return;
-		}
-
 		try {
+			const enabled =
+				enabledScope === "session"
+					? (ctx ? getSessionEnabledState(ctx, connectorName) ?? resolveDefaultEnabled(options) : resolveDefaultEnabled(options))
+					: resolveDefaultEnabled(options, readConfig());
+			setEnabled(enabled, false);
+
+			if (!state.enabled) {
+				await disconnectAndClearCatalogue();
+				return;
+			}
+
+			if (state.connected) {
+				activateTools();
+				return;
+			}
+
 			await connectAndRegister();
-			activateTools();
 		} catch (error) {
 			state.lastError = errorMessage(error);
-			deactivateTools();
-			await closeConnection(state);
+			await disconnectAndClearCatalogue();
 		}
 	};
 
@@ -773,7 +1040,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 		deactivateTools,
 		setEnabled,
 		connectAndRegister,
-		close: () => closeConnection(state),
+		close,
 		setStatus: (ctx) => {
 			// Clear the old per-connector status key, then publish one aggregate MCP footer entry.
 			ctx.ui.setStatus(options.extensionName, undefined);
@@ -793,24 +1060,39 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			notifyMcp(ctx, lines.length ? lines.join("\n") : `No ${displayName} tools registered. Use ${enableCommandText} or ${reloadCommandText}.`, "info");
 		},
 		enable: async (ctx) => {
-			setEnabled(true, true);
+			const persistenceError = setEnabled(true, true);
 			try {
-				const count = await connectAndRegister();
-				activateTools();
+				const result = await connectAndRegister();
 				runtime.setStatus(ctx);
-				notifyMcp(ctx, `${displayName} enabled and connected (${count} tools).`, "info");
+				if (result.status === "committed" && result.generation === coordinationGeneration && state.enabled && state.connected) {
+					notifyMcp(ctx, `${displayName} enabled and connected (${result.toolCount} tools).`, "info");
+				} else {
+					notifyMcp(ctx, `${displayName} enable was superseded before the connection completed.`, "warning");
+				}
 			} catch (error) {
-				state.lastError = errorMessage(error);
-				runtime.setStatus(ctx);
-				notifyMcp(ctx, `${displayName} enabled, but connection failed: ${state.lastError}`, "error");
+				const isCurrentFailure = !(error instanceof CatalogueRebuildError) || error.generation === coordinationGeneration;
+				if (isCurrentFailure && state.enabled && !shuttingDown) {
+					state.lastError = errorMessage(error);
+					runtime.setStatus(ctx);
+					notifyMcp(ctx, `${displayName} enabled, but connection failed: ${state.lastError}`, "error");
+				} else {
+					runtime.setStatus(ctx);
+					notifyMcp(ctx, `${displayName} enable was superseded before the connection completed.`, "warning");
+				}
+			}
+			if (persistenceError) {
+				const localOutcome = state.enabled ? "is enabled locally" : "enable was superseded locally";
+				notifyMcp(ctx, `${displayName} ${localOutcome}, but unable to persist config: ${persistenceError}`, "error");
 			}
 		},
 		disable: async (ctx) => {
-			setEnabled(false, true);
-			deactivateTools();
-			await closeConnection(state);
+			const persistenceError = setEnabled(false, true);
+			await disconnectAndClearCatalogue();
 			runtime.setStatus(ctx);
 			notifyMcp(ctx, `${displayName} disabled. Run ${enableCommandText} to re-enable it.`, "info");
+			if (persistenceError) {
+				notifyMcp(ctx, `${displayName} is disabled locally, but unable to persist config: ${persistenceError}`, "error");
+			}
 		},
 		reload: async (ctx) => {
 			if (!state.enabled) {
@@ -819,14 +1101,23 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 				return;
 			}
 			try {
-				const count = await connectAndRegister();
-				activateTools();
+				const result = await connectAndRegister();
 				runtime.setStatus(ctx);
-				notifyMcp(ctx, `${displayName} reloaded (${count} tools).`, "info");
+				if (result.status === "committed" && result.generation === coordinationGeneration && state.enabled && state.connected) {
+					notifyMcp(ctx, `${displayName} reloaded (${result.toolCount} tools).`, "info");
+				} else {
+					notifyMcp(ctx, `${displayName} reload was superseded before the connection completed.`, "warning");
+				}
 			} catch (error) {
-				state.lastError = errorMessage(error);
-				runtime.setStatus(ctx);
-				notifyMcp(ctx, `${displayName} connection failed: ${state.lastError}`, "error");
+				const isCurrentFailure = !(error instanceof CatalogueRebuildError) || error.generation === coordinationGeneration;
+				if (isCurrentFailure && state.enabled && !shuttingDown) {
+					state.lastError = errorMessage(error);
+					runtime.setStatus(ctx);
+					notifyMcp(ctx, `${displayName} connection failed: ${state.lastError}`, "error");
+				} else {
+					runtime.setStatus(ctx);
+					notifyMcp(ctx, `${displayName} reload was superseded before the connection completed.`, "warning");
+				}
 			}
 		},
 		syncEnabledState,
