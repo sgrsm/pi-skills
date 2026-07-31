@@ -42,6 +42,13 @@ type McpTool = {
 
 type PiToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 type PiToolSourceInfo = PiToolInfo["sourceInfo"];
+type CanonicalToolRegistryIndex = ReadonlyMap<string, PiToolInfo>;
+
+type RegisteredCandidateTool = {
+	tool: McpTool;
+	piName: string;
+	retainedOwnership?: McpToolOwnership;
+};
 
 type McpToolOwnership = {
 	originalName: string;
@@ -334,6 +341,16 @@ function sourceInfoIdentity(sourceInfo: PiToolSourceInfo): string {
 		sourceInfo.origin,
 		sourceInfo.baseDir ?? null,
 	]);
+}
+
+function indexCanonicalTools(tools: readonly PiToolInfo[]): CanonicalToolRegistryIndex {
+	// Keep the first entry to preserve the previous Array.find() behavior if a host ever
+	// reports duplicate names.
+	const toolsByName = new Map<string, PiToolInfo>();
+	for (const tool of tools) {
+		if (!toolsByName.has(tool.name)) toolsByName.set(tool.name, tool);
+	}
+	return toolsByName;
 }
 
 function asObjectSchema(schema: unknown) {
@@ -675,40 +692,42 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 		ownershipByPiName: new Map(),
 	};
 
-	const canonicalTool = (name: string): PiToolInfo | undefined => pi.getAllTools().find((tool) => tool.name === name);
-	const ownershipIsCanonical = (ownership: McpToolOwnership): boolean => {
-		const canonical = canonicalTool(ownership.piName);
+	const readCanonicalToolRegistry = (): CanonicalToolRegistryIndex => indexCanonicalTools(pi.getAllTools());
+	const ownershipIsCanonical = (registry: CanonicalToolRegistryIndex, ownership: McpToolOwnership): boolean => {
+		const canonical = registry.get(ownership.piName);
 		return canonical !== undefined && sourceInfoIdentity(canonical.sourceInfo) === ownership.sourceInfoIdentity;
 	};
-	const canonicalHistoricalNames = (): Set<string> => new Set(
+	const canonicalHistoricalNames = (registry: CanonicalToolRegistryIndex): Set<string> => new Set(
 		[...state.ownershipByPiName.values()]
-			.filter(ownershipIsCanonical)
+			.filter((ownership) => ownershipIsCanonical(registry, ownership))
 			.map((ownership) => ownership.piName),
 	);
-	const canonicalCurrentNames = (): string[] => [...state.toolByPiName.entries()]
+	const canonicalCurrentNames = (registry: CanonicalToolRegistryIndex): string[] => [...state.toolByPiName.entries()]
 		.filter(([piName, tool]) => {
 			const ownership = state.ownershipByPiName.get(piName);
-			return ownership?.originalName === tool.name && ownershipIsCanonical(ownership);
+			return ownership?.originalName === tool.name && ownershipIsCanonical(registry, ownership);
 		})
 		.map(([piName]) => piName);
 
-	const activateTools = () => {
+	const activateTools = (registry = readCanonicalToolRegistry()) => {
 		// Pi's allowlist mode can reactivate every registered allowlisted definition whenever
 		// registerTool refreshes the host registry. Reconcile the full historical ownership set,
 		// then add back only the canonically verified names in the committed current catalogue.
-		const historicalNames = canonicalHistoricalNames();
+		const historicalNames = canonicalHistoricalNames(registry);
 		const unrelatedActiveNames = pi.getActiveTools().filter((name) => !historicalNames.has(name));
-		pi.setActiveTools([...new Set([...unrelatedActiveNames, ...canonicalCurrentNames()])]);
+		pi.setActiveTools([...new Set([...unrelatedActiveNames, ...canonicalCurrentNames(registry)])]);
 	};
 
-	const deactivateTools = () => {
-		const historicalNames = canonicalHistoricalNames();
+	const deactivateTools = (registry?: CanonicalToolRegistryIndex) => {
+		if (state.ownershipByPiName.size === 0) return;
+		const historicalNames = canonicalHistoricalNames(registry ?? readCanonicalToolRegistry());
 		pi.setActiveTools(pi.getActiveTools().filter((name) => !historicalNames.has(name)));
 	};
 
 	let coordinationGeneration = 0;
 	const setEnabled = (enabled: boolean, persist: boolean): string | undefined => {
-		// Local state changes first so persistence failures cannot leave a connector enabled.
+		// Local state changes first so a persistence failure cannot prevent local teardown; an
+		// enabled connector can remain enabled locally while its persistence error is reported.
 		// Teardown invalidates the current generation and aborts its candidate separately so the
 		// candidate generation and the resource being closed always stay paired.
 		state.enabled = enabled;
@@ -725,8 +744,12 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 		}
 	};
 
-	const disconnectCommittedCatalogue = async () => {
-		deactivateTools();
+	// A connector's sourceInfo is stable for its runtime. Cache the first canonically accepted
+	// identity so new registrations cannot adopt a foreign source after historical provenance is lost.
+	let connectorSourceInfoIdentity: string | undefined;
+
+	const disconnectCommittedCatalogue = async (registry?: CanonicalToolRegistryIndex) => {
+		deactivateTools(registry);
 		state.toolByPiName = new Map();
 		await closeConnection(state);
 	};
@@ -840,7 +863,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 
 	const performCatalogueRebuild = async (generation: number): Promise<CatalogueRebuildResult> => {
 		if (generation !== coordinationGeneration) return supersededRebuild(generation);
-		await disconnectCommittedCatalogue();
+		await disconnectCommittedCatalogue(readCanonicalToolRegistry());
 		if (generation !== coordinationGeneration || !state.enabled || shuttingDown) return supersededRebuild(generation);
 
 		let candidate: CandidateConnection | undefined;
@@ -869,8 +892,12 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			}
 			tools.sort(compareMcpToolNames);
 
+			// The host registry is the source of truth for collision and provenance checks. Keep
+			// each synchronous registration batch on one snapshot, then refresh exactly once to
+			// learn which definitions Pi canonically accepted.
+			const registryBeforeRegistration = readCanonicalToolRegistry();
 			const usedNames = new Set([
-				...pi.getAllTools().map((tool) => tool.name),
+				...registryBeforeRegistration.keys(),
 				...state.ownershipByPiName.keys(),
 			]);
 			const retained = new Map<string, McpToolOwnership>();
@@ -878,7 +905,7 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			for (const tool of tools) {
 				const ownership = state.ownershipByOriginal.get(tool.name);
 				if (!ownership || ownership.originalName !== tool.name) continue;
-				const canonical = canonicalTool(ownership.piName);
+				const canonical = registryBeforeRegistration.get(ownership.piName);
 				if (!canonical) {
 					// getAllTools() omits allowlist/exclude-list filtered names. Do not evade host
 					// policy by manufacturing a suffix for a historical name hidden by Pi.
@@ -889,60 +916,94 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 			}
 
 			const candidateCatalogue = new Map<string, McpTool>();
-			const register = (tool: McpTool, retainedOwnership?: McpToolOwnership): boolean => {
-				const piName = retainedOwnership?.piName ?? makePiToolName(tool.name, usedNames, options.toolPrefix);
-				if (!retainedOwnership && canonicalTool(piName)) return false;
-				registerCandidateTool(tool, piName);
-				const canonical = canonicalTool(piName);
-				if (!canonical) {
-					// Registration may be filtered by Pi's active tool policy (for example
-					// --no-tools or --exclude-tools). Without canonical provenance, neither own
-					// nor activate the name, and never retry with a policy-bypassing suffix.
-					return false;
+			const acceptCanonicalRegistrations = (registrations: readonly RegisteredCandidateTool[], registry: CanonicalToolRegistryIndex): McpTool[] => {
+				const retryWithSuffix: McpTool[] = [];
+				for (const registration of registrations) {
+					const canonical = registry.get(registration.piName);
+					if (!canonical) {
+						// Registration may be filtered by Pi's active tool policy (for example
+						// --no-tools or --exclude-tools). Without canonical provenance, neither own
+						// nor activate the name, and never retry with a policy-bypassing suffix.
+						continue;
+					}
+
+					const canonicalIdentity = sourceInfoIdentity(canonical.sourceInfo);
+					const retainedIdentityMismatch = registration.retainedOwnership
+						&& canonicalIdentity !== registration.retainedOwnership.sourceInfoIdentity;
+					const connectorIdentityMismatch = !registration.retainedOwnership
+						&& connectorSourceInfoIdentity !== undefined
+						&& canonicalIdentity !== connectorSourceInfoIdentity;
+					if (retainedIdentityMismatch || connectorIdentityMismatch) {
+						// A concurrent foreign registration can win a name after the pre-registration
+						// snapshot. One deterministic suffix retry preserves the old collision behavior.
+						retryWithSuffix.push(registration.tool);
+						continue;
+					}
+
+					connectorSourceInfoIdentity ??= canonicalIdentity;
+					const ownership: McpToolOwnership = {
+						originalName: registration.tool.name,
+						piName: registration.piName,
+						sourceInfoIdentity: canonicalIdentity,
+					};
+					state.ownershipByOriginal.set(registration.tool.name, ownership);
+					state.ownershipByPiName.set(registration.piName, ownership);
+					candidateCatalogue.set(registration.piName, registration.tool);
 				}
-				const canonicalIdentity = sourceInfoIdentity(canonical.sourceInfo);
-				if (retainedOwnership && canonicalIdentity !== retainedOwnership.sourceInfoIdentity) return false;
-
-				const knownConnectorIdentity = [...state.ownershipByPiName.values()]
-					.find(ownershipIsCanonical)?.sourceInfoIdentity;
-				if (!retainedOwnership && knownConnectorIdentity && canonicalIdentity !== knownConnectorIdentity) return false;
-
-				const ownership: McpToolOwnership = {
-					originalName: tool.name,
-					piName,
-					sourceInfoIdentity: canonicalIdentity,
-				};
-				state.ownershipByOriginal.set(tool.name, ownership);
-				state.ownershipByPiName.set(piName, ownership);
-				candidateCatalogue.set(piName, tool);
-				// Dynamic refresh may activate every allowlisted historical connector definition.
-				// Keep all connector-owned names hidden until the candidate catalogue commits.
-				deactivateTools();
-				return true;
+				return retryWithSuffix;
+			};
+			const registerBatch = (registrations: readonly RegisteredCandidateTool[]) => {
+				try {
+					for (const registration of registrations) registerCandidateTool(registration.tool, registration.piName);
+				} catch (error) {
+					// registerTool() can throw after earlier synchronous registrations succeeded. Record
+					// any canonically accepted prefix before the outer catch deactivates owned names.
+					acceptCanonicalRegistrations(registrations, readCanonicalToolRegistry());
+					throw error;
+				}
 			};
 
-			const unretained: McpTool[] = [];
-			for (const tool of tools) {
-				if (unavailableOriginalNames.has(tool.name)) continue;
-				const ownership = retained.get(tool.name);
-				if (!ownership || !register(tool, ownership)) unretained.push(tool);
+			const registrations: RegisteredCandidateTool[] = tools
+				.filter((tool) => !unavailableOriginalNames.has(tool.name))
+				.map((tool) => {
+					const retainedOwnership = retained.get(tool.name);
+					return {
+						tool,
+						piName: retainedOwnership?.piName ?? makePiToolName(tool.name, usedNames, options.toolPrefix),
+						retainedOwnership,
+					};
+				});
+			registerBatch(registrations);
+			let registryAfterRegistration = readCanonicalToolRegistry();
+			const retryTools = acceptCanonicalRegistrations(registrations, registryAfterRegistration);
+
+			if (retryTools.length > 0) {
+				const retryRegistrations = retryTools.map((tool) => ({
+					tool,
+					piName: makePiToolName(tool.name, usedNames, options.toolPrefix),
+				}));
+				registerBatch(retryRegistrations);
+				registryAfterRegistration = readCanonicalToolRegistry();
+				acceptCanonicalRegistrations(retryRegistrations, registryAfterRegistration);
 			}
-			for (const tool of unretained) register(tool);
 
 			if (generation !== coordinationGeneration || !state.enabled || shuttingDown) {
-				deactivateTools();
+				deactivateTools(registryAfterRegistration);
 				await closeCandidateConnection(generation);
 				releaseCandidateConnection(candidate);
 				return supersededRebuild(generation);
 			}
 
+			// Dynamic registration can reactivate every allowlisted historical definition. Reconcile
+			// once after the full synchronous batch, keeping candidates inactive until commit.
+			deactivateTools(registryAfterRegistration);
 			const server = candidate.client.getServerVersion();
 			state.client = candidate.client;
 			state.transport = candidate.transport;
 			state.connected = true;
 			state.serverName = server ? `${server.name} ${server.version}` : config.url;
 			state.toolByPiName = candidateCatalogue;
-			activateTools();
+			activateTools(registryAfterRegistration);
 			state.lastError = undefined;
 			releaseCandidateConnection(candidate);
 			return { generation, status: "committed", toolCount: candidateCatalogue.size };
