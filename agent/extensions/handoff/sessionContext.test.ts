@@ -71,10 +71,11 @@ test("handoff source avoids the private sessionManager.buildSessionContext insta
 	assert.equal(/\bsessionManager\.buildSessionContext\s*\(/.test(source), false);
 });
 
-test("handoff summary forwards resolved auth.env in complete request options", () => {
+test("handoff summary forwards auth.env and isolates each compatibility request", () => {
 	const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+	assert.match(source, /import \{ uuidv7 \} from "@earendil-works\/pi-ai"/);
 	assert.match(
 		source,
-		/const response = await complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},\s*\{\s*\.\.\.\(auth\.apiKey \? \{ apiKey: auth\.apiKey \} : \{\}\),\s*\.\.\.\(auth\.headers \? \{ headers: auth\.headers \} : \{\}\),\s*\.\.\.\(auth\.env \? \{ env: auth\.env \} : \{\}\),\s*\.\.\.\(ctx\.signal \? \{ signal: ctx\.signal \} : \{\}\),\s*\},\s*\)/,
+		/const response = await complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},\s*\{\s*\.\.\.\(auth\.apiKey \? \{ apiKey: auth\.apiKey \} : \{\}\),\s*\.\.\.\(auth\.headers \? \{ headers: auth\.headers \} : \{\}\),\s*\.\.\.\(auth\.env \? \{ env: auth\.env \} : \{\}\),\s*\.\.\.\(ctx\.signal \? \{ signal: ctx\.signal \} : \{\}\),\s*cacheRetention: "none",\s*sessionId: uuidv7\(\),\s*\},\s*\)/,
 	);
 });

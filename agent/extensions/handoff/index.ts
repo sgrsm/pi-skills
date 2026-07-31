@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
+import { uuidv7 } from "@earendil-works/pi-ai"
 import { complete } from "@earendil-works/pi-ai/compat"
 import { CONFIG_DIR_NAME, buildSessionContext, CustomEditor, convertToLlm, getAgentDir, serializeConversation } from "@earendil-works/pi-coding-agent"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
@@ -1003,6 +1004,8 @@ async function summarizeCurrentSession(ctx: ExtensionContext, requestedTitle: st
 				...(auth.headers ? { headers: auth.headers } : {}),
 				...(auth.env ? { env: auth.env } : {}),
 				...(ctx.signal ? { signal: ctx.signal } : {}),
+				cacheRetention: "none",
+				sessionId: uuidv7(),
 			},
 		)
 

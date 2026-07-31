@@ -6,6 +6,7 @@ Creates compact Markdown handoff documents for continuing Pi work in a fresh ses
 
 - Summarizes the current session into the Pi handoff dir (`~/.pi/handoff/` by default).
 - Records the original `cwd`, session file/name when available, and a short list of relevant files.
+- Requests no prompt-cache retention and uses a fresh request session ID for each model-based summary.
 - Lets a new session continue from a saved handoff, or inject a handoff into the current session.
 - Falls back to a recent conversation excerpt if model-based summarization is unavailable or fails.
 
