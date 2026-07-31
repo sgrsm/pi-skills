@@ -96,6 +96,7 @@ export function createTestExtensionContext(options: BaseContextOptions): Extensi
 		sessionManager: SessionManager.inMemory(cwd, { id: options.sessionId ?? "test-session" }),
 		modelRegistry: createModelRegistry(),
 		model: undefined,
+		scopedModels: [],
 		thinkingLevel: undefined,
 		isIdle: () => true,
 		isProjectTrusted: () => options.isProjectTrusted ?? true,
