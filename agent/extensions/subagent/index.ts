@@ -721,7 +721,7 @@ function buildSubagentUsageText(): string {
 		"/subagents — show current mode and limits",
 		"/subagents ui — open interactive TUI subagent config",
 		"/subagents off|manual|ask|auto — set policy mode",
-		`/subagents concurrency <n>|default — set max concurrent subagents (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
+		`/subagents concurrency <n>|default — set max concurrent subagents per tool call (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
 		`/subagents max-tasks <n>|default — set max parallel tasks per call (1-${SUBAGENT_MAX_PARALLEL_TASKS_LIMIT})`,
 		"/subagents reset-limits — remove global subagent limit overrides from settings.json",
 		"/subagents cancel-session-approval — stop auto-approving ask-mode or write-capable requests in this session",
@@ -750,14 +750,14 @@ function buildSubagentSummaryText(
 		`current session delegation depth: ${currentDepth}`,
 		`max delegation depth: ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
 		`remaining delegation generations in this session: ${remainingDelegationDepth === null ? "∞" : remainingDelegationDepth}`,
-		`max concurrent subagents: ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)})`,
+		`max concurrent subagents per tool call: ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)})`,
 		`max parallel tasks per call: ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)})`,
 		`nested inherited approval overrides: ${configuredInheritedScopes.length > 0 ? configuredInheritedScopes.join(", ") : "none"}`,
 		`agent model/thinking defaults: ${configuredAgentDefaults.length > 0 ? configuredAgentDefaults.join(", ") : "none"}`,
 		"- off: subagent tool disabled completely",
 		"- manual: same delegation eligibility as auto, but requires explicit user request unless inherited child approval applies",
 		"- ask: same delegation eligibility as auto; valid explicit requests run immediately, otherwise Pi asks first unless current-session approval applies",
-		"- auto: Pi may auto-use eligible read-only delegation within configured task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agents are blocked",
+		"- auto: Pi may auto-use eligible read-only delegation within configured per-call task/concurrency limits; write-capable and project-local agents require approval unless explicitly requested; unknown agents are blocked",
 		"- /subagents ui opens interactive TUI config",
 		'- settings.json keys: "subagents.maxConcurrency", "subagents.maxParallelTasks", "subagents.maxDelegationDepth", "subagents.inheritedApprovalScopes.<agent>", and "subagents.agentDefaults.<agent>.{model,thinking}"',
 		"- maxDelegationDepth=2 allows root -> first -> second; a third nested generation is blocked",
@@ -2353,7 +2353,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				{
 					id: "maxConcurrency",
-					label: "Max concurrent subagents",
+					label: "Max concurrent subagents per call",
 					currentValue: String(executionSettings.limits.maxConcurrency),
 					values: buildSelectableValues(COMMON_CONCURRENCY_CHOICES, executionSettings.limits.maxConcurrency),
 				},
@@ -2373,7 +2373,7 @@ export default function (pi: ExtensionAPI) {
 				effectiveText.setText(
 					theme.fg(
 						"muted",
-						`Effective limits: concurrency ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)}) • tasks ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)}) • depth ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
+						`Effective limits: concurrency/call ${executionSettings.limits.maxConcurrency} (${formatSubagentSettingsSource(executionSettings.sources.maxConcurrency)}) • tasks/call ${executionSettings.limits.maxParallelTasks} (${formatSubagentSettingsSource(executionSettings.sources.maxParallelTasks)}) • depth ${formatMaxDelegationDepth(executionSettings.limits.maxDelegationDepth)} (${formatSubagentSettingsSource(executionSettings.sources.maxDelegationDepth)})`,
 					),
 				);
 				noteText.setText(
@@ -2713,7 +2713,7 @@ export default function (pi: ExtensionAPI) {
 					...COMMON_CONCURRENCY_CHOICES.map((value) => ({
 						value: `concurrency ${value}`,
 						label: String(value),
-						description: `Set max concurrent subagents to ${value}`,
+						description: `Set max concurrent subagents per call to ${value}`,
 					})),
 					{
 						value: "concurrency default",
@@ -2751,7 +2751,7 @@ export default function (pi: ExtensionAPI) {
 				{
 					value: "concurrency",
 					label: "concurrency",
-					description: `Set max concurrent subagents (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
+					description: `Set max concurrent subagents per call (1-${SUBAGENT_MAX_CONCURRENCY_LIMIT})`,
 				},
 				{
 					value: "max-tasks",
@@ -2878,9 +2878,9 @@ export default function (pi: ExtensionAPI) {
 				executionSettings = await saveGlobalExecutionSettings(ctx, { maxConcurrency: requested });
 				const note =
 					executionSettings.sources.maxConcurrency === "project"
-						? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}, but the current project still overrides the effective concurrency via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
+						? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}, but the current project still overrides the effective per-call concurrency via ${SUBAGENT_PROJECT_SETTINGS_DISPLAY_PATH}.`
 						: executionSettings.limits.maxConcurrency !== requested
-							? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. Effective concurrency is currently ${executionSettings.limits.maxConcurrency} because max parallel tasks is ${executionSettings.limits.maxParallelTasks}.`
+							? `Saved to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}. Effective per-call concurrency is currently ${executionSettings.limits.maxConcurrency} because max parallel tasks per call is ${executionSettings.limits.maxParallelTasks}.`
 							: `Saved maxConcurrency=${requested} to ${SUBAGENT_GLOBAL_SETTINGS_DISPLAY_PATH}.`;
 				notifyCommand(
 					ctx,

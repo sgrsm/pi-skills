@@ -57,6 +57,7 @@ Common commands:
 ```
 
 - `ui` edits mode and limits in TUI mode.
+- `concurrency <n>` limits concurrent children within each individual `subagent` tool call.
 - `concurrency default` and `max-tasks default` restore the corresponding defaults.
 - `reset-limits` removes both saved limit overrides.
 - `cancel-session-approval` clears approvals granted with `Allow for current session`.
@@ -114,7 +115,9 @@ The request includes a required `question` and can set `requestType` (`clarify` 
 }
 ```
 
-Global settings live in `~/.pi/agent/settings.json` by default; trusted projects can override them in `.pi/settings.json`. Untrusted project settings are ignored. `maxConcurrency` is clipped to `maxParallelTasks`; hard caps are 32 concurrent children and 64 parallel tasks per call.
+Global settings live in `~/.pi/agent/settings.json` by default; trusted projects can override them in `.pi/settings.json`. Untrusted project settings are ignored. `maxConcurrency` is clipped to `maxParallelTasks`; hard caps are 32 concurrent children and 64 parallel tasks per tool call.
+
+Concurrency limits are per call, not extension-wide. Pi may run sibling `subagent` tool calls in parallel, so their combined child count can exceed `maxConcurrency`.
 
 `maxDelegationDepth: null` means unlimited. `0` blocks delegation. An inherited approval scope is `none`, `read-only`, or `all`; agents without a declared tool list are treated as write-capable.
 
