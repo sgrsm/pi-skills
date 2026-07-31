@@ -371,10 +371,34 @@ function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
 	return [];
 }
 
+function getSubagentRequestMode(params: Record<string, any>): SubagentRequestMode | null {
+	const hasSingleFields = params.agent !== undefined || params.task !== undefined;
+	const hasTasksField = params.tasks !== undefined;
+	const hasChainField = params.chain !== undefined;
+	const modeFieldCount = Number(hasSingleFields) + Number(hasTasksField) + Number(hasChainField);
+
+	if (modeFieldCount !== 1) return null;
+	if (hasSingleFields) return params.agent && params.task ? "single" : null;
+	if (hasTasksField) return Array.isArray(params.tasks) && params.tasks.length > 0 ? "parallel" : null;
+	return Array.isArray(params.chain) && params.chain.length > 0 ? "chain" : null;
+}
+
+function getSubagentStructuralError(params: Record<string, any>, maxParallelTasks?: number): string | null {
+	const mode = getSubagentRequestMode(params);
+	if (!mode) return "Invalid parameters. Provide exactly one mode.";
+
+	const requestedTasks = getRequestedTasks(params);
+	const expectedTaskCount = mode === "single" ? 1 : mode === "parallel" ? params.tasks.length : params.chain.length;
+	if (requestedTasks.length !== expectedTaskCount) return "Invalid parameters. Provide exactly one mode.";
+
+	if (mode === "parallel" && maxParallelTasks !== undefined && params.tasks.length > maxParallelTasks) {
+		return `Too many parallel tasks (${params.tasks.length}). Max is ${maxParallelTasks}. Configure via /subagents max-tasks <n> or settings.json subagents.maxParallelTasks.`;
+	}
+	return null;
+}
+
 function getRequestMode(params: Record<string, any>): SubagentRequestMode {
-	if (Array.isArray(params.chain) && params.chain.length > 0) return "chain";
-	if (Array.isArray(params.tasks) && params.tasks.length > 0) return "parallel";
-	return "single";
+	return getSubagentRequestMode(params) ?? "single";
 }
 
 function resolveExecutionCwd(defaultCwd: string, requestedCwd: string | undefined): string {
@@ -2581,9 +2605,17 @@ export default function (pi: ExtensionAPI) {
 		if (event.toolName !== "subagent" || !isRecord(event.input)) return undefined;
 		projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 
+		if (getSubagentStructuralError(event.input)) return undefined;
+
 		const requestedScope: AgentScope =
 			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
 		const projectTrusted = ctx.isProjectTrusted();
+		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
+		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd, {
+			projectTrusted,
+		});
+		if (getSubagentStructuralError(event.input, executionSettings.limits.maxParallelTasks)) return undefined;
+
 		const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
 			requestedScope,
 			requestedScope === "user" ? true : projectTrusted,
@@ -2593,11 +2625,6 @@ export default function (pi: ExtensionAPI) {
 			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 			return { block: true, reason: projectAgentTrustBlockReason };
 		}
-
-		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
-		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd, {
-			projectTrusted,
-		});
 		const currentDepth = getCurrentSubagentDepth();
 		if (!canDelegateWithinDepthLimit(currentDepth, executionSettings.limits.maxDelegationDepth)) {
 			delegatedApprovalByToolCallId.delete(event.toolCallId);
@@ -2972,9 +2999,22 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			if (signal?.aborted) throw createAbortError();
+			const structuralError = getSubagentStructuralError(params);
+			if (structuralError) throw new Error(structuralError);
+			const requestMode = getSubagentRequestMode(params)!;
+
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const projectTrusted = ctx.isProjectTrusted();
 			const settingsLoadOptions = { projectTrusted };
+			const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, params);
+			const executionSettings = loadSubagentExecutionSettingsForCwds(
+				requestedExecutionCwds,
+				ctx.cwd,
+				settingsLoadOptions,
+			);
+			const taskLimitError = getSubagentStructuralError(params, executionSettings.limits.maxParallelTasks);
+			if (taskLimitError) throw new Error(taskLimitError);
+
 			const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
 				agentScope,
 				agentScope === "user" ? true : projectTrusted,
@@ -2983,7 +3023,6 @@ export default function (pi: ExtensionAPI) {
 			const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, agentScope);
 			const discovery = resolveDiscovery(undefined);
 			const agents = discovery.agents;
-			const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, params);
 			const projectAgentDirs = Array.from(
 				new Set(
 					requestedExecutionCwds
@@ -2996,17 +3035,7 @@ export default function (pi: ExtensionAPI) {
 			const projectAgentConfirmationCoveredByPolicyApproval = projectAgentConfirmationPolicyCoverage.consume(toolCallId);
 			const inheritedDelegationApproval =
 				delegatedApprovalByToolCallId.get(toolCallId) ?? getInheritedSubagentApprovalScope();
-			const executionSettings = loadSubagentExecutionSettingsForCwds(
-				requestedExecutionCwds,
-				ctx.cwd,
-				settingsLoadOptions,
-			);
 			const workflowModelLock = resolveWorkflowModelLock(ctx, pi.getThinkingLevel());
-
-			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
 
 			const makeDetails =
 				(mode: "single" | "parallel" | "chain") =>
@@ -3033,19 +3062,6 @@ export default function (pi: ExtensionAPI) {
 					...(usage ? { usage } : {}),
 				};
 			};
-
-			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`,
-						},
-					],
-					details: makeDetails("single")([]),
-				};
-			}
 
 			if (subagentFooterActivity.markToolCallActive(toolCallId, countInitialSubagentTasks(params))) {
 				refreshSubagentFooter(ctx);
@@ -3075,12 +3091,12 @@ export default function (pi: ExtensionAPI) {
 					if (!ok)
 						return {
 							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+							details: makeDetails(requestMode)([]),
 						};
 				}
 			}
 
-			if (params.chain && params.chain.length > 0) {
+			if (requestMode === "chain" && params.chain) {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
 
@@ -3158,18 +3174,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if (params.tasks && params.tasks.length > 0) {
-				if (params.tasks.length > executionSettings.limits.maxParallelTasks)
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Too many parallel tasks (${params.tasks.length}). Max is ${executionSettings.limits.maxParallelTasks}. Configure via /subagents max-tasks <n> or settings.json subagents.maxParallelTasks.`,
-							},
-						],
-						details: makeDetails("parallel")([]),
-					};
-
+			if (requestMode === "parallel" && params.tasks) {
 				// Track all results for streaming updates
 				const allResults: SingleResult[] = new Array(params.tasks.length);
 
@@ -3325,11 +3330,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-			return {
-				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
-				details: makeDetails("single")([]),
-			};
+			throw new Error("Invalid parameters. Provide exactly one mode.");
 		},
 
 		renderCall(args, theme, context) {

@@ -72,6 +72,8 @@ A call must use exactly one mode:
 - `tasks` for independent parallel children.
 - `chain` for sequential steps. `{previous}` is replaced with the preceding step's final output.
 
+Mixed, incomplete, or empty modes are rejected as tool errors. `maxParallelTasks` applies only to non-empty `tasks` arrays; `chain` steps are sequential.
+
 Optional fields:
 
 - `cwd` - child working directory, resolved relative to the parent working directory.
@@ -152,6 +154,6 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 - **Unknown agent:** check the agent name and configured agent scope.
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
-- **Too many tasks:** raise `maxParallelTasks` or reduce the `tasks`/`chain` length.
+- **Too many tasks:** raise `maxParallelTasks` or reduce the `tasks` length.
 - **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
 - **Output truncated:** open the temporary file shown in the result marker.
