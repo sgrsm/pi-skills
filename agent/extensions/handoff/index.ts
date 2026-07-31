@@ -1001,6 +1001,7 @@ async function summarizeCurrentSession(ctx: ExtensionContext, requestedTitle: st
 			{
 				...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
 				...(auth.headers ? { headers: auth.headers } : {}),
+				...(auth.env ? { env: auth.env } : {}),
 				...(ctx.signal ? { signal: ctx.signal } : {}),
 			},
 		)

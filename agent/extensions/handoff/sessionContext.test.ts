@@ -70,3 +70,11 @@ test("handoff source avoids the private sessionManager.buildSessionContext insta
 	const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 	assert.equal(/\bsessionManager\.buildSessionContext\s*\(/.test(source), false);
 });
+
+test("handoff summary forwards resolved auth.env in complete request options", () => {
+	const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+	assert.match(
+		source,
+		/const response = await complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},\s*\{\s*\.\.\.\(auth\.apiKey \? \{ apiKey: auth\.apiKey \} : \{\}\),\s*\.\.\.\(auth\.headers \? \{ headers: auth\.headers \} : \{\}\),\s*\.\.\.\(auth\.env \? \{ env: auth\.env \} : \{\}\),\s*\.\.\.\(ctx\.signal \? \{ signal: ctx\.signal \} : \{\}\),\s*\},\s*\)/,
+	);
+});
