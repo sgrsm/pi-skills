@@ -71,11 +71,16 @@ test("handoff source avoids the private sessionManager.buildSessionContext insta
 	assert.equal(/\bsessionManager\.buildSessionContext\s*\(/.test(source), false);
 });
 
-test("handoff summary forwards auth.env and isolates each compatibility request", () => {
+test("handoff summary dispatches through Pi's model runtime", () => {
 	const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+
 	assert.match(source, /import \{ uuidv7 \} from "@earendil-works\/pi-ai"/);
+	assert.doesNotMatch(source, /@earendil-works\/pi-ai\/compat/);
+	assert.doesNotMatch(source, /\bgetApiKeyAndHeaders\s*\(/);
 	assert.match(
 		source,
-		/const response = await complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},\s*\{\s*\.\.\.\(auth\.apiKey \? \{ apiKey: auth\.apiKey \} : \{\}\),\s*\.\.\.\(auth\.headers \? \{ headers: auth\.headers \} : \{\}\),\s*\.\.\.\(auth\.env \? \{ env: auth\.env \} : \{\}\),\s*\.\.\.\(ctx\.signal \? \{ signal: ctx\.signal \} : \{\}\),\s*cacheRetention: "none",\s*sessionId: uuidv7\(\),\s*\},\s*\)/,
+		/const response = await ctx\.modelRegistry\.complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},/,
 	);
+	assert.match(source, /cacheRetention: "none"/);
+	assert.match(source, /sessionId: uuidv7\(\)/);
 });

@@ -3,7 +3,6 @@ import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { uuidv7 } from "@earendil-works/pi-ai"
-import { complete } from "@earendil-works/pi-ai/compat"
 import { CONFIG_DIR_NAME, buildSessionContext, CustomEditor, convertToLlm, getAgentDir, serializeConversation } from "@earendil-works/pi-coding-agent"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
 
@@ -975,9 +974,6 @@ async function summarizeCurrentSession(ctx: ExtensionContext, requestedTitle: st
 	}
 
 	try {
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model)
-		if (!auth.ok) throw new Error(auth.error)
-
 		const userMessage = {
 			role: "user" as const,
 			content: [
@@ -996,13 +992,10 @@ async function summarizeCurrentSession(ctx: ExtensionContext, requestedTitle: st
 			timestamp: Date.now(),
 		}
 
-		const response = await complete(
+		const response = await ctx.modelRegistry.complete(
 			ctx.model,
 			{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: [userMessage] },
 			{
-				...(auth.apiKey ? { apiKey: auth.apiKey } : {}),
-				...(auth.headers ? { headers: auth.headers } : {}),
-				...(auth.env ? { env: auth.env } : {}),
 				...(ctx.signal ? { signal: ctx.signal } : {}),
 				cacheRetention: "none",
 				sessionId: uuidv7(),
