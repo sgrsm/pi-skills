@@ -7,6 +7,7 @@ import {
 	buildProjectAgentConfirmationDetails,
 	evaluateSubagentPolicy,
 	getSubagentApprovalOptions,
+	isWriteCapableAgent,
 	resolveDelegatedApprovalScopeForPolicy,
 	shouldPolicyApprovalCoverProjectAgentConfirmation,
 	shouldPromptForProjectAgentConfirmation,
@@ -74,6 +75,24 @@ function writeCapableParallelSummary() {
 		writeCapableAgents: ["worker"],
 	};
 }
+
+test("only declared, enforced inspection tools qualify an agent for read-only delegation", () => {
+	const agentWithTools = (tools?: string[]) => ({
+		name: "test-agent",
+		description: "Test agent",
+		tools,
+		systemPrompt: "",
+		source: "user" as const,
+		filePath: "/agents/test-agent.md",
+	});
+
+	assert.equal(isWriteCapableAgent(agentWithTools(["read", "grep", "find", "ls", "git_inspect", "subagent", "escalate_to_parent"])), false);
+	assert.equal(isWriteCapableAgent(agentWithTools(["read", "web_search"])), false);
+	assert.equal(isWriteCapableAgent(agentWithTools(["read", "bash"])), true);
+	assert.equal(isWriteCapableAgent(agentWithTools(["read", "unrecognized_extension_tool"])), true);
+	assert.equal(isWriteCapableAgent(agentWithTools(["read", "write"])), true);
+	assert.equal(isWriteCapableAgent(agentWithTools()), true);
+});
 
 test("auto mode does not add a hard 3-agent cap beyond execution limits", () => {
 	const decision = evaluateSubagentPolicy(

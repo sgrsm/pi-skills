@@ -147,7 +147,7 @@ The parent session's current model/thinking, agent frontmatter, and all tool-cal
 - `ask` - default; explicit valid requests run, while other eligible requests require TUI approval.
 - `auto` - may automatically run eligible read-only work.
 
-Depth and task limits always apply. Unknown agents are blocked. Write-capable and project-local agents require an explicit request or approval. Inherited read-only approval applies only to known user agents whose declared tools exclude `edit` and `write`. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
+Depth and task limits always apply. Unknown agents are blocked. Write-capable and project-local agents require an explicit request or approval. Inherited read-only approval applies only to known user agents whose declared tools all have enforceable read-only contracts. `bash` and unknown custom tools are treated as potentially write-capable; `git_inspect` is an enforced read-only tool. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
 
 ## Output and cancellation
 

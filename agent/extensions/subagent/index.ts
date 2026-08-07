@@ -462,9 +462,23 @@ function resolveInheritedApprovalScopeForAgent(
 	return configuredScope ?? defaultScope;
 }
 
-function isWriteCapableAgent(agent: AgentConfig | undefined): boolean {
+// `subagent` is safe here only because its own policy revalidates the requested
+// descendant agents. Every other unlisted extension tool is conservatively treated
+// as potentially mutating until it has an enforced read-only contract.
+const ENFORCED_READ_ONLY_AGENT_TOOLS = new Set([
+	"read",
+	"grep",
+	"find",
+	"ls",
+	"git_inspect",
+	"web_search",
+	"subagent",
+	PARENT_ESCALATION_TOOL_NAME,
+]);
+
+export function isWriteCapableAgent(agent: AgentConfig | undefined): boolean {
 	if (!agent?.tools || agent.tools.length === 0) return true;
-	return agent.tools.includes("edit") || agent.tools.includes("write");
+	return agent.tools.some((tool) => !ENFORCED_READ_ONLY_AGENT_TOOLS.has(tool));
 }
 
 function summarizeSubagentRequestWithResolver(
@@ -873,7 +887,7 @@ function buildSubagentPolicyPrompt(
 		lines.push("- You may use the subagent tool within this delegated task without asking again.");
 	} else if (inheritedApprovalScope === "read-only" && mode !== "off") {
 		lines.push("- This session inherits read-only nested delegation approval from an ancestor agent session.");
-		lines.push("- You may only auto-delegate to known read-only user-scoped agents (no edit/write tools and no project-local agents) without new approval; unknown agents are always blocked.");
+		lines.push("- You may only auto-delegate to known user-scoped agents whose declared tools all have enforceable read-only contracts; project-local and unknown agents are always blocked.");
 		lines.push("- If you need broader delegation, escalate to the parent agent instead of assuming it is allowed.");
 	}
 
