@@ -1,8 +1,6 @@
 ---
 name: planner-readonly
 description: Read-only planning specialist for nested planning and decomposition
-model: openai-codex/gpt-5.6-terra
-thinking: high
 tools: read, grep, find, ls, subagent, escalate_to_parent
 ---
 

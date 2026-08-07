@@ -1,8 +1,6 @@
 ---
 name: planner
 description: Creates implementation plans, can persist Markdown plan documents, and may delegate to read-only helpers
-model: openai-codex/gpt-5.6-terra
-thinking: high
 tools: read, write, grep, find, ls, subagent, escalate_to_parent
 ---
 

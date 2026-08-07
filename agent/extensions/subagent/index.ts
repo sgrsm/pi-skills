@@ -4,10 +4,12 @@
  * Spawns a separate `pi` process for each subagent invocation,
  * giving it an isolated context window.
  *
- * Supports three modes:
- *   - Single: { agent: "name", task: "..." }
- *   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
- *   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
+ * Supports three canonical modes:
+ *   - Single: { mode: "single", items: [{ agent: "name", task: "..." }] }
+ *   - Parallel: { mode: "parallel", items: [{ agent: "name", task: "..." }, ...] }
+ *   - Chain: { mode: "chain", items: [{ agent: "name", task: "... {previous} ..." }, ...] }
+ *
+ * Child model and thinking settings are selected locally from settings.json.
  *
  * Uses JSON mode to capture structured output from subagents.
  */
@@ -16,7 +18,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
@@ -70,6 +72,7 @@ import {
 	resetSubagentExecutionSettings,
 	saveSubagentExecutionSettings,
 	type LoadedSubagentExecutionSettings,
+	type SubagentAgentDefault,
 	type SubagentDelegationApprovalScope,
 	type SubagentExecutionSettings,
 } from "./settingsState.ts";
@@ -100,15 +103,12 @@ const SUBAGENT_INHERITED_APPROVAL_ENV = "PI_SUBAGENT_INHERITED_APPROVAL";
 const SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV = "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE";
 const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
 const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
-const SUBAGENT_WORKFLOW_MODEL_ENV = "PI_SUBAGENT_WORKFLOW_MODEL";
-const SUBAGENT_WORKFLOW_THINKING_ENV = "PI_SUBAGENT_WORKFLOW_THINKING";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
 const subagentFooterActivity = new SubagentFooterActivityTracker();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
 const APPROVAL_OPTION_DENY = "Deny";
-const THINKING_LEVEL_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ThinkingLevel[];
 const EXPLICIT_SUBAGENT_PATTERNS = [
 	/\bsub-?agents?\b/i,
 	/\bmulti-agent\b/i,
@@ -129,13 +129,6 @@ type RequestedTask = {
 	agent: string;
 	task: string;
 	cwd?: string;
-	model?: string;
-	thinking?: ThinkingLevel;
-};
-
-type WorkflowModelLock = {
-	model?: string;
-	thinking?: ThinkingLevel;
 };
 
 interface SubagentRequestSummary {
@@ -203,12 +196,6 @@ function normalizeNonEmptyString(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : undefined;
-}
-
-function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
-	if (typeof value !== "string") return undefined;
-	const normalized = value.trim().toLowerCase();
-	return THINKING_LEVEL_VALUES.includes(normalized as ThinkingLevel) ? (normalized as ThinkingLevel) : undefined;
 }
 
 function normalizeEscalationOptions(value: unknown): EscalationOption[] {
@@ -287,48 +274,22 @@ function getLatestUserPromptText(ctx: ExtensionContext): string {
 }
 
 function formatRequestedTaskTarget(task: RequestedTask): string {
-	const overrides = [
-		task.model ? `model=${task.model}` : undefined,
-		task.thinking ? `thinking=${task.thinking}` : undefined,
-	].filter((value): value is string => Boolean(value));
-	return overrides.length > 0 ? `${task.agent} [${overrides.join(", ")}]` : task.agent;
+	return task.agent;
 }
 
-function getInheritedWorkflowModelLock(): WorkflowModelLock {
-	const model = normalizeNonEmptyString(process.env[SUBAGENT_WORKFLOW_MODEL_ENV]);
-	if (!model) return {};
-	const thinking = normalizeThinkingLevel(process.env[SUBAGENT_WORKFLOW_THINKING_ENV]);
-	return thinking ? { model, thinking } : { model };
-}
-
-function resolveWorkflowModelLock(ctx: ExtensionContext, currentThinkingLevel: ThinkingLevel): WorkflowModelLock {
-	const inherited = getInheritedWorkflowModelLock();
-	if (inherited.model) return inherited;
-	if (!ctx.model) return {};
+/**
+ * Child model selection is configuration-owned. Tool-call fields, agent
+ * frontmatter, and the parent session's current selection must not influence it.
+ */
+export function resolveConfiguredSubagentModelSelection(
+	agentName: string,
+	executionSettings: Pick<LoadedSubagentExecutionSettings, "agentDefaults">,
+): SubagentAgentDefault {
+	const configuredDefault = executionSettings.agentDefaults[normalizeAgentNameForScopeLookup(agentName)] ?? {};
+	const model = normalizeNonEmptyString(configuredDefault.model);
 	return {
-		model: `${ctx.model.provider}/${ctx.model.id}`,
-		thinking: currentThinkingLevel,
-	};
-}
-
-function resolveEffectiveSubagentModelSelection(
-	request: RequestedTask,
-	agent: AgentConfig,
-	executionSettings: LoadedSubagentExecutionSettings,
-	workflowModelLock: WorkflowModelLock,
-): WorkflowModelLock {
-	const configuredDefault = executionSettings.agentDefaults[normalizeAgentNameForScopeLookup(request.agent)] ?? {};
-	return {
-		model:
-			normalizeNonEmptyString(request.model) ??
-			normalizeNonEmptyString(configuredDefault.model) ??
-			normalizeNonEmptyString(agent.model) ??
-			normalizeNonEmptyString(workflowModelLock.model),
-		thinking:
-			normalizeThinkingLevel(request.thinking) ??
-			normalizeThinkingLevel(configuredDefault.thinking) ??
-			normalizeThinkingLevel(agent.thinking) ??
-			normalizeThinkingLevel(workflowModelLock.thinking),
+		...(model ? { model } : {}),
+		...(configuredDefault.thinking ? { thinking: configuredDefault.thinking } : {}),
 	};
 }
 
@@ -352,27 +313,41 @@ function getLegacySubagentRequestMode(params: Record<string, any>): SubagentRequ
 
 /**
  * Converts saved calls made with the pre-canonical API into the current shape
- * before validation. New model-facing schemas expose only `mode` and `items`.
+ * before validation. Model and thinking values are deliberately removed from
+ * all items so historical calls adopt the current settings-owned policy.
  */
 export function prepareSubagentArguments(args: unknown): unknown {
-	if (!isRecord(args) || args.mode !== undefined || args.items !== undefined) return args;
+	if (!isRecord(args)) return args;
 
-	const legacyMode = getLegacySubagentRequestMode(args);
-	if (!legacyMode) return args;
+	let prepared: Record<string, any> = args;
+	if (args.mode === undefined && args.items === undefined) {
+		const legacyMode = getLegacySubagentRequestMode(args);
+		if (!legacyMode) return args;
 
-	const { agent, task, cwd, model, thinking, tasks, chain, ...common } = args;
-	if (legacyMode === "single") {
-		return {
-			...common,
-			mode: "single",
-			items: [{ agent, task, ...(cwd !== undefined ? { cwd } : {}), ...(model !== undefined ? { model } : {}), ...(thinking !== undefined ? { thinking } : {}) }],
-		};
+		const { agent, task, cwd, model: _model, thinking: _thinking, tasks, chain, ...common } = args;
+		prepared =
+			legacyMode === "single"
+				? {
+						...common,
+						mode: "single",
+						items: [{ agent, task, ...(cwd !== undefined ? { cwd } : {}) }],
+					}
+				: {
+						...common,
+						mode: legacyMode,
+						items: legacyMode === "parallel" ? tasks : chain,
+					};
 	}
-	return {
-		...common,
-		mode: legacyMode,
-		items: legacyMode === "parallel" ? tasks : chain,
-	};
+
+	if (!Array.isArray(prepared.items)) return prepared;
+	let removedOverride = false;
+	const items = prepared.items.map((item) => {
+		if (!isRecord(item) || (item.model === undefined && item.thinking === undefined)) return item;
+		removedOverride = true;
+		const { model: _model, thinking: _thinking, ...itemWithoutOverrides } = item;
+		return itemWithoutOverrides;
+	});
+	return removedOverride ? { ...prepared, items } : prepared;
 }
 
 function normalizeSubagentToolInput(input: Record<string, any>): void {
@@ -390,8 +365,6 @@ function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
 			agent: normalizeNonEmptyString(item.agent) ?? "",
 			task: normalizeNonEmptyString(item.task) ?? "",
 			cwd: normalizeNonEmptyString(item.cwd),
-			model: normalizeNonEmptyString(item.model),
-			thinking: normalizeThinkingLevel(item.thinking),
 		}))
 		.filter((item) => item.agent && item.task);
 }
@@ -1858,7 +1831,6 @@ async function runSingleAgent(
 	step: number | undefined,
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
-	workflowModelLock: WorkflowModelLock,
 	executionSettings: LoadedSubagentExecutionSettings,
 	inheritSubagentApprovalScope: DelegationApprovalScope,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
@@ -1885,12 +1857,7 @@ async function runSingleAgent(
 		};
 	}
 
-	const effectiveModelSelection = resolveEffectiveSubagentModelSelection(
-		request,
-		agent,
-		executionSettings,
-		workflowModelLock,
-	);
+	const effectiveModelSelection = resolveConfiguredSubagentModelSelection(agentName, executionSettings);
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
 	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
@@ -1943,10 +1910,6 @@ async function runSingleAgent(
 			[SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV]: inheritSubagentApprovalScope,
 			[SUBAGENT_PARENT_ESCALATION_ENV]: "1",
 		};
-		if (workflowModelLock.model) childEnv[SUBAGENT_WORKFLOW_MODEL_ENV] = workflowModelLock.model;
-		else delete childEnv[SUBAGENT_WORKFLOW_MODEL_ENV];
-		if (workflowModelLock.thinking) childEnv[SUBAGENT_WORKFLOW_THINKING_ENV] = workflowModelLock.thinking;
-		else delete childEnv[SUBAGENT_WORKFLOW_THINKING_ENV];
 
 		const exitCode = await new Promise<number>((resolve, reject) => {
 			if (signal?.aborted) {
@@ -2156,28 +2119,19 @@ async function runSingleAgent(
 	}
 }
 
-const DelegationItem = Type.Object({
-	agent: Type.String({
-		description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
-	}),
-	task: Type.String({
-		description:
-			"Task to delegate. In chain mode, use {previous} to include the preceding item's final output.",
-	}),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	model: Type.Optional(
-		Type.String({
-			description:
-				"Optional model override for this subagent. Accepts the same values as pi --model, such as provider/id or a model alias.",
+const DelegationItem = Type.Object(
+	{
+		agent: Type.String({
+			description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 		}),
-	),
-	thinking: Type.Optional(
-		StringEnum(THINKING_LEVEL_VALUES, {
+		task: Type.String({
 			description:
-				"Optional thinking level override for this subagent. Defaults to the workflow lock unless overridden here or in agent frontmatter.",
+				"Task to delegate. In chain mode, use {previous} to include the preceding item's final output.",
 		}),
-	),
-});
+		cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	},
+	{ additionalProperties: false },
+);
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
@@ -2229,21 +2183,24 @@ const ParentEscalationParams = Type.Object({
 	),
 });
 
-const SubagentParams = Type.Object({
-	mode: StringEnum(SUBAGENT_MODES, {
-		description:
-			'Execution mode. "single" requires exactly one item; "parallel" runs independent items concurrently; "chain" runs items sequentially and supports {previous}.',
-	}),
-	items: Type.Array(DelegationItem, {
-		minItems: 1,
-		description:
-			"The complete delegated work list. Use exactly one item for single mode. Do not send agent, task, tasks, or chain at the top level.",
-	}),
-	agentScope: Type.Optional(AgentScopeSchema),
-	confirmProjectAgents: Type.Optional(
-		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
-	),
-});
+const SubagentParams = Type.Object(
+	{
+		mode: StringEnum(SUBAGENT_MODES, {
+			description:
+				'Execution mode. "single" requires exactly one item; "parallel" runs independent items concurrently; "chain" runs items sequentially and supports {previous}.',
+		}),
+		items: Type.Array(DelegationItem, {
+			minItems: 1,
+			description:
+				"The complete delegated work list. Use exactly one item for single mode. Do not send agent, task, tasks, or chain at the top level.",
+		}),
+		agentScope: Type.Optional(AgentScopeSchema),
+		confirmProjectAgents: Type.Optional(
+			Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
+		),
+	},
+	{ additionalProperties: false },
+);
 
 export function resolveDelegatedApprovalScopeForPolicy(
 	mode: SubagentPolicyMode,
@@ -2984,7 +2941,7 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Use one canonical request shape: mode (single, parallel, or chain) plus a non-empty items array. Single mode requires exactly one item; chain supports {previous}.",
-			"Per-subagent model and thinking overrides are supported; otherwise child sessions inherit the workflow-start model and thinking level.",
+			"Child model and thinking selection is owned by local settings.json: subagents.agentDefaults per agent, then Pi defaults.",
 			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 			"Default policy mode is ask: valid explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
 			`Default agent scope is "user" (from ${USER_AGENTS_DISPLAY_PATH}).`,
@@ -2995,8 +2952,8 @@ export default function (pi: ExtensionAPI) {
 			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when non-trivial work clearly benefits from isolated delegation under the current policy mode.",
 			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for subagent review.",
 			"Use subagent with mode=parallel and multiple items when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
-			"For subagent, always send one mode and one non-empty items array. Do not send top-level agent, task, tasks, chain, cwd, model, or thinking fields; per-child cwd, model, and thinking belong in an item.",
-			"When the user specifies different speed, cost, or reasoning expectations per subagent, pass model and thinking overrides in the subagent call instead of relying on the current global /model setting.",
+			"For subagent, always send one mode and one non-empty items array. Do not send agent, task, tasks, chain, model, or thinking fields at the top level; items accept only agent, task, and optional cwd.",
+			"Subagent model and thinking are settings-owned. Never send model or thinking in a subagent item; configure subagents.agentDefaults in local settings.json instead.",
 			"If a delegated subagent requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
 			"For subagent delegation, prefer scout for codebase discovery, planner for saved Markdown plan artifacts, planner-readonly for read-only nested planning, reviewer for writable report workflows, reviewer-readonly for read-only nested review, worker for general implementation, and consolidator for synthesis/report artifacts.",
@@ -3045,7 +3002,6 @@ export default function (pi: ExtensionAPI) {
 			const projectAgentConfirmationCoveredByPolicyApproval = projectAgentConfirmationPolicyCoverage.consume(toolCallId);
 			const inheritedDelegationApproval =
 				delegatedApprovalByToolCallId.get(toolCallId) ?? getInheritedSubagentApprovalScope();
-			const workflowModelLock = resolveWorkflowModelLock(ctx, pi.getThinkingLevel());
 
 			const makeDetails =
 				(mode: "single" | "parallel" | "chain") =>
@@ -3144,13 +3100,10 @@ export default function (pi: ExtensionAPI) {
 								agent: step.agent,
 								task: taskWithContext,
 								cwd: step.cwd,
-								model: step.model,
-								thinking: step.thinking,
 							},
 							i + 1,
 							signal,
 							chainUpdate,
-							workflowModelLock,
 							stepExecutionSettings,
 							resolveInheritedApprovalScopeForAgent(
 								inheritedDelegationApproval,
@@ -3233,8 +3186,6 @@ export default function (pi: ExtensionAPI) {
 									agent: t.agent,
 									task: t.task,
 									cwd: t.cwd,
-									model: t.model,
-									thinking: t.thinking,
 								},
 								undefined,
 								signal,
@@ -3245,7 +3196,6 @@ export default function (pi: ExtensionAPI) {
 										emitParallelUpdate();
 									}
 								},
-								workflowModelLock,
 								taskExecutionSettings,
 								resolveInheritedApprovalScopeForAgent(
 									inheritedDelegationApproval,
@@ -3308,13 +3258,10 @@ export default function (pi: ExtensionAPI) {
 							agent: singleAgent,
 							task: singleTask,
 							cwd: item.cwd,
-							model: item.model,
-							thinking: item.thinking,
 						},
 						undefined,
 						signal,
 						onUpdate,
-						workflowModelLock,
 						taskExecutionSettings,
 						resolveInheritedApprovalScopeForAgent(
 							inheritedDelegationApproval,

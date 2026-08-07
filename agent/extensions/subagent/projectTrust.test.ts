@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
-import subagentExtension, { getProjectAgentTrustBlockReason, prepareSubagentArguments } from "./index.ts";
+import subagentExtension, {
+	getProjectAgentTrustBlockReason,
+	prepareSubagentArguments,
+	resolveConfiguredSubagentModelSelection,
+} from "./index.ts";
 
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
@@ -136,18 +140,32 @@ test("before_agent_start ignores project subagent settings unless the context is
 	});
 });
 
-test("canonical subagent parameters expose one mode selector and adapt legacy calls", () => {
+test("canonical subagent parameters keep model selection out of LLM tool calls and adapt legacy calls", () => {
 	const { tool } = registerSubagentTool();
 	assert.deepEqual(tool.parameters.required, ["mode", "items"]);
 	for (const legacySelector of ["agent", "task", "tasks", "chain", "cwd", "model", "thinking"]) {
 		assert.equal(legacySelector in tool.parameters.properties, false, `${legacySelector} must not be a top-level parameter`);
 	}
 
+	const itemProperties = tool.parameters.properties.items.items.properties;
+	assert.equal("model" in itemProperties, false, "model must not be a per-item parameter");
+	assert.equal("thinking" in itemProperties, false, "thinking must not be a per-item parameter");
+
 	assert.deepEqual(
 		prepareSubagentArguments({ agent: "scout", task: "Inspect auth", cwd: "packages/auth", model: "test/model" }),
 		{
 			mode: "single",
-			items: [{ agent: "scout", task: "Inspect auth", cwd: "packages/auth", model: "test/model" }],
+			items: [{ agent: "scout", task: "Inspect auth", cwd: "packages/auth" }],
+		},
+	);
+	assert.deepEqual(
+		prepareSubagentArguments({
+			mode: "single",
+			items: [{ agent: "scout", task: "Inspect auth", model: "provider/model", thinking: "minimal" }],
+		}),
+		{
+			mode: "single",
+			items: [{ agent: "scout", task: "Inspect auth" }],
 		},
 	);
 	assert.deepEqual(
@@ -168,6 +186,18 @@ test("canonical subagent parameters expose one mode selector and adapt legacy ca
 			items: [{ agent: "planner", task: "Plan from: {previous}" }],
 		},
 	);
+});
+
+test("child model selection uses only local agent defaults", () => {
+	assert.deepEqual(
+		resolveConfiguredSubagentModelSelection("scout", {
+			agentDefaults: {
+				scout: { model: "github-copilot/gpt-5.6-luna", thinking: "high" },
+			},
+		}),
+		{ model: "github-copilot/gpt-5.6-luna", thinking: "high" },
+	);
+	assert.deepEqual(resolveConfiguredSubagentModelSelection("reviewer-readonly", { agentDefaults: {} }), {});
 });
 
 test("invalid canonical subagent requests reject from execute before child work starts", async () => {

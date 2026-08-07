@@ -79,13 +79,13 @@ Every call uses one canonical shape:
 - `parallel` runs independent items subject to the configured concurrency and task limits.
 - `chain` runs items sequentially; `{previous}` is replaced with the preceding item's final output.
 
-Do not send top-level `agent`, `task`, `tasks`, `chain`, `cwd`, `model`, or `thinking` fields. They are not part of the current schema; per-child configuration belongs in an item. Existing saved sessions using the old shapes are adapted before validation.
+Do not send top-level `agent`, `task`, `tasks`, `chain`, `cwd`, `model`, or `thinking` fields. Items accept only `agent`, `task`, and optional `cwd`. Existing saved sessions using older shapes are adapted before validation; historical per-item `model` and `thinking` values are removed so they follow the current settings-owned policy.
 
 Per-item optional fields:
 
 - `cwd` - child working directory, resolved relative to the parent working directory.
-- `model` - child model override using the same values as `pi --model`.
-- `thinking` - `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+
+Model and thinking are intentionally not tool-call parameters.
 
 Top-level optional fields:
 
@@ -96,7 +96,7 @@ Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewe
 
 ## Agents and project trust
 
-Agents are Markdown files with frontmatter such as `name`, `description`, `tools`, `model`, and `thinking`. A declared `tools` list controls the tools available to that child.
+Agents are Markdown files with frontmatter such as `name`, `description`, and `tools`. A declared `tools` list controls the tools available to that child. Model and thinking settings belong in `settings.json`, not agent frontmatter.
 
 User agents are loaded by default. Project agents require `agentScope: "project"` or `"both"`, a trusted project, and usually confirmation. `confirmProjectAgents: false` skips only the extra agent-source confirmation; it does not bypass trust or policy checks.
 
@@ -133,12 +133,12 @@ Concurrency limits are per call, not extension-wide. Pi may run sibling `subagen
 
 `maxDelegationDepth: null` means unlimited. `0` blocks delegation. An inherited approval scope is `none`, `read-only`, or `all`; agents without a declared tool list are treated as write-capable.
 
-Model and thinking selection use this order:
+Model and thinking selection are settings-owned:
 
-1. tool-call override;
-2. `agentDefaults`;
-3. agent frontmatter;
-4. workflow-start model and thinking settings.
+1. `subagents.agentDefaults.<agent>` from the effective local settings; or
+2. the child Pi process's ordinary `defaultProvider`, `defaultModel`, and `defaultThinkingLevel` settings when that agent has no configured default.
+
+The parent session's current model/thinking, agent frontmatter, and all tool-call values are ignored for child model selection. This prevents a provider from changing child configuration by serializing optional tool fields.
 
 ## Policy modes
 
@@ -165,5 +165,6 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
 - **Too many tasks:** raise `maxParallelTasks` or reduce the `items` length for a `parallel` call.
+- **Unexpected child model/thinking:** set `subagents.agentDefaults.<agent>` in `settings.json`, or set Pi's ordinary `defaultProvider`, `defaultModel`, and `defaultThinkingLevel` for agents without an entry.
 - **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
 - **Output truncated:** open the temporary file shown in the result marker.

@@ -1,8 +1,6 @@
 ---
 name: reviewer
 description: Code review specialist for quality, correctness, and security analysis
-model: openai-codex/gpt-5.6-sol
-thinking: high
 tools: read, grep, find, ls, bash, write, subagent, escalate_to_parent
 ---
 
