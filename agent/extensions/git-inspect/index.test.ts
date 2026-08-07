@@ -29,6 +29,11 @@ function registerGitInspectTool(): ToolDefinition<any, any, any> {
 	return tool;
 }
 
+test("git_inspect exposes only operation as required in its TypeBox schema", () => {
+	const tool = registerGitInspectTool();
+	assert.deepEqual(tool.parameters.required, ["operation"]);
+});
+
 test("git_inspect maps only fixed, hardened Git argv for supported inspection operations", () => {
 	const workingDiff = buildGitInspectionInvocation(
 		{ operation: "working_diff", paths: ["src/example.ts"] },
@@ -78,6 +83,56 @@ test("git_inspect maps only fixed, hardened Git argv for supported inspection op
 		"--max-count=12",
 		"feature/review~2",
 	]);
+});
+
+test("git_inspect prepares adapter-shaped calls by retaining only fields accepted by each operation", () => {
+	const tool = registerGitInspectTool();
+	assert.ok(tool.prepareArguments, "git_inspect must prepare adapter-shaped arguments");
+	const prepare = tool.prepareArguments;
+	const adapterFields = {
+		revision: "HEAD",
+		base: "main",
+		head: "HEAD",
+		paths: ["src/example.ts"],
+		maxCount: 20,
+	};
+
+	assert.deepEqual(prepare({ operation: "repo_info", ...adapterFields }), { operation: "repo_info" });
+	assert.deepEqual(prepare({ operation: "status", ...adapterFields }), { operation: "status" });
+	assert.deepEqual(prepare({ operation: "list_refs", ...adapterFields }), { operation: "list_refs" });
+	assert.deepEqual(prepare({ operation: "log", ...adapterFields }), {
+		operation: "log",
+		revision: "HEAD",
+		maxCount: 20,
+	});
+	assert.deepEqual(prepare({ operation: "show_commit", ...adapterFields }), {
+		operation: "show_commit",
+		revision: "HEAD",
+	});
+	assert.deepEqual(prepare({ operation: "working_diff", ...adapterFields }), {
+		operation: "working_diff",
+		paths: ["src/example.ts"],
+	});
+	assert.deepEqual(prepare({ operation: "staged_diff", ...adapterFields }), {
+		operation: "staged_diff",
+		paths: ["src/example.ts"],
+	});
+	assert.deepEqual(prepare({ operation: "range_diff", ...adapterFields }), {
+		operation: "range_diff",
+		base: "main",
+		head: "HEAD",
+		paths: ["src/example.ts"],
+	});
+	assert.deepEqual(prepare({ operation: "file_history", ...adapterFields }), {
+		operation: "file_history",
+		revision: "HEAD",
+		paths: ["src/example.ts"],
+		maxCount: 20,
+	});
+	assert.deepEqual(prepare({ operation: "status", ...adapterFields, unexpected: true }), {
+		operation: "status",
+		unexpected: true,
+	});
 });
 
 test("git_inspect rejects command injection, unsafe revisions, unsafe paths, and irrelevant parameters", () => {
@@ -149,7 +204,7 @@ test("git_inspect bounds multiline failure diagnostics before exposing them to t
 	assert.ok(lineCount <= DEFAULT_MAX_LINES);
 });
 
-test("git_inspect executes status and a fixed working-tree diff without creating an index lock", async () => {
+test("git_inspect executes adapter-shaped status and working-tree diff calls without creating an index lock", async () => {
 	const repository = await mkdtemp(join(tmpdir(), "pi-git-inspect-"));
 	try {
 		await execFile("git", ["init", "--quiet", repository]);
@@ -162,9 +217,17 @@ test("git_inspect executes status and a fixed working-tree diff without creating
 		await writeFile(filePath, "after\n", "utf8");
 
 		const tool = registerGitInspectTool();
+		assert.ok(tool.prepareArguments, "git_inspect must prepare adapter-shaped arguments");
+		const adapterFields = {
+			revision: "HEAD",
+			base: "HEAD",
+			head: "HEAD",
+			paths: ["example.txt"],
+			maxCount: 1,
+		};
 		const statusResult = await tool.execute(
 			"git-inspect-status-test",
-			{ operation: "status" },
+			tool.prepareArguments({ operation: "status", ...adapterFields }),
 			undefined,
 			undefined,
 			{ cwd: repository } as any,
@@ -175,7 +238,7 @@ test("git_inspect executes status and a fixed working-tree diff without creating
 
 		const result = await tool.execute(
 			"git-inspect-diff-test",
-			{ operation: "working_diff", paths: ["example.txt"] },
+			tool.prepareArguments({ operation: "working_diff", ...adapterFields }),
 			undefined,
 			undefined,
 			{ cwd: repository } as any,
