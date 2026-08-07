@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
-import subagentExtension, { getProjectAgentTrustBlockReason } from "./index.ts";
+import subagentExtension, { getProjectAgentTrustBlockReason, prepareSubagentArguments } from "./index.ts";
 
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
@@ -136,26 +136,58 @@ test("before_agent_start ignores project subagent settings unless the context is
 	});
 });
 
-test("invalid subagent modes reject from execute before child work starts", async () => {
+test("canonical subagent parameters expose one mode selector and adapt legacy calls", () => {
+	const { tool } = registerSubagentTool();
+	assert.deepEqual(tool.parameters.required, ["mode", "items"]);
+	for (const legacySelector of ["agent", "task", "tasks", "chain", "cwd", "model", "thinking"]) {
+		assert.equal(legacySelector in tool.parameters.properties, false, `${legacySelector} must not be a top-level parameter`);
+	}
+
+	assert.deepEqual(
+		prepareSubagentArguments({ agent: "scout", task: "Inspect auth", cwd: "packages/auth", model: "test/model" }),
+		{
+			mode: "single",
+			items: [{ agent: "scout", task: "Inspect auth", cwd: "packages/auth", model: "test/model" }],
+		},
+	);
+	assert.deepEqual(
+		prepareSubagentArguments({
+			tasks: [{ agent: "scout", task: "Inspect auth" }],
+			agentScope: "both",
+		}),
+		{
+			mode: "parallel",
+			items: [{ agent: "scout", task: "Inspect auth" }],
+			agentScope: "both",
+		},
+	);
+	assert.deepEqual(
+		prepareSubagentArguments({ chain: [{ agent: "planner", task: "Plan from: {previous}" }] }),
+		{
+			mode: "chain",
+			items: [{ agent: "planner", task: "Plan from: {previous}" }],
+		},
+	);
+});
+
+test("invalid canonical subagent requests reject from execute before child work starts", async () => {
 	const { tool } = registerSubagentTool();
 	const cwd = mkdtempSync(path.join(tmpdir(), "pi-subagent-invalid-modes-"));
 	try {
 		const { ctx } = createCtx(cwd, true);
 		const invalidParams = [
-			{ agent: "scout", task: "Do not run", tasks: [{ agent: "scout", task: "Do not run" }] },
-			{ agent: "scout", task: "Do not run", chain: [{ agent: "scout", task: "Do not run" }] },
-			{ agent: "scout", task: "Do not run", tasks: [] },
 			{},
-			{ agent: "scout" },
-			{ task: "Do not run" },
-			{ tasks: [] },
-			{ chain: [] },
+			{ mode: "parallel", items: [] },
+			{ mode: "single", items: [{ agent: "scout", task: "Do not run" }, { agent: "scout", task: "Do not run" }] },
+			{ mode: "invalid", items: [{ agent: "scout", task: "Do not run" }] },
+			{ mode: "parallel", items: [{ agent: "", task: "Do not run" }] },
+			{ mode: "chain", items: [{ agent: "scout", task: " \t\n" }] },
 		];
 
 		for (const params of invalidParams) {
 			await assert.rejects(
 				() => tool.execute("invalid-mode-test", params, new AbortController().signal, undefined, ctx),
-				/Invalid parameters\. Provide exactly one mode\./,
+				/Invalid parameters\./,
 			);
 		}
 	} finally {
@@ -176,7 +208,8 @@ test("parallel task limits reject from execute with configured-limit guidance", 
 				tool.execute(
 					"parallel-limit-test",
 					{
-						tasks: [
+						mode: "parallel",
+						items: [
 							{ agent: "scout", task: "Do not run" },
 							{ agent: "scout", task: "Do not run" },
 						],
@@ -207,9 +240,8 @@ test("structural project-agent calls reach execute only to reject before policy 
 		assert.ok(toolCallHandler, "subagent tool_call handler should be registered");
 
 		const malformed = {
-			agent: "repo-reviewer",
-			task: "Do not run",
-			tasks: [],
+			mode: "single",
+			items: [],
 			agentScope: "project",
 		};
 		const malformedCtx = createCtx(cwd, true, true);
@@ -219,7 +251,7 @@ test("structural project-agent calls reach execute only to reject before policy 
 		);
 		await assert.rejects(
 			() => tool.execute("malformed-project", malformed, new AbortController().signal, undefined, malformedCtx.ctx),
-			/Invalid parameters\. Provide exactly one mode\./,
+			/Invalid parameters\./,
 		);
 		assert.equal(malformedCtx.getTrustChecks(), 0, "malformed modes should reject before trust checks");
 		assert.deepEqual(malformedCtx.getLifecycleSideEffects(), {
@@ -229,31 +261,35 @@ test("structural project-agent calls reach execute only to reject before policy 
 		});
 
 		const malformedProjectEntries = [
-			{ agent: "", task: "Do not run", agentScope: "project" },
-			{ agent: "repo-reviewer", task: " \t\n", agentScope: "project" },
+			{ mode: "single", items: [{ agent: "", task: "Do not run" }], agentScope: "project" },
+			{ mode: "single", items: [{ agent: "repo-reviewer", task: " \t\n" }], agentScope: "project" },
 			{
-				tasks: [
+				mode: "parallel",
+				items: [
 					{ agent: "repo-reviewer", task: "Do not run" },
 					{ agent: " \t", task: "Do not run" },
 				],
 				agentScope: "project",
 			},
 			{
-				tasks: [
+				mode: "parallel",
+				items: [
 					{ agent: "repo-reviewer", task: "Do not run" },
 					{ agent: "repo-reviewer", task: "" },
 				],
 				agentScope: "project",
 			},
 			{
-				chain: [
+				mode: "chain",
+				items: [
 					{ agent: "repo-reviewer", task: "Do not run" },
 					{ agent: "", task: "Do not run" },
 				],
 				agentScope: "project",
 			},
 			{
-				chain: [
+				mode: "chain",
+				items: [
 					{ agent: "repo-reviewer", task: "Do not run" },
 					{ agent: "repo-reviewer", task: "\n  " },
 				],
@@ -271,7 +307,7 @@ test("structural project-agent calls reach execute only to reject before policy 
 			);
 			await assert.rejects(
 				() => tool.execute(`malformed-entry-${index}`, malformedEntry, new AbortController().signal, undefined, entryCtx.ctx),
-				/Invalid parameters\. Provide exactly one mode\./,
+				/Invalid parameters\./,
 			);
 			assert.equal(entryCtx.getTrustChecks(), 0, "malformed entries should reject before trust checks");
 			assert.deepEqual(entryCtx.getLifecycleSideEffects(), {
@@ -282,7 +318,8 @@ test("structural project-agent calls reach execute only to reject before policy 
 		}
 
 		const overLimit = {
-			tasks: [
+			mode: "parallel",
+			items: [
 				{ agent: "repo-reviewer", task: "Do not run A" },
 				{ agent: "repo-reviewer", task: "Do not run B" },
 			],
@@ -316,8 +353,8 @@ test("project-local agent scopes are blocked when the project is not trusted", a
 				tool.execute(
 					"trust-test",
 					{
-						agent: "local-agent",
-						task: "Do not run",
+						mode: "single",
+						items: [{ agent: "local-agent", task: "Do not run" }],
 						agentScope: "project",
 						confirmProjectAgents: false,
 					},
@@ -346,8 +383,8 @@ test("tool_call policy blocks project-local scopes before runtime discovery when
 				toolName: "subagent",
 				toolCallId: "trust-policy-test",
 				input: {
-					agent: "local-agent",
-					task: "Do not discover",
+					mode: "single",
+					items: [{ agent: "local-agent", task: "Do not discover" }],
 					agentScope: "both",
 					confirmProjectAgents: false,
 				},

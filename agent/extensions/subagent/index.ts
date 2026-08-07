@@ -332,73 +332,112 @@ function resolveEffectiveSubagentModelSelection(
 	};
 }
 
-function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
-	if (Array.isArray(params.chain)) {
-		return params.chain
-			.filter(isRecord)
-			.map((step) => ({
-				agent: normalizeNonEmptyString(step.agent) ?? "",
-				task: normalizeNonEmptyString(step.task) ?? "",
-				cwd: normalizeNonEmptyString(step.cwd),
-				model: normalizeNonEmptyString(step.model),
-				thinking: normalizeThinkingLevel(step.thinking),
-			}))
-			.filter((step) => step.agent && step.task);
-	}
-	if (Array.isArray(params.tasks)) {
-		return params.tasks
-			.filter(isRecord)
-			.map((task) => ({
-				agent: normalizeNonEmptyString(task.agent) ?? "",
-				task: normalizeNonEmptyString(task.task) ?? "",
-				cwd: normalizeNonEmptyString(task.cwd),
-				model: normalizeNonEmptyString(task.model),
-				thinking: normalizeThinkingLevel(task.thinking),
-			}))
-			.filter((task) => task.agent && task.task);
-	}
-	if (typeof params.agent === "string" && typeof params.task === "string") {
-		return [
-			{
-				agent: normalizeNonEmptyString(params.agent) ?? "",
-				task: normalizeNonEmptyString(params.task) ?? "",
-				cwd: normalizeNonEmptyString(params.cwd),
-				model: normalizeNonEmptyString(params.model),
-				thinking: normalizeThinkingLevel(params.thinking),
-			},
-		].filter((task) => task.agent && task.task);
-	}
-	return [];
+const SUBAGENT_MODES = ["single", "parallel", "chain"] as const satisfies readonly SubagentRequestMode[];
+const LEGACY_SUBAGENT_SELECTOR_FIELDS = ["agent", "task", "cwd", "model", "thinking", "tasks", "chain"] as const;
+
+function isSubagentRequestMode(value: unknown): value is SubagentRequestMode {
+	return typeof value === "string" && SUBAGENT_MODES.includes(value as SubagentRequestMode);
 }
 
-function getSubagentRequestMode(params: Record<string, any>): SubagentRequestMode | null {
+function getLegacySubagentRequestMode(params: Record<string, any>): SubagentRequestMode | null {
 	const hasSingleFields = params.agent !== undefined || params.task !== undefined;
 	const hasTasksField = params.tasks !== undefined;
 	const hasChainField = params.chain !== undefined;
 	const modeFieldCount = Number(hasSingleFields) + Number(hasTasksField) + Number(hasChainField);
 
 	if (modeFieldCount !== 1) return null;
-	if (hasSingleFields) return params.agent && params.task ? "single" : null;
-	if (hasTasksField) return Array.isArray(params.tasks) && params.tasks.length > 0 ? "parallel" : null;
-	return Array.isArray(params.chain) && params.chain.length > 0 ? "chain" : null;
+	if (hasSingleFields) return "single";
+	return hasTasksField ? "parallel" : "chain";
+}
+
+/**
+ * Converts saved calls made with the pre-canonical API into the current shape
+ * before validation. New model-facing schemas expose only `mode` and `items`.
+ */
+export function prepareSubagentArguments(args: unknown): unknown {
+	if (!isRecord(args) || args.mode !== undefined || args.items !== undefined) return args;
+
+	const legacyMode = getLegacySubagentRequestMode(args);
+	if (!legacyMode) return args;
+
+	const { agent, task, cwd, model, thinking, tasks, chain, ...common } = args;
+	if (legacyMode === "single") {
+		return {
+			...common,
+			mode: "single",
+			items: [{ agent, task, ...(cwd !== undefined ? { cwd } : {}), ...(model !== undefined ? { model } : {}), ...(thinking !== undefined ? { thinking } : {}) }],
+		};
+	}
+	return {
+		...common,
+		mode: legacyMode,
+		items: legacyMode === "parallel" ? tasks : chain,
+	};
+}
+
+function normalizeSubagentToolInput(input: Record<string, any>): void {
+	const prepared = prepareSubagentArguments(input);
+	if (!isRecord(prepared) || prepared === input) return;
+	for (const key of Object.keys(input)) delete input[key];
+	Object.assign(input, prepared);
+}
+
+function getRequestedTasks(params: Record<string, any>): RequestedTask[] {
+	if (!Array.isArray(params.items)) return [];
+	return params.items
+		.filter(isRecord)
+		.map((item) => ({
+			agent: normalizeNonEmptyString(item.agent) ?? "",
+			task: normalizeNonEmptyString(item.task) ?? "",
+			cwd: normalizeNonEmptyString(item.cwd),
+			model: normalizeNonEmptyString(item.model),
+			thinking: normalizeThinkingLevel(item.thinking),
+		}))
+		.filter((item) => item.agent && item.task);
+}
+
+function getSubagentRequestMode(params: Record<string, any>): SubagentRequestMode | null {
+	return isSubagentRequestMode(params.mode) ? params.mode : null;
 }
 
 function getSubagentStructuralError(params: Record<string, any>, maxParallelTasks?: number): string | null {
+	if (LEGACY_SUBAGENT_SELECTOR_FIELDS.some((field) => params[field] !== undefined)) {
+		return "Invalid parameters. Use mode and items; do not send legacy agent, task, tasks, or chain fields.";
+	}
+
 	const mode = getSubagentRequestMode(params);
-	if (!mode) return "Invalid parameters. Provide exactly one mode.";
+	if (!mode || !Array.isArray(params.items) || params.items.length === 0) {
+		return "Invalid parameters. Provide mode (single, parallel, or chain) and a non-empty items array.";
+	}
+	if (mode === "single" && params.items.length !== 1) {
+		return 'Invalid parameters. mode="single" requires exactly one item.';
+	}
 
 	const requestedTasks = getRequestedTasks(params);
-	const expectedTaskCount = mode === "single" ? 1 : mode === "parallel" ? params.tasks.length : params.chain.length;
-	if (requestedTasks.length !== expectedTaskCount) return "Invalid parameters. Provide exactly one mode.";
+	if (requestedTasks.length !== params.items.length) {
+		return "Invalid parameters. Every item must include non-empty agent and task values.";
+	}
 
-	if (mode === "parallel" && maxParallelTasks !== undefined && params.tasks.length > maxParallelTasks) {
-		return `Too many parallel tasks (${params.tasks.length}). Max is ${maxParallelTasks}. Configure via /subagents max-tasks <n> or settings.json subagents.maxParallelTasks.`;
+	if (mode === "parallel" && maxParallelTasks !== undefined && params.items.length > maxParallelTasks) {
+		return `Too many parallel tasks (${params.items.length}). Max is ${maxParallelTasks}. Configure via /subagents max-tasks <n> or settings.json subagents.maxParallelTasks.`;
 	}
 	return null;
 }
 
 function getRequestMode(params: Record<string, any>): SubagentRequestMode {
 	return getSubagentRequestMode(params) ?? "single";
+}
+
+function getSubagentDisplayMode(params: Record<string, any>): SubagentRequestMode | null {
+	return getSubagentRequestMode(params) ?? getLegacySubagentRequestMode(params);
+}
+
+function getSubagentDisplayItems(params: Record<string, any>, mode: SubagentRequestMode | null): Record<string, any>[] {
+	if (Array.isArray(params.items)) return params.items.filter(isRecord);
+	if (mode === "parallel" && Array.isArray(params.tasks)) return params.tasks.filter(isRecord);
+	if (mode === "chain" && Array.isArray(params.chain)) return params.chain.filter(isRecord);
+	if (mode === "single" && isRecord(params)) return [params];
+	return [];
 }
 
 function resolveExecutionCwd(defaultCwd: string, requestedCwd: string | undefined): string {
@@ -1650,33 +1689,28 @@ function getSubagentRootLabel(details: SubagentDetails): string {
 }
 
 function getSubagentCallLabel(args: Record<string, any>): string {
-	if (Array.isArray(args.chain) && args.chain.length > 0) return `subagent chain (${args.chain.length} step${args.chain.length === 1 ? "" : "s"})`;
-	if (Array.isArray(args.tasks) && args.tasks.length > 0) return `subagent parallel (${args.tasks.length} task${args.tasks.length === 1 ? "" : "s"})`;
-	if (typeof args.agent === "string" && args.agent.trim()) return `subagent ${args.agent.trim()}`;
-	return "subagent";
+	return getSubagentCallLabelFromUx(args);
 }
 
 function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNode[] {
-	if (Array.isArray(args.chain) && args.chain.length > 0) {
-		return args.chain.filter(isRecord).map((step, index) => ({
-			label: `step ${index + 1}: ${typeof step.agent === "string" ? step.agent : "unknown"}`,
-			status: "running" as const,
-			task: typeof step.task === "string" ? step.task.replace(/\{previous\}/g, "").trim() : undefined,
-			children: [],
-		}));
-	}
-	if (Array.isArray(args.tasks) && args.tasks.length > 0) {
-		return args.tasks.filter(isRecord).map((task) => ({
-			label: typeof task.agent === "string" ? task.agent : "unknown",
-			status: "running" as const,
-			task: typeof task.task === "string" ? task.task : undefined,
-			children: [],
-		}));
-	}
-	if (typeof args.agent === "string" && typeof args.task === "string") {
-		return [{ label: args.agent, status: "running" as const, task: args.task, children: [] }];
-	}
-	return [];
+	const mode = getSubagentDisplayMode(args);
+	const items = getSubagentDisplayItems(args, mode);
+	return items.map((item, index) => ({
+		label:
+			mode === "chain"
+				? `step ${index + 1}: ${typeof item.agent === "string" ? item.agent : "unknown"}`
+				: typeof item.agent === "string"
+					? item.agent
+					: "unknown",
+		status: "running" as const,
+		task:
+			typeof item.task === "string"
+				? mode === "chain"
+					? item.task.replace(/\{previous\}/g, "").trim()
+					: item.task
+				: undefined,
+		children: [],
+	}));
 }
 
 function getToolResultsByCallId(messages: Message[]): Map<string, ToolResultMessage> {
@@ -2122,11 +2156,14 @@ async function runSingleAgent(
 	}
 }
 
-const TaskItem = Type.Object({
+const DelegationItem = Type.Object({
 	agent: Type.String({
 		description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 	}),
-	task: Type.String({ description: "Task to delegate to the agent" }),
+	task: Type.String({
+		description:
+			"Task to delegate. In chain mode, use {previous} to include the preceding item's final output.",
+	}),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 	model: Type.Optional(
 		Type.String({
@@ -2142,35 +2179,11 @@ const TaskItem = Type.Object({
 	),
 });
 
-const ChainItem = Type.Object({
-	agent: Type.String({
-		description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
-	}),
-	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	model: Type.Optional(
-		Type.String({
-			description:
-				"Optional model override for this step. Accepts the same values as pi --model, such as provider/id or a model alias.",
-		}),
-	),
-	thinking: Type.Optional(
-		StringEnum(THINKING_LEVEL_VALUES, {
-			description:
-				"Optional thinking level override for this step. Defaults to the workflow lock unless overridden here or in agent frontmatter.",
-		}),
-	),
-});
-
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
 	default: "user",
 });
 
-const ThinkingLevelSchema = StringEnum(THINKING_LEVEL_VALUES, {
-	description:
-		"Optional thinking level override. Defaults to the workflow-start thinking level unless overridden here or in agent frontmatter.",
-});
 
 const EscalationOptionSchema = Type.Object({
 	label: Type.String({
@@ -2217,26 +2230,19 @@ const ParentEscalationParams = Type.Object({
 });
 
 const SubagentParams = Type.Object({
-	agent: Type.Optional(
-		Type.String({
-			description: "Name of the agent to invoke for single mode. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
-		}),
-	),
-	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
-	model: Type.Optional(
-		Type.String({
-			description:
-				"Optional model override for single mode. Accepts the same values as pi --model, such as provider/id or a model alias.",
-		}),
-	),
-	thinking: Type.Optional(ThinkingLevelSchema),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
+	mode: StringEnum(SUBAGENT_MODES, {
+		description:
+			'Execution mode. "single" requires exactly one item; "parallel" runs independent items concurrently; "chain" runs items sequentially and supports {previous}.',
+	}),
+	items: Type.Array(DelegationItem, {
+		minItems: 1,
+		description:
+			"The complete delegated work list. Use exactly one item for single mode. Do not send agent, task, tasks, or chain at the top level.",
+	}),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
 	),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
 });
 
 export function resolveDelegatedApprovalScopeForPolicy(
@@ -2603,6 +2609,7 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 		if (event.toolName !== "subagent" || !isRecord(event.input)) return undefined;
+		normalizeSubagentToolInput(event.input);
 		projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
 
 		if (getSubagentStructuralError(event.input)) return undefined;
@@ -2976,7 +2983,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Subagent",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
+			"Use one canonical request shape: mode (single, parallel, or chain) plus a non-empty items array. Single mode requires exactly one item; chain supports {previous}.",
 			"Per-subagent model and thinking overrides are supported; otherwise child sessions inherit the workflow-start model and thinking level.",
 			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
 			"Default policy mode is ask: valid explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
@@ -2987,8 +2994,8 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when non-trivial work clearly benefits from isolated delegation under the current policy mode.",
 			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for subagent review.",
-			"Use subagent with the tasks parameter when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
-			"Use exactly one subagent mode per call. Do not mix agent/task with tasks or chain, and omit unused mode fields instead of empty placeholders.",
+			"Use subagent with mode=parallel and multiple items when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",
+			"For subagent, always send one mode and one non-empty items array. Do not send top-level agent, task, tasks, chain, cwd, model, or thinking fields; per-child cwd, model, and thinking belong in an item.",
 			"When the user specifies different speed, cost, or reasoning expectations per subagent, pass model and thinking overrides in the subagent call instead of relying on the current global /model setting.",
 			"If a delegated subagent requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
@@ -2996,6 +3003,9 @@ export default function (pi: ExtensionAPI) {
 			`Use subagent agentScope set to both only when project-local agents under ${PROJECT_AGENTS_DISPLAY_PATH} are needed and the repository is trusted.`,
 		],
 		parameters: SubagentParams,
+		prepareArguments(args) {
+			return prepareSubagentArguments(args) as any;
+		},
 
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			if (signal?.aborted) throw createAbortError();
@@ -3096,13 +3106,13 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			if (requestMode === "chain" && params.chain) {
+			if (requestMode === "chain") {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
 
-				for (let i = 0; i < params.chain.length; i++) {
+				for (let i = 0; i < params.items.length; i++) {
 					if (signal?.aborted) throw createAbortError();
-					const step = params.chain[i];
+					const step = params.items[i];
 					const stepDiscovery = resolveDiscovery(step.cwd);
 					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
 
@@ -3174,16 +3184,16 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if (requestMode === "parallel" && params.tasks) {
+			if (requestMode === "parallel") {
 				// Track all results for streaming updates
-				const allResults: SingleResult[] = new Array(params.tasks.length);
+				const allResults: SingleResult[] = new Array(params.items.length);
 
 				// Initialize placeholder results
-				for (let i = 0; i < params.tasks.length; i++) {
+				for (let i = 0; i < params.items.length; i++) {
 					allResults[i] = {
-						agent: params.tasks[i].agent,
+						agent: params.items[i].agent,
 						agentSource: "unknown",
-						task: params.tasks[i].task,
+						task: params.items[i].task,
 						exitCode: -1, // -1 = still running
 						messages: [],
 						stderr: "",
@@ -3206,7 +3216,7 @@ export default function (pi: ExtensionAPI) {
 				};
 
 				const results = await mapWithConcurrencyLimit(
-					params.tasks,
+					params.items,
 					executionSettings.limits.maxConcurrency,
 					async (t, index) => {
 						const taskDiscovery = resolveDiscovery(t.cwd);
@@ -3280,13 +3290,14 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if (params.agent && params.task) {
-				const singleAgent = params.agent;
-				const singleTask = params.task;
-				const taskDiscovery = resolveDiscovery(params.cwd);
+			if (requestMode === "single") {
+				const item = params.items[0];
+				const singleAgent = item.agent;
+				const singleTask = item.task;
+				const taskDiscovery = resolveDiscovery(item.cwd);
 				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
 					ctx.cwd,
-					params.cwd,
+					item.cwd,
 					settingsLoadOptions,
 				);
 				const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
@@ -3296,9 +3307,9 @@ export default function (pi: ExtensionAPI) {
 						{
 							agent: singleAgent,
 							task: singleTask,
-							cwd: params.cwd,
-							model: params.model,
-							thinking: params.thinking,
+							cwd: item.cwd,
+							model: item.model,
+							thinking: item.thinking,
 						},
 						undefined,
 						signal,
@@ -3330,52 +3341,52 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			throw new Error("Invalid parameters. Provide exactly one mode.");
+			throw new Error("Invalid parameters. Provide mode (single, parallel, or chain) and a non-empty items array.");
 		},
 
 		renderCall(args, theme, context) {
-			const isSingleCall = typeof args.agent === "string" && typeof args.task === "string";
-			const isParallelCall = Array.isArray(args.tasks) && args.tasks.length > 0;
-			const isChainCall = Array.isArray(args.chain) && args.chain.length > 0;
-			if ((isSingleCall || isParallelCall || isChainCall) && context.executionStarted) {
-				return new Container();
-			}
+			const mode = getSubagentDisplayMode(args);
+			const items = getSubagentDisplayItems(args, mode);
+			if (mode && items.length > 0 && context.executionStarted) return new Container();
 
 			const scope: AgentScope = args.agentScope ?? "user";
-			if (args.chain && args.chain.length > 0) {
+			if (mode === "chain") {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `chain (${args.chain.length} steps)`) +
+					theme.fg("accent", `chain (${items.length} steps)`) +
 					theme.fg("muted", ` [${scope}]`);
-				for (let i = 0; i < Math.min(args.chain.length, 3); i++) {
-					const step = args.chain[i];
-					// Clean up {previous} placeholder for display
-					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
+				for (let i = 0; i < Math.min(items.length, 3); i++) {
+					const step = items[i];
+					const task = typeof step.task === "string" ? step.task : "...";
+					const cleanTask = task.replace(/\{previous\}/g, "").trim();
 					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask;
 					text +=
 						"\n  " +
 						theme.fg("muted", `${i + 1}.`) +
 						" " +
-						theme.fg("accent", step.agent) +
+						theme.fg("accent", typeof step.agent === "string" ? step.agent : "...") +
 						theme.fg("dim", ` ${preview}`);
 				}
-				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
+				if (items.length > 3) text += `\n  ${theme.fg("muted", `... +${items.length - 3} more`)}`;
 				return new Text(text, 0, 0);
 			}
-			if (args.tasks && args.tasks.length > 0) {
+			if (mode === "parallel") {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `parallel (${args.tasks.length} tasks)`) +
+					theme.fg("accent", `parallel (${items.length} tasks)`) +
 					theme.fg("muted", ` [${scope}]`);
-				for (const t of args.tasks.slice(0, 3)) {
-					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task;
-					text += `\n  ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
+				for (const item of items.slice(0, 3)) {
+					const task = typeof item.task === "string" ? item.task : "...";
+					const preview = task.length > 40 ? `${task.slice(0, 40)}...` : task;
+					text += `\n  ${theme.fg("accent", typeof item.agent === "string" ? item.agent : "...")}${theme.fg("dim", ` ${preview}`)}`;
 				}
-				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
+				if (items.length > 3) text += `\n  ${theme.fg("muted", `... +${items.length - 3} more`)}`;
 				return new Text(text, 0, 0);
 			}
-			const agentName = args.agent || "...";
-			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "...";
+			const item = items[0];
+			const agentName = typeof item?.agent === "string" ? item.agent : "...";
+			const task = typeof item?.task === "string" ? item.task : "...";
+			const preview = task.length > 60 ? `${task.slice(0, 60)}...` : task;
 			let text =
 				theme.fg("toolTitle", theme.bold("subagent ")) +
 				theme.fg("accent", agentName) +

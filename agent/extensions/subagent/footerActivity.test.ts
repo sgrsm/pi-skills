@@ -81,7 +81,8 @@ test("nested subagent footer activity uses child-reported running and queued act
 								id: "nested-a",
 								name: "subagent",
 								arguments: {
-									tasks: Array.from({ length: 7 }, (_, index) => ({ agent: `worker-${index}`, task: "go" })),
+									mode: "parallel",
+									items: Array.from({ length: 7 }, (_, index) => ({ agent: `worker-${index}`, task: "go" })),
 								},
 							},
 						],
@@ -110,11 +111,12 @@ test("nested subagent footer activity can produce requested nested example", () 
 	assert.equal(formatSubagentRuntimeActivityStatus(tracker.snapshot()), "r:2→3|q:2→4");
 });
 
-test("countInitialSubagentTasks counts requested work by mode", () => {
-	assert.equal(countInitialSubagentTasks({ agent: "worker", task: "do one thing" }), 1);
+test("countInitialSubagentTasks counts canonical requested work by mode", () => {
+	assert.equal(countInitialSubagentTasks({ mode: "single", items: [{ agent: "worker", task: "do one thing" }] }), 1);
 	assert.equal(
 		countInitialSubagentTasks({
-			tasks: [
+			mode: "parallel",
+			items: [
 				{ agent: "scout", task: "inspect" },
 				{ agent: "planner", task: "plan" },
 			],
@@ -123,19 +125,21 @@ test("countInitialSubagentTasks counts requested work by mode", () => {
 	);
 	assert.equal(
 		countInitialSubagentTasks({
-			chain: [
+			mode: "chain",
+			items: [
 				{ agent: "scout", task: "inspect" },
 				{ agent: "planner", task: "plan from {previous}" },
 			],
 		}),
 		2,
 	);
-	assert.equal(
-		countInitialSubagentTasks({ chain: [], tasks: [{ agent: "worker", task: "fallback" }] }),
-		1,
-	);
-	assert.equal(countInitialSubagentTasks({ agent: "", task: "missing agent" }), 0);
+	assert.equal(countInitialSubagentTasks({ mode: "parallel", items: [{ agent: "", task: "missing agent" }] }), 0);
 	assert.equal(countInitialSubagentTasks({}), 0);
+});
+
+test("countInitialSubagentTasks supports historical request shapes", () => {
+	assert.equal(countInitialSubagentTasks({ agent: "worker", task: "do one thing" }), 1);
+	assert.equal(countInitialSubagentTasks({ chain: [], tasks: [{ agent: "worker", task: "fallback" }] }), 1);
 });
 
 test("subagent footer source no longer contains the old depth indicator", async () => {

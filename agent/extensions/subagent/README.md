@@ -16,14 +16,18 @@ Use subagents for explicit delegation requests or non-trivial work that benefits
 Single agent:
 
 ```json
-{ "agent": "scout", "task": "Map the authentication package" }
+{
+  "mode": "single",
+  "items": [{ "agent": "scout", "task": "Map the authentication package" }]
+}
 ```
 
 Parallel investigation:
 
 ```json
 {
-  "tasks": [
+  "mode": "parallel",
+  "items": [
     { "agent": "scout", "task": "Inspect authentication" },
     { "agent": "reviewer-readonly", "task": "Review authentication tests" }
   ]
@@ -34,7 +38,8 @@ Sequential handoff:
 
 ```json
 {
-  "chain": [
+  "mode": "chain",
+  "items": [
     { "agent": "scout", "task": "Inspect the billing module" },
     { "agent": "planner", "task": "Plan improvements from: {previous}" }
   ]
@@ -66,19 +71,24 @@ Mode is saved in `~/.pi/agent/subagent-policy.json` by default. Limits are saved
 
 ## `subagent` tool
 
-A call must use exactly one mode:
+Every call uses one canonical shape:
 
-- `agent` and `task` for one child.
-- `tasks` for independent parallel children.
-- `chain` for sequential steps. `{previous}` is replaced with the preceding step's final output.
+- `mode` is required: `single`, `parallel`, or `chain`.
+- `items` is a required, non-empty array of child requests.
+- `single` requires exactly one item.
+- `parallel` runs independent items subject to the configured concurrency and task limits.
+- `chain` runs items sequentially; `{previous}` is replaced with the preceding item's final output.
 
-Mixed, incomplete, or empty modes are rejected as tool errors. `maxParallelTasks` applies only to non-empty `tasks` arrays; `chain` steps are sequential.
+Do not send top-level `agent`, `task`, `tasks`, `chain`, `cwd`, `model`, or `thinking` fields. They are not part of the current schema; per-child configuration belongs in an item. Existing saved sessions using the old shapes are adapted before validation.
 
-Optional fields:
+Per-item optional fields:
 
 - `cwd` - child working directory, resolved relative to the parent working directory.
-- `model` - per-child model override using the same values as `pi --model`.
+- `model` - child model override using the same values as `pi --model`.
 - `thinking` - `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+
+Top-level optional fields:
+
 - `agentScope` - `user` (default), `project`, or `both`.
 - `confirmProjectAgents` - whether to confirm before running project-controlled agents; defaults to `true`.
 
@@ -154,6 +164,6 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 - **Unknown agent:** check the agent name and configured agent scope.
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
-- **Too many tasks:** raise `maxParallelTasks` or reduce the `tasks` length.
+- **Too many tasks:** raise `maxParallelTasks` or reduce the `items` length for a `parallel` call.
 - **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
 - **Output truncated:** open the temporary file shown in the result marker.

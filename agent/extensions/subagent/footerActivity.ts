@@ -31,6 +31,15 @@ function hasRequestedTaskShape(value: unknown): boolean {
 
 export function countInitialSubagentTasks(params: unknown): number {
 	if (!isRecord(params)) return 0;
+	if (
+		(params.mode === "single" || params.mode === "parallel" || params.mode === "chain") &&
+		Array.isArray(params.items)
+	) {
+		return params.items.filter(hasRequestedTaskShape).length;
+	}
+
+	// Retain activity rendering for historical session entries recorded before
+	// the canonical mode/items request shape.
 	if (Array.isArray(params.chain) && params.chain.length > 0) {
 		return params.chain.filter(hasRequestedTaskShape).length;
 	}

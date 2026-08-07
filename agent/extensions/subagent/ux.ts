@@ -426,9 +426,12 @@ function getSubagentRootLabel(details: SubagentDetailsLike): string {
 }
 
 export function getSubagentCallLabel(args: Record<string, any>): string {
-	if (Array.isArray(args.chain) && args.chain.length > 0) return `subagent chain (${args.chain.length} step${args.chain.length === 1 ? "" : "s"})`;
-	if (Array.isArray(args.tasks) && args.tasks.length > 0) return `subagent parallel (${args.tasks.length} task${args.tasks.length === 1 ? "" : "s"})`;
-	if (typeof args.agent === "string" && args.agent.trim()) return `subagent ${args.agent.trim()}`;
+	const mode = getSubagentModeFromArgs(args);
+	const items = getSubagentItemsFromArgs(args, mode);
+	if (mode === "chain") return `subagent chain (${items.length} step${items.length === 1 ? "" : "s"})`;
+	if (mode === "parallel") return `subagent parallel (${items.length} task${items.length === 1 ? "" : "s"})`;
+	const agent = items[0]?.agent;
+	if (typeof agent === "string" && agent.trim()) return `subagent ${agent.trim()}`;
 	return "subagent";
 }
 
@@ -477,30 +480,38 @@ function buildRequestedChainStepActivityNode(step: Record<string, any>, index: n
 	};
 }
 
-function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNode[] {
-	if (Array.isArray(args.chain) && args.chain.length > 0) {
-		return args.chain
-			.filter(isRecord)
-			.map((step, index) => buildRequestedChainStepActivityNode(step, index, index === 0 ? "running" : "waiting"));
-	}
-	if (Array.isArray(args.tasks) && args.tasks.length > 0) {
-		return args.tasks.filter(isRecord).map((task) => ({
-			label: typeof task.agent === "string" ? task.agent : "unknown",
-			status: "running" as const,
-			task: typeof task.task === "string" ? task.task : undefined,
-			children: [],
-		}));
-	}
-	if (typeof args.agent === "string" && typeof args.task === "string") {
-		return [{ label: args.agent, status: "running" as const, task: args.task, children: [] }];
-	}
-	return [];
-}
-
 function getSubagentModeFromArgs(args: Record<string, any>): SubagentDetailsLike["mode"] {
+	if (args.mode === "single" || args.mode === "parallel" || args.mode === "chain") return args.mode;
 	if (Array.isArray(args.chain) && args.chain.length > 0) return "chain";
 	if (Array.isArray(args.tasks) && args.tasks.length > 0) return "parallel";
 	return "single";
+}
+
+function getSubagentItemsFromArgs(
+	args: Record<string, any>,
+	mode: SubagentDetailsLike["mode"],
+): Array<Record<string, any>> {
+	if (Array.isArray(args.items)) return args.items.filter(isRecord);
+
+	// Historical sessions retain their original call arguments, so support the
+	// pre-canonical shapes while rendering and calculating activity.
+	if (mode === "chain" && Array.isArray(args.chain)) return args.chain.filter(isRecord);
+	if (mode === "parallel" && Array.isArray(args.tasks)) return args.tasks.filter(isRecord);
+	return typeof args.agent === "string" && typeof args.task === "string" ? [args] : [];
+}
+
+function buildRequestedTaskActivityNodes(args: Record<string, any>): ActivityNode[] {
+	const mode = getSubagentModeFromArgs(args);
+	const items = getSubagentItemsFromArgs(args, mode);
+	if (mode === "chain") {
+		return items.map((step, index) => buildRequestedChainStepActivityNode(step, index, index === 0 ? "running" : "waiting"));
+	}
+	return items.map((item) => ({
+		label: typeof item.agent === "string" ? item.agent : "unknown",
+		status: "running" as const,
+		task: typeof item.task === "string" ? item.task : undefined,
+		children: [],
+	}));
 }
 
 function buildSubagentChildActivityNodes(
@@ -509,9 +520,9 @@ function buildSubagentChildActivityNodes(
 	details: SubagentDetailsLike | null,
 ): ActivityNode[] {
 	const children = details ? details.results.map(buildResultActivityNode) : buildRequestedTaskActivityNodes(args);
-	if (mode !== "chain" || !Array.isArray(args.chain)) return children;
+	if (mode !== "chain") return children;
 
-	const chainSteps = args.chain.filter(isRecord);
+	const chainSteps = getSubagentItemsFromArgs(args, mode);
 	for (let i = children.length; i < chainSteps.length; i++) {
 		children.push(buildRequestedChainStepActivityNode(chainSteps[i], i, "waiting"));
 	}

@@ -128,7 +128,8 @@ test("activity tree renders nested subagent hierarchy and escalation status", ()
 								id: "nested-subagent",
 								name: "subagent",
 								arguments: {
-									tasks: [
+									mode: "parallel",
+									items: [
 										{ agent: "scout", task: "gather context" },
 										{ agent: "planner", task: "suggest review angles" },
 									],
@@ -311,7 +312,8 @@ test("compact activity tree uses provided width to keep statuses on the same lin
 	};
 
 	const tree = formatSubagentActivityTree(details, (_color, text) => text, {
-		chain: [
+		mode: "chain",
+		items: [
 			{
 				agent: "worker",
 				task: "Implement the requested test refactor for module5_7. Scope: do not change production code. Refactor tests only.",
@@ -539,7 +541,8 @@ test("running chain uses compact view and flattens nested subagent rows", () => 
 	};
 
 	const tree = formatSubagentActivityTree(details, (_color, text) => text, {
-		chain: [
+		mode: "chain",
+		items: [
 			{ agent: "worker", task: "Implement finding-5 refactor in monthly-balancing" },
 			{ agent: "scout", task: "Verify generated config/tests" },
 			{ agent: "reviewer-readonly", task: "Review final diff and risks" },
