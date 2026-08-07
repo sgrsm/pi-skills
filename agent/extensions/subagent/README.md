@@ -100,6 +100,8 @@ Agents are Markdown files with frontmatter such as `name`, `description`, and `t
 
 User agents are loaded by default. Project agents require `agentScope: "project"` or `"both"`, a trusted project, and usually confirmation. `confirmProjectAgents: false` skips only the extra agent-source confirmation; it does not bypass trust or policy checks.
 
+Parent project trust applies to a child cwd only when its existing real path is inside the parent session cwd. An external (or unresolvable) child cwd blocks `project` and `both` scopes before its project agents are loaded. Use `agentScope: "user"` for external work; its target project settings and approval scopes are ignored, and the child starts with target project resources disabled (`--no-approve`).
+
 ## Child escalation
 
 Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool.

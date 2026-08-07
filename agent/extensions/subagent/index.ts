@@ -418,10 +418,46 @@ function resolveExecutionCwd(defaultCwd: string, requestedCwd: string | undefine
 	return normalized ? path.resolve(defaultCwd, normalized) : defaultCwd;
 }
 
-function getRequestExecutionCwds(defaultCwd: string, params: Record<string, any>): string[] {
+export interface ChildCwdTrustBoundary {
+	executionCwd: string;
+	reusesParentProjectTrust: boolean;
+}
+
+function isCanonicalDescendantOrSelf(candidate: string, parent: string): boolean {
+	const relative = path.relative(parent, candidate);
+	return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+/**
+ * Parent project trust is transferable only to existing child paths whose real
+ * locations remain inside the parent's real location. Missing or unresolvable
+ * paths fail closed as external.
+ */
+export function getChildCwdTrustBoundary(defaultCwd: string, requestedCwd: string | undefined): ChildCwdTrustBoundary {
+	const executionCwd = resolveExecutionCwd(defaultCwd, requestedCwd);
+	try {
+		const canonicalParentCwd = fs.realpathSync(defaultCwd);
+		const canonicalChildCwd = fs.realpathSync(executionCwd);
+		const reusesParentProjectTrust = isCanonicalDescendantOrSelf(canonicalChildCwd, canonicalParentCwd);
+		return {
+			executionCwd: reusesParentProjectTrust ? canonicalChildCwd : executionCwd,
+			reusesParentProjectTrust,
+		};
+	} catch {
+		return { executionCwd, reusesParentProjectTrust: false };
+	}
+}
+
+function getRequestChildCwdTrustBoundaries(defaultCwd: string, params: Record<string, any>): ChildCwdTrustBoundary[] {
 	const tasks = getRequestedTasks(params);
-	const cwds = tasks.length > 0 ? tasks.map((task) => resolveExecutionCwd(defaultCwd, task.cwd)) : [defaultCwd];
-	return Array.from(new Set(cwds));
+	const childCwds = tasks.length > 0
+		? tasks.map((task) => getChildCwdTrustBoundary(defaultCwd, task.cwd))
+		: [getChildCwdTrustBoundary(defaultCwd, undefined)];
+	return Array.from(new Map(childCwds.map((childCwd) => [childCwd.executionCwd, childCwd])).values());
+}
+
+function getExternalChildCwdBlockReason(agentScope: AgentScope): string {
+	return `Blocked: agentScope="${agentScope}" cannot use project-local agents when a child cwd is outside the parent session cwd. Parent project trust applies only to child directories canonically inside the parent session cwd. Use a child cwd within the parent session cwd, or use agentScope="user" for the external child.`;
 }
 
 function createAgentDiscoveryResolver(
@@ -430,11 +466,14 @@ function createAgentDiscoveryResolver(
 ): (requestedCwd: string | undefined) => AgentDiscoveryResult {
 	const cache = new Map<string, AgentDiscoveryResult>();
 	return (requestedCwd) => {
-		const executionCwd = resolveExecutionCwd(defaultCwd, requestedCwd);
-		let discovery = cache.get(executionCwd);
+		const childCwd = getChildCwdTrustBoundary(defaultCwd, requestedCwd);
+		if (scope !== "user" && !childCwd.reusesParentProjectTrust) {
+			return { agents: [], projectAgentsDir: null };
+		}
+		let discovery = cache.get(childCwd.executionCwd);
 		if (!discovery) {
-			discovery = discoverAgents(executionCwd, scope);
-			cache.set(executionCwd, discovery);
+			discovery = discoverAgents(childCwd.executionCwd, scope);
+			cache.set(childCwd.executionCwd, discovery);
 		}
 		return discovery;
 	};
@@ -722,33 +761,46 @@ function mergeSubagentExecutionSettings(settings: LoadedSubagentExecutionSetting
 	};
 }
 
-function loadSubagentExecutionSettingsForRequestedCwd(
+export function loadSubagentExecutionSettingsForChildCwd(
 	defaultCwd: string,
 	requestedCwd: string | undefined,
-	options: { projectTrusted?: boolean } = {},
-): LoadedSubagentExecutionSettings {
-	const executionCwd = resolveExecutionCwd(defaultCwd, requestedCwd);
+	parentProjectTrusted: boolean,
+): ChildCwdTrustBoundary & { executionSettings: LoadedSubagentExecutionSettings } {
+	const childCwd = getChildCwdTrustBoundary(defaultCwd, requestedCwd);
+	const projectTrusted = childCwd.reusesParentProjectTrust && parentProjectTrusted;
 	try {
-		return loadSubagentExecutionSettings(executionCwd, options);
-	} catch (error) {
-		const fallback = loadSubagentExecutionSettings(defaultCwd, options);
 		return {
-			...fallback,
-			warnings: [
-				...fallback.warnings,
-				`Warning (subagent settings for ${executionCwd}): ${error instanceof Error ? error.message : String(error)}`,
-			],
+			...childCwd,
+			executionSettings: loadSubagentExecutionSettings(childCwd.executionCwd, { projectTrusted }),
+		};
+	} catch (error) {
+		const fallback = loadSubagentExecutionSettings(defaultCwd, { projectTrusted });
+		return {
+			...childCwd,
+			executionSettings: {
+				...fallback,
+				warnings: [
+					...fallback.warnings,
+					`Warning (subagent settings for ${childCwd.executionCwd}): ${error instanceof Error ? error.message : String(error)}`,
+				],
+			},
 		};
 	}
 }
 
-function loadSubagentExecutionSettingsForCwds(
-	cwds: string[],
+function loadSubagentExecutionSettingsForChildCwds(
+	childCwds: ChildCwdTrustBoundary[],
 	fallbackCwd: string,
-	options: { projectTrusted?: boolean } = {},
+	parentProjectTrusted: boolean,
 ): LoadedSubagentExecutionSettings {
-	const uniqueCwds = Array.from(new Set(cwds));
-	const settings = uniqueCwds.map((cwd) => loadSubagentExecutionSettingsForRequestedCwd(fallbackCwd, cwd, options));
+	const settings = childCwds.map(
+		(childCwd) =>
+			loadSubagentExecutionSettingsForChildCwd(
+				fallbackCwd,
+				childCwd.executionCwd,
+				parentProjectTrusted,
+			).executionSettings,
+	);
 	return mergeSubagentExecutionSettings(settings);
 }
 
@@ -1838,6 +1890,19 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
+export function buildSubagentChildProcessArgs(
+	agent: Pick<AgentConfig, "tools">,
+	effectiveModelSelection: SubagentAgentDefault,
+	externalChildCwd: boolean,
+): string[] {
+	const args: string[] = ["--mode", "json", "-p", "--no-session"];
+	if (externalChildCwd) args.push("--no-approve");
+	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
+	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
+	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	return args;
+}
+
 async function runSingleAgent(
 	defaultCwd: string,
 	agents: AgentConfig[],
@@ -1853,7 +1918,6 @@ async function runSingleAgent(
 
 	const agentName = request.agent;
 	const task = request.task;
-	const cwd = request.cwd;
 	const agent = agents.find((a) => a.name === agentName);
 
 	if (!agent) {
@@ -1872,10 +1936,12 @@ async function runSingleAgent(
 	}
 
 	const effectiveModelSelection = resolveConfiguredSubagentModelSelection(agentName, executionSettings);
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
-	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
-	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	const childCwd = getChildCwdTrustBoundary(defaultCwd, request.cwd);
+	const args = buildSubagentChildProcessArgs(
+		agent,
+		effectiveModelSelection,
+		!childCwd.reusesParentProjectTrust,
+	);
 
 	let tmpPromptDir: string | null = null;
 	let tmpPromptPath: string | null = null;
@@ -1912,7 +1978,7 @@ async function runSingleAgent(
 
 		if (signal?.aborted) throw createAbortError();
 		const promptInput = `Task: ${task}`;
-		const executionCwd = resolveExecutionCwd(defaultCwd, cwd);
+		const executionCwd = childCwd.executionCwd;
 		let wasAborted = false;
 		const currentDepth = getCurrentSubagentDepth();
 		const childDepth = currentDepth + 1;
@@ -2588,10 +2654,20 @@ export default function (pi: ExtensionAPI) {
 		const requestedScope: AgentScope =
 			event.input.agentScope === "project" || event.input.agentScope === "both" ? event.input.agentScope : "user";
 		const projectTrusted = ctx.isProjectTrusted();
-		const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, event.input);
-		const executionSettings = loadSubagentExecutionSettingsForCwds(requestedExecutionCwds, ctx.cwd, {
+		const requestedChildCwds = getRequestChildCwdTrustBoundaries(ctx.cwd, event.input);
+		if (
+			(requestedScope === "project" || requestedScope === "both") &&
+			requestedChildCwds.some((childCwd) => !childCwd.reusesParentProjectTrust)
+		) {
+			delegatedApprovalByToolCallId.delete(event.toolCallId);
+			projectAgentConfirmationPolicyCoverage.clear(event.toolCallId);
+			return { block: true, reason: getExternalChildCwdBlockReason(requestedScope) };
+		}
+		const executionSettings = loadSubagentExecutionSettingsForChildCwds(
+			requestedChildCwds,
+			ctx.cwd,
 			projectTrusted,
-		});
+		);
 		if (getSubagentStructuralError(event.input, executionSettings.limits.maxParallelTasks)) return undefined;
 
 		const projectAgentTrustBlockReason = getProjectAgentTrustBlockReason(
@@ -2986,12 +3062,17 @@ export default function (pi: ExtensionAPI) {
 
 			const agentScope: AgentScope = params.agentScope ?? "user";
 			const projectTrusted = ctx.isProjectTrusted();
-			const settingsLoadOptions = { projectTrusted };
-			const requestedExecutionCwds = getRequestExecutionCwds(ctx.cwd, params);
-			const executionSettings = loadSubagentExecutionSettingsForCwds(
-				requestedExecutionCwds,
+			const requestedChildCwds = getRequestChildCwdTrustBoundaries(ctx.cwd, params);
+			if (
+				(agentScope === "project" || agentScope === "both") &&
+				requestedChildCwds.some((childCwd) => !childCwd.reusesParentProjectTrust)
+			) {
+				throw new Error(getExternalChildCwdBlockReason(agentScope));
+			}
+			const executionSettings = loadSubagentExecutionSettingsForChildCwds(
+				requestedChildCwds,
 				ctx.cwd,
-				settingsLoadOptions,
+				projectTrusted,
 			);
 			const taskLimitError = getSubagentStructuralError(params, executionSettings.limits.maxParallelTasks);
 			if (taskLimitError) throw new Error(taskLimitError);
@@ -3006,8 +3087,8 @@ export default function (pi: ExtensionAPI) {
 			const agents = discovery.agents;
 			const projectAgentDirs = Array.from(
 				new Set(
-					requestedExecutionCwds
-						.map((executionCwd) => resolveDiscovery(executionCwd).projectAgentsDir)
+					requestedChildCwds
+						.map((childCwd) => resolveDiscovery(childCwd.executionCwd).projectAgentsDir)
 						.filter((dir): dir is string => Boolean(dir)),
 				),
 			);
@@ -3101,11 +3182,11 @@ export default function (pi: ExtensionAPI) {
 							}
 						: undefined;
 
-					const stepExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+					const stepExecutionSettings = loadSubagentExecutionSettingsForChildCwd(
 						ctx.cwd,
 						step.cwd,
-						settingsLoadOptions,
-					);
+						projectTrusted,
+					).executionSettings;
 					const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
 						runSingleAgent(
 							ctx.cwd,
@@ -3187,11 +3268,11 @@ export default function (pi: ExtensionAPI) {
 					executionSettings.limits.maxConcurrency,
 					async (t, index) => {
 						const taskDiscovery = resolveDiscovery(t.cwd);
-						const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+						const taskExecutionSettings = loadSubagentExecutionSettingsForChildCwd(
 							ctx.cwd,
 							t.cwd,
-							settingsLoadOptions,
-						);
+							projectTrusted,
+						).executionSettings;
 						const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
 							runSingleAgent(
 								ctx.cwd,
@@ -3259,11 +3340,11 @@ export default function (pi: ExtensionAPI) {
 				const singleAgent = item.agent;
 				const singleTask = item.task;
 				const taskDiscovery = resolveDiscovery(item.cwd);
-				const taskExecutionSettings = loadSubagentExecutionSettingsForRequestedCwd(
+				const taskExecutionSettings = loadSubagentExecutionSettingsForChildCwd(
 					ctx.cwd,
 					item.cwd,
-					settingsLoadOptions,
-				);
+					projectTrusted,
+				).executionSettings;
 				const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
 					runSingleAgent(
 						ctx.cwd,

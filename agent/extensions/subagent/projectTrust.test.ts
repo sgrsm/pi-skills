@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import subagentExtension, {
+	buildSubagentChildProcessArgs,
+	getChildCwdTrustBoundary,
 	getProjectAgentTrustBlockReason,
+	loadSubagentExecutionSettingsForChildCwd,
 	prepareSubagentArguments,
 	resolveConfiguredSubagentModelSelection,
 } from "./index.ts";
@@ -198,6 +201,115 @@ test("child model selection uses only local agent defaults", () => {
 		{ model: "github-copilot/gpt-5.6-luna", thinking: "high" },
 	);
 	assert.deepEqual(resolveConfiguredSubagentModelSelection("reviewer-readonly", { agentDefaults: {} }), {});
+});
+
+test("external child cwd ignores target project settings", async () => {
+	await withIsolatedSettingsFiles(async ({ agentDir, cwd }) => {
+		const externalCwd = path.join(path.dirname(cwd), "external-project");
+		mkdirSync(externalCwd, { recursive: true });
+		writeJson(path.join(agentDir, "settings.json"), {
+			subagents: { maxParallelTasks: 6, maxConcurrency: 4, maxDelegationDepth: 3 },
+		});
+		writeJson(path.join(cwd, CONFIG_DIR_NAME, "settings.json"), {
+			subagents: { maxParallelTasks: 2, maxConcurrency: 1, maxDelegationDepth: 2 },
+		});
+		writeJson(path.join(externalCwd, CONFIG_DIR_NAME, "settings.json"), {
+			subagents: { maxParallelTasks: 1, maxConcurrency: 1, maxDelegationDepth: 0 },
+		});
+
+		const child = loadSubagentExecutionSettingsForChildCwd(cwd, externalCwd, true);
+
+		assert.equal(child.reusesParentProjectTrust, false);
+		assert.deepEqual(child.executionSettings.limits, {
+			maxParallelTasks: 6,
+			maxConcurrency: 4,
+			maxDelegationDepth: 3,
+		});
+		assert.deepEqual(child.executionSettings.sources, {
+			maxParallelTasks: "global",
+			maxConcurrency: "global",
+			maxDelegationDepth: "global",
+		});
+	});
+});
+
+test("external project and both scopes block before target project-agent discovery", async () => {
+	await withIsolatedSettingsFiles(async ({ cwd }) => {
+		const externalCwd = path.join(path.dirname(cwd), "external-project");
+		mkdirSync(path.join(externalCwd, CONFIG_DIR_NAME, "agents"), { recursive: true });
+		writeFileSync(
+			path.join(externalCwd, CONFIG_DIR_NAME, "agents", "external-agent.md"),
+			"---\nname: external-agent\ndescription: Must not be discovered\ntools: read\n---\nDo not load me.\n",
+			"utf-8",
+		);
+		const { handlers } = registerSubagentTool();
+		const [toolCallHandler] = handlers.get("tool_call") ?? [];
+		assert.ok(toolCallHandler, "subagent tool_call handler should be registered");
+
+		for (const agentScope of ["project", "both"] as const) {
+			const { ctx, getTrustChecks } = createCtx(cwd, true);
+			const result = await toolCallHandler(
+				{
+					toolName: "subagent",
+					toolCallId: `external-${agentScope}`,
+					input: {
+						mode: "single",
+						items: [{ agent: "external-agent", task: "Do not discover", cwd: externalCwd }],
+						agentScope,
+					},
+				},
+				ctx,
+			);
+
+			assert.equal(result?.block, true);
+			assert.match(result?.reason ?? "", /outside the parent session cwd/);
+			assert.equal(getTrustChecks(), 1, "the parent project trust may be consulted but must not extend externally");
+		}
+	});
+});
+
+test("external user-scoped child invocation disables approval", () => {
+	assert.ok(buildSubagentChildProcessArgs({ tools: ["read"] }, {}, true).includes("--no-approve"));
+	assert.equal(buildSubagentChildProcessArgs({ tools: ["read"] }, {}, false).includes("--no-approve"), false);
+});
+
+test("contained child cwd uses its canonical path and retains parent project behavior", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "pi-subagent-contained-boundary-"));
+	try {
+		const parentCwd = path.join(root, "parent");
+		const canonicalChildCwd = path.join(parentCwd, "nested");
+		const symlinkPath = path.join(parentCwd, "alias");
+		mkdirSync(canonicalChildCwd, { recursive: true });
+		symlinkSync(canonicalChildCwd, symlinkPath);
+
+		const child = getChildCwdTrustBoundary(parentCwd, symlinkPath);
+
+		assert.equal(child.reusesParentProjectTrust, true);
+		assert.equal(child.executionCwd, realpathSync(canonicalChildCwd));
+		assert.equal(getProjectAgentTrustBlockReason("both", child.reusesParentProjectTrust), null);
+		assert.equal(buildSubagentChildProcessArgs({ tools: ["read"] }, {}, false).includes("--no-approve"), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("symlink escapes from the parent cwd are external", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "pi-subagent-symlink-boundary-"));
+	try {
+		const parentCwd = path.join(root, "parent");
+		const externalCwd = path.join(root, "external");
+		const symlinkPath = path.join(parentCwd, "escaped");
+		mkdirSync(parentCwd, { recursive: true });
+		mkdirSync(externalCwd, { recursive: true });
+		symlinkSync(externalCwd, symlinkPath);
+
+		const child = getChildCwdTrustBoundary(parentCwd, symlinkPath);
+
+		assert.equal(child.reusesParentProjectTrust, false);
+		assert.equal(child.executionCwd, symlinkPath);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("invalid canonical subagent requests reject from execute before child work starts", async () => {
