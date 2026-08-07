@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { Buffer } from "node:buffer";
 import { isAbsolute, win32 } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Container, Text } from "@earendil-works/pi-tui";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -10,6 +11,7 @@ import {
 	type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
+import { isHideToolOutputEnabled } from "../hide-tool-output/state.ts";
 
 export const GIT_INSPECT_TOOL_NAME = "git_inspect";
 
@@ -26,6 +28,10 @@ const OPERATIONS = [
 ] as const;
 
 type GitInspectionOperation = (typeof OPERATIONS)[number];
+
+export interface GitInspectExtensionOptions {
+	hideToolOutputEnabled?: () => boolean;
+}
 
 type GitInspectionInput = Record<string, unknown> & {
 	operation: GitInspectionOperation;
@@ -459,6 +465,91 @@ function nonEmptyText(value: string): string {
 	return value.trimEnd() || "(no output)";
 }
 
+function getStringArgument(args: Record<string, unknown>, name: string): string | undefined {
+	const value = args[name];
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function getPathArguments(args: Record<string, unknown>): string[] {
+	const paths = args.paths;
+	return Array.isArray(paths) ? paths.filter((path): path is string => typeof path === "string" && path.length > 0) : [];
+}
+
+function formatGitInspectionCall(args: unknown): { operation?: string; details?: string } {
+	if (typeof args !== "object" || args === null) return {};
+	const input = args as Record<string, unknown>;
+	const operation = getStringArgument(input, "operation");
+	if (!operation || !OPERATIONS.includes(operation as GitInspectionOperation)) return {};
+
+	const revision = getStringArgument(input, "revision");
+	const base = getStringArgument(input, "base");
+	const head = getStringArgument(input, "head");
+	const paths = getPathArguments(input);
+	const maxCount = typeof input.maxCount === "number" ? input.maxCount : undefined;
+	const pathList = paths.join(", ");
+
+	switch (operation) {
+		case "log":
+			return { operation, details: [revision, maxCount !== undefined ? `(${maxCount} commits)` : undefined].filter(Boolean).join(" ") || undefined };
+		case "show_commit":
+			return { operation, details: revision };
+		case "working_diff":
+		case "staged_diff":
+			return { operation, details: pathList || undefined };
+		case "range_diff": {
+			const range = base && head ? `${base}...${head}` : [base, head].filter(Boolean).join("...");
+			return { operation, details: [range, pathList].filter(Boolean).join(" ") || undefined };
+		}
+		case "file_history":
+			return {
+				operation,
+				details: [pathList, revision ? `@ ${revision}` : undefined, maxCount !== undefined ? `(${maxCount} commits)` : undefined]
+					.filter(Boolean)
+					.join(" ") || undefined,
+			};
+		default:
+			return { operation };
+	}
+}
+
+function renderGitInspectionCall(args: unknown, theme: any, context: any): Text {
+	const { operation, details } = formatGitInspectionCall(args);
+	let text = theme.fg("toolTitle", theme.bold("git_inspect"));
+	if (operation) text += theme.fg("muted", ` ${operation}`);
+	if (details) text += ` ${theme.fg("accent", details)}`;
+
+	const component = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+	component.setText(text);
+	return component;
+}
+
+function renderGitInspectionResult(result: any, theme: any, context: any, hideOutput: boolean): Container | Text {
+	if (hideOutput) {
+		const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+		component.clear();
+		return component;
+	}
+
+	const output = Array.isArray(result.content)
+		? result.content
+			.map((item: unknown) => {
+				if (typeof item !== "object" || item === null || (item as { type?: unknown }).type !== "text") return "";
+				return typeof (item as { text?: unknown }).text === "string" ? (item as { text: string }).text : "";
+			})
+			.filter(Boolean)
+			.join("\n")
+		: "";
+	if (!output.trim()) {
+		const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+		component.clear();
+		return component;
+	}
+
+	const component = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
+	component.setText(theme.fg("toolOutput", output));
+	return component;
+}
+
 export function formatGitFailure(operation: GitInspectionOperation, result: GitProcessResult): Error {
 	if (result.aborted) return new Error("git_inspect was cancelled.");
 	if (result.timedOut) return new Error(`git_inspect ${operation} timed out after ${PROCESS_TIMEOUT_MS / 1000} seconds.`);
@@ -502,7 +593,8 @@ async function resolveRepository(cwd: string, signal: AbortSignal | undefined): 
 	return { root, bare: isBare === "true" };
 }
 
-export default function gitInspectExtension(pi: ExtensionAPI) {
+export default function gitInspectExtension(pi: ExtensionAPI, options: GitInspectExtensionOptions = {}) {
+	const hideToolOutputEnabled = options.hideToolOutputEnabled ?? isHideToolOutputEnabled;
 	pi.registerTool({
 		name: GIT_INSPECT_TOOL_NAME,
 		label: "Git Inspect",
@@ -515,6 +607,12 @@ export default function gitInspectExtension(pi: ExtensionAPI) {
 		parameters: gitInspectParams,
 		prepareArguments(args) {
 			return prepareGitInspectionArguments(args);
+		},
+		renderCall(args, theme, context) {
+			return renderGitInspectionCall(args, theme, context);
+		},
+		renderResult(result, _options, theme, context) {
+			return renderGitInspectionResult(result, theme, context, hideToolOutputEnabled());
 		},
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const validated = validateGitInspectionInput(params as GitInspectionInput);

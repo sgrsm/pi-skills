@@ -39,6 +39,10 @@ Compare main with HEAD for the README and package manifest.
 Show the history of src/service/OrderService.java.
 ```
 
+## Display
+
+Tool-call rows show the selected operation and its relevant revision, range, or path arguments. When `/hide-tool on` is active, `git_inspect` hides its result output in the conversation UI while leaving that call row visible. This does not affect the Git command, result data, or information returned to the agent.
+
 ## Safety behavior
 
 The extension runs only fixed Git argument vectors with `shell: false`. It rejects unsafe revisions and paths, disables interactive prompts and pagers, disables optional Git locks, and turns off external diffs and text conversion.

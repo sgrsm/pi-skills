@@ -16,13 +16,13 @@ import gitInspectExtension, {
 
 const execFile = promisify(execFileCallback);
 
-function registerGitInspectTool(): ToolDefinition<any, any, any> {
+function registerGitInspectTool(options?: { hideToolOutputEnabled?: () => boolean }): ToolDefinition<any, any, any> {
 	const tools = new Map<string, ToolDefinition<any, any, any>>();
 	gitInspectExtension({
 		registerTool(tool: ToolDefinition<any, any, any>) {
 			tools.set(tool.name, tool);
 		},
-	} as Partial<ExtensionAPI> as ExtensionAPI);
+	} as Partial<ExtensionAPI> as ExtensionAPI, options);
 
 	const tool = tools.get(GIT_INSPECT_TOOL_NAME);
 	assert.ok(tool, "git_inspect should be registered");
@@ -32,6 +32,56 @@ function registerGitInspectTool(): ToolDefinition<any, any, any> {
 test("git_inspect exposes only operation as required in its TypeBox schema", () => {
 	const tool = registerGitInspectTool();
 	assert.deepEqual(tool.parameters.required, ["operation"]);
+});
+
+test("git_inspect call renderer summarizes the operation and relevant paths", () => {
+	const tool = registerGitInspectTool();
+	assert.ok(tool.renderCall, "git_inspect must render its call arguments");
+	const theme = { fg(_color: string, text: string) { return text; }, bold(text: string) { return text; } };
+	const callComponent = tool.renderCall(
+		{
+			operation: "working_diff",
+			paths: ["agent/extensions/git-inspect/index.ts", "agent/extensions/git-inspect/index.test.ts"],
+		},
+		theme as any,
+		{ lastComponent: undefined } as any,
+	);
+
+	assert.match(
+		callComponent.render(160).join("\n"),
+		/git_inspect working_diff agent\/extensions\/git-inspect\/index\.ts, agent\/extensions\/git-inspect\/index\.test\.ts/,
+	);
+
+	const rangeCallComponent = tool.renderCall(
+		{ operation: "range_diff", base: "main", head: "HEAD", paths: ["README.md"] },
+		theme as any,
+		{ lastComponent: undefined } as any,
+	);
+	assert.match(rangeCallComponent.render(160).join("\n"), /git_inspect range_diff main\.\.\.HEAD README\.md/);
+});
+
+test("git_inspect renderer honors hide-tool output state without hiding a newly visible result", () => {
+	let hidden = true;
+	const tool = registerGitInspectTool({ hideToolOutputEnabled: () => hidden });
+	assert.ok(tool.renderResult, "git_inspect must render its result to honor hide-tool");
+	const result = { content: [{ type: "text" as const, text: "visible output" }], details: undefined };
+	const theme = { fg(_color: string, text: string) { return text; } };
+	const hiddenComponent = tool.renderResult(
+		result,
+		{ expanded: false, isPartial: false },
+		theme as any,
+		{ lastComponent: undefined } as any,
+	);
+	assert.equal(hiddenComponent.render(100).join("\n").includes("visible output"), false);
+
+	hidden = false;
+	const visibleComponent = tool.renderResult(
+		result,
+		{ expanded: false, isPartial: false },
+		theme as any,
+		{ lastComponent: hiddenComponent } as any,
+	);
+	assert.equal(visibleComponent.render(100).join("\n").includes("visible output"), true);
 });
 
 test("git_inspect maps only fixed, hardened Git argv for supported inspection operations", () => {

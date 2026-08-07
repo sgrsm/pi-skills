@@ -1,6 +1,6 @@
 # hide-tool-output
 
-Hides built-in tool result output from Pi's conversation UI while keeping tool calls visible.
+Hides supported tool result output from Pi's conversation UI while keeping tool calls visible.
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Usage: /hide-tool on|off (currently on|off)
 
 The command provides `on` and `off` completions.
 
-## Wrapped tools
+## Integrated tools
 
 The extension re-registers these built-in tools with custom rendering:
 
@@ -42,6 +42,8 @@ The extension re-registers these built-in tools with custom rendering:
 - `grep`
 - `find`
 - `ls`
+
+`git_inspect` independently honors the same setting, so its result output is hidden while its tool-call row remains visible.
 
 It no longer registers or owns `bash`. The global permissions extension owns the model Bash definition and composes Pi's full built-in Bash call renderer with this extension's persisted `isHideToolOutputEnabled()` state: results are empty when hiding is on and normal when hiding is off. The permissions wrapper keeps Pi's mutable built-in Bash result component in row-local renderer state, so a live row can move from hidden to visible without passing the empty placeholder back to Pi's built-in renderer. This avoids competing Bash definitions while preserving the existing UI behavior.
 
@@ -53,7 +55,7 @@ It does not add new agent-facing tools, flags, or events.
 
 When `hide-tool` is `on`:
 
-- result output for the wrapped tools is suppressed in the conversation UI
+- result output for supported tools is suppressed in the conversation UI
 - the tool call row remains visible
 - permissions-owned `bash` keeps Pi's built-in call renderer so the full command remains visible; only the result output is hidden through renderer composition
 - non-`bash` tools use compact one-line summaries such as `read <path>`, `grep /pattern/ in <path>`, or `write <path>`
