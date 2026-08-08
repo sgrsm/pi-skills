@@ -17,6 +17,7 @@
 # Local Pi runtime / history
 /conversations/
 /handoff/
+/archives/
 
 # Dependencies / build / cache junk
 **/node_modules/
