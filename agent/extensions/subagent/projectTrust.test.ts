@@ -191,6 +191,15 @@ test("canonical subagent parameters keep model selection out of LLM tool calls a
 	);
 });
 
+test("subagent tool advertises only the four standard agent types", () => {
+	const { tool } = registerSubagentTool();
+
+	assert.match(tool.description, /Standard user agents: scout, worker, reviewer, planner\./);
+	for (const removedAgent of ["reviewer-readonly", "planner-readonly", "consolidator"]) {
+		assert.doesNotMatch(tool.description, new RegExp(`\\b${escapeRegex(removedAgent)}\\b`));
+	}
+});
+
 test("child model selection uses only local agent defaults", () => {
 	assert.deepEqual(
 		resolveConfiguredSubagentModelSelection("scout", {
@@ -200,7 +209,7 @@ test("child model selection uses only local agent defaults", () => {
 		}),
 		{ model: "github-copilot/gpt-5.6-luna", thinking: "high" },
 	);
-	assert.deepEqual(resolveConfiguredSubagentModelSelection("reviewer-readonly", { agentDefaults: {} }), {});
+	assert.deepEqual(resolveConfiguredSubagentModelSelection("reviewer", { agentDefaults: {} }), {});
 });
 
 test("external child cwd ignores target project settings", async () => {

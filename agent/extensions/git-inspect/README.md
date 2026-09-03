@@ -6,7 +6,7 @@ Provides the `git_inspect` tool: a narrow, read-only way for Pi and read-only su
 
 Use `git_inspect` for local Git status, diffs, refs, commit metadata, and file history. Use Pi's `read`, `grep`, `find`, and `ls` tools for source-tree inspection.
 
-The `scout`, `reviewer-readonly`, and `reviewer` subagent roles use this tool instead of `bash`.
+The read-only `scout` and `reviewer` subagent roles use this tool instead of `bash`.
 
 ## Requirements
 

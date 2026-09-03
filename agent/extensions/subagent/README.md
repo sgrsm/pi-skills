@@ -29,7 +29,7 @@ Parallel investigation:
   "mode": "parallel",
   "items": [
     { "agent": "scout", "task": "Inspect authentication" },
-    { "agent": "reviewer-readonly", "task": "Review authentication tests" }
+    { "agent": "reviewer", "task": "Review authentication tests" }
   ]
 }
 ```
@@ -92,7 +92,7 @@ Top-level optional fields:
 - `agentScope` - `user` (default), `project`, or `both`.
 - `confirmProjectAgents` - whether to confirm before running project-controlled agents; defaults to `true`.
 
-Common built-in agent names are `scout`, `planner`, `planner-readonly`, `reviewer`, `reviewer-readonly`, `worker`, and `consolidator`. Unknown names are blocked before approval or execution.
+Standard user agents are `scout`, `worker`, `reviewer`, and `planner`. `scout`, `reviewer`, and `planner` are read-only; `worker` is write-capable. Unknown names are blocked before approval or execution.
 
 ## Agents and project trust
 

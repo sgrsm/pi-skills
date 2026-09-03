@@ -2202,7 +2202,7 @@ async function runSingleAgent(
 const DelegationItem = Type.Object(
 	{
 		agent: Type.String({
-			description: "Name of the agent to invoke. Common built-in agents: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
+			description: "Name of the agent to invoke. Standard user agents: scout, worker, reviewer, planner.",
 		}),
 		task: Type.String({
 			description:
@@ -3032,7 +3032,7 @@ export default function (pi: ExtensionAPI) {
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Use one canonical request shape: mode (single, parallel, or chain) plus a non-empty items array. Single mode requires exactly one item; chain supports {previous}.",
 			"Child model and thinking selection is owned by local settings.json: subagents.agentDefaults per agent, then Pi defaults.",
-			"Built-in agents typically available: scout, planner, planner-readonly, reviewer, reviewer-readonly, worker, consolidator.",
+			"Standard user agents: scout, worker, reviewer, planner.",
 			"Default policy mode is ask: valid explicit requests run, otherwise Pi asks before spawning subagents. Use /subagents off to disable completely.",
 			`Default agent scope is "user" (from ${USER_AGENTS_DISPLAY_PATH}).`,
 			`To enable project-local agents in ${PROJECT_AGENTS_DISPLAY_PATH}, set agentScope: "both" (or "project").`,
@@ -3046,7 +3046,7 @@ export default function (pi: ExtensionAPI) {
 			"Subagent model and thinking are settings-owned. Never send model or thinking in a subagent item; configure subagents.agentDefaults in local settings.json instead.",
 			"If a delegated subagent requests parent input, ask the user at the top level before continuing, then decide whether to rerun the child or handle the follow-up directly.",
 			"After subagent returns, the main assistant must review all subagent outputs, remove duplicates, reconcile disagreements, and present one merged final answer to the user instead of dumping raw subagent output.",
-			"For subagent delegation, prefer scout for codebase discovery, planner for saved Markdown plan artifacts, planner-readonly for read-only nested planning, reviewer for writable report workflows, reviewer-readonly for read-only nested review, worker for general implementation, and consolidator for synthesis/report artifacts.",
+			"For subagent delegation, prefer scout for codebase discovery, planner for read-only planning, reviewer for read-only review, and worker for general implementation.",
 			`Use subagent agentScope set to both only when project-local agents under ${PROJECT_AGENTS_DISPLAY_PATH} are needed and the repository is trusted.`,
 		],
 		parameters: SubagentParams,

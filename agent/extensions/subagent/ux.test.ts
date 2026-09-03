@@ -276,7 +276,7 @@ test("running activity rows use stable task descriptions instead of child output
 				messages: [{ role: "assistant", content: [{ type: "text", text: "read core/src/main/java/com/example/Alpha.java\nlines 1-120" }] }],
 			}),
 			makeResult({
-				agent: "reviewer-readonly",
+				agent: "reviewer",
 				task: "Review core/src/main/java/com/example/Beta.java for wildcard imports",
 				exitCode: -1,
 			}),
@@ -290,7 +290,7 @@ test("running activity rows use stable task descriptions instead of child output
 			"subagents · parallel · 2 running · scope: user",
 			...compactRows([
 				{ prefix: "├─ ", agent: "scout", task: "Inspect core/src/main/java/com/example/Alpha.java for import issues", status: "running" },
-				{ prefix: "└─ ", agent: "reviewer-readonly", task: "Review core/src/main/java/com/example/Beta.java for wildcard imports", status: "running" },
+				{ prefix: "└─ ", agent: "reviewer", task: "Review core/src/main/java/com/example/Beta.java for wildcard imports", status: "running" },
 			]),
 		].join("\n"),
 	);
@@ -319,7 +319,7 @@ test("compact activity tree uses provided width to keep statuses on the same lin
 				task: "Implement the requested test refactor for module5_7. Scope: do not change production code. Refactor tests only.",
 			},
 			{
-				agent: "reviewer-readonly",
+				agent: "reviewer",
 				task: "Review the implementation diff from the previous step for correctness. Focus on checked-in module5_7 tests.",
 			},
 		],
@@ -350,7 +350,7 @@ test("compact activity tree keeps status column aligned without padding before t
 		...baseDetails,
 		results: [
 			makeResult({ agent: "scout", task: scoutTask, exitCode: -1 }),
-			makeResult({ agent: "reviewer-readonly", task: reviewerTask, exitCode: -1 }),
+			makeResult({ agent: "reviewer", task: reviewerTask, exitCode: -1 }),
 			makeResult({ agent: "scout", task: "Inspect gamma config", exitCode: -1 }),
 		],
 	};
@@ -545,7 +545,7 @@ test("running chain uses compact view and flattens nested subagent rows", () => 
 		items: [
 			{ agent: "worker", task: "Implement finding-5 refactor in monthly-balancing" },
 			{ agent: "scout", task: "Verify generated config/tests" },
-			{ agent: "reviewer-readonly", task: "Review final diff and risks" },
+			{ agent: "reviewer", task: "Review final diff and risks" },
 		],
 	});
 	assert.equal(
@@ -556,7 +556,7 @@ test("running chain uses compact view and flattens nested subagent rows", () => 
 				{ prefix: "├─ ", agent: "worker", task: "Implement finding-5 refactor in monthly-balancing", status: "running" },
 				{ prefix: "│  └─ ", agent: "scout", task: "Inspect monthly-balancing module5_7 persistence", status: "done" },
 				{ prefix: "├─ ", agent: "scout", task: "Verify generated config/tests", status: "waiting" },
-				{ prefix: "└─ ", agent: "reviewer-readonly", task: "Review final diff and risks", status: "waiting" },
+				{ prefix: "└─ ", agent: "reviewer", task: "Review final diff and risks", status: "waiting" },
 			]),
 		].join("\n"),
 	);

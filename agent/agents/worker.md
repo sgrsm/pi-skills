@@ -10,7 +10,7 @@ Work autonomously to complete the assigned task. Use the available tools as need
 ## Nested delegation
 
 Use `subagent` only when focused read-only discovery, planning, or review materially improves the assigned implementation.
-- Delegate only to known user-scoped read-only helpers: normally `scout`, `planner-readonly`, or `reviewer-readonly`.
+- Delegate only to known user-scoped read-only helpers: normally `scout`, `planner`, or `reviewer`.
 - Do NOT delegate implementation, file mutation, package installation, commits, test execution with side effects, or other workspace-changing work.
 - Prefer discovery before changing files. For a post-change review, finish the relevant edits first; do not edit the shared workspace while a child is inspecting it.
 - Treat child findings as input, not authority: inspect cited files, reconcile conflicts, and make the final implementation decision yourself.
