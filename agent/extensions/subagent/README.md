@@ -147,13 +147,13 @@ The parent session's current model/thinking, agent frontmatter, and all tool-cal
 - `off` - disables delegation.
 - `manual` - allows only explicit top-level delegation requests.
 - `ask` - default; explicit valid requests run, while other eligible requests require TUI approval.
-- `auto` - may automatically run eligible read-only work.
+- `auto` - may automatically run eligible known user-scoped work, including write-capable agents.
 
-Depth and task limits always apply. Unknown agents are blocked. Write-capable and project-local agents require an explicit request or approval. Inherited read-only approval applies only to known user agents whose declared tools all have enforceable read-only contracts. `bash` and unknown custom tools are treated as potentially write-capable; `git_inspect` is an enforced read-only tool. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
+Depth and task limits always apply. Unknown agents are blocked. Project-local agents require their existing explicit-request or approval/confirmation flow even in auto mode. Inherited read-only approval applies only to known user agents whose declared tools all have enforceable read-only contracts; auto mode does not broaden that nested approval to write-capable children. `bash` and unknown custom tools are treated as potentially write-capable; `git_inspect` is an enforced read-only tool. In ask mode, `Allow for current session` first approves ordinary eligible requests; a write-capable request needs its own current-session approval before future non-explicit writers can run. In auto mode, write permission is inherent for eligible known user-scoped calls, so no separate write approval is offered. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
 
 ## Output and cancellation
 
-The TUI footer shows the policy mode and compact running/queued counts. Tool results show an activity tree; `Ctrl+O` expands task, error, and usage details.
+The TUI footer shows the policy mode and compact running/queued counts. In ask mode, its compact approval label is `subagents: ask`, `subagents: ask (approved)`, or `subagents: ask (approved write)` depending on current-session approval scope. Auto mode is always shown simply as `subagents: auto`, because eligible known user-scoped write permission is inherent to that mode. Tool results show an activity tree; `Ctrl+O` expands task, error, and usage details.
 
 Large child outputs use Pi's standard truncation limits. The complete output is saved to a temporary file and linked from the truncation marker.
 
