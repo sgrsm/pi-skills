@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createMcpConnector } from "../mcp-bridge/mcpConnector.js";
+import { createMcpConnector } from "../mcp-bridge/mcpConnector.ts";
 
 export default async function ideaMcpExtension(pi: ExtensionAPI) {
 	await createMcpConnector(pi, {

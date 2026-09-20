@@ -8,6 +8,7 @@ import {
 	type TruncationResult,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
+import type { JsonObject, JsonValue } from "@earendil-works/pi-ai";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -128,6 +129,20 @@ export type McpImageContentBlock = { type: "image"; data: string; mimeType: stri
 export type McpContentBlock = McpTextContentBlock | McpImageContentBlock;
 type PiNotifyType = "info" | "warning" | "error";
 export type McpNotifyType = PiNotifyType | "success";
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function toJsonCompatibleValue(value: unknown, label: string): JsonValue {
+	try {
+		const serialized = JSON.stringify(value);
+		if (serialized === undefined) throw new Error("value has no JSON representation");
+		return JSON.parse(serialized) as JsonValue;
+	} catch (error) {
+		throw new Error(`${label} must be JSON-compatible.`, { cause: error });
+	}
+}
 type McpStatusColor = "dim" | "accent";
 type McpStatusTheme = { fg: (color: McpStatusColor, text: string) => string };
 type McpStatusContext = { ui: { setStatus: (key: string, value: string | undefined) => void; theme: McpStatusTheme } };
@@ -833,6 +848,8 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 				if ("isError" in result && result.isError) {
 					throw new Error(await formatMcpToolErrorMessage(content));
 				}
+				const rawResult = toJsonCompatibleValue(result, `${displayName} tool result`);
+				const structuredContent = isJsonObject(rawResult) ? rawResult.structuredContent : undefined;
 				const truncated = await truncateMcpToolContent(content);
 				return {
 					content: truncated.content,
@@ -841,8 +858,8 @@ function createConnectorRuntime(pi: ExtensionAPI, options: McpConnectorOptions, 
 						mcpServer: state.serverName,
 						mcpTool: activeTool.name,
 						piTool: piName,
-						structuredContent: "structuredContent" in result ? result.structuredContent : undefined,
-						rawResult: result,
+						...(structuredContent === undefined ? {} : { structuredContent }),
+						rawResult,
 						...(truncated.truncation
 							? {
 								truncation: truncated.truncation,

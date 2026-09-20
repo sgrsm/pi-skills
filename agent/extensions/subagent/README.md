@@ -104,7 +104,7 @@ Parent project trust applies to a child cwd only when its existing real path is 
 
 ## Child escalation
 
-Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool.
+Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool. When an agent declares a non-empty `tools:` allowlist, the extension automatically adds `escalate_to_parent` to the child invocation so the advertised escalation path remains callable.
 
 The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
 

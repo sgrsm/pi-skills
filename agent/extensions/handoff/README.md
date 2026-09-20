@@ -43,8 +43,8 @@ After saving, Pi shows the handoff path and the `/continue <slug>` command to ru
 
 Lists recent handoffs, optionally filtered by title, slug, or file name.
 
-- In the TUI, selecting an item prefills the editor with `/continue <slug>` for an empty session or `/inject-handoff <slug>` when the current session already has context.
-- Outside the TUI, prints up to 20 matching handoffs.
+- With interactive UI available (TUI or RPC), selecting an item prefills the editor with `/continue <slug>` for an empty session or `/inject-handoff <slug>` when the current session already has context. RPC clients must answer the emitted extension UI request.
+- In print or JSON mode, prints up to 20 matching handoffs.
 
 Examples:
 
@@ -96,7 +96,7 @@ Deletes all handoff documents from the Pi handoff dir (`~/.pi/handoff` by defaul
 /handoff-clear
 ```
 
-In the TUI, Pi asks for confirmation before deleting. Outside the TUI, the delete runs without an interactive confirmation.
+With interactive UI available (TUI or RPC), Pi asks for confirmation before deleting. In print or JSON mode, the delete runs without an interactive confirmation.
 
 ## Argument selection and completion
 
@@ -104,8 +104,8 @@ In the TUI, Pi asks for confirmation before deleting. Outside the TUI, the delet
 
 When no argument is provided:
 
-- in the TUI, Pi opens a handoff picker;
-- outside the TUI, Pi uses the newest matching handoff.
+- with interactive UI available (TUI or RPC), Pi opens a handoff picker;
+- in print or JSON mode, Pi uses the newest matching handoff.
 
 Queries match normalized titles, slugs, and file names. Exact slug matches win.
 

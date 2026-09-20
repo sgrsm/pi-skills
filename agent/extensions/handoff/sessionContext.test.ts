@@ -2,9 +2,43 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildSessionContext as publicBuildSessionContext } from "@earendil-works/pi-coding-agent";
-import { buildCurrentSessionContext } from "./index.ts";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
+import { buildCurrentSessionContext, ContinueWarningEditor } from "./index.ts";
 
 const timestamp = "2026-01-01T00:00:00.000Z";
+
+test("ContinueWarningEditor forwards mouse input to the wrapped editor", () => {
+	const event: TuiMouseEvent = {
+		type: "press",
+		button: "left",
+		x: 4,
+		y: 2,
+		screenX: 14,
+		screenY: 8,
+		width: 80,
+		height: 4,
+		shift: false,
+		alt: false,
+		ctrl: false,
+	};
+	const expected = { handled: true };
+	let received: unknown;
+	const base = {
+		render: () => [],
+		handleInput() {},
+		handleMouse(actual: unknown) {
+			received = actual;
+			return expected;
+		},
+		invalidate() {},
+		getText: () => "",
+		setText() {},
+	};
+
+	const editor = new ContinueWarningEditor(base, () => {});
+	assert.equal(editor.handleMouse(event), expected);
+	assert.equal(received, event);
+});
 
 function userEntry(id: string, parentId: string | null, text: string): any {
 	return {

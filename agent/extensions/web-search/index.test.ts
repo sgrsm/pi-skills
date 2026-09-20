@@ -73,7 +73,7 @@ test("web_search runtime bounds visible output while persisting complete formatt
 			registerTool(tool: ToolDefinition<any, any, any>) {
 				tools.set(tool.name, tool);
 			},
-			on() {},
+			on() { return () => {}; },
 			getActiveTools() { return []; },
 			setActiveTools() {},
 		} as Partial<ExtensionAPI> as ExtensionAPI);

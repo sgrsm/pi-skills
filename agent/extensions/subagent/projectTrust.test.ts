@@ -282,6 +282,17 @@ test("external user-scoped child invocation disables approval", () => {
 	assert.equal(buildSubagentChildProcessArgs({ tools: ["read"] }, {}, false).includes("--no-approve"), false);
 });
 
+test("child tool allowlists retain parent escalation", () => {
+	const args = buildSubagentChildProcessArgs({ tools: ["read", "subagent"] }, {}, false);
+	const toolsIndex = args.indexOf("--tools");
+	assert.ok(toolsIndex >= 0);
+	assert.deepEqual(args[toolsIndex + 1]?.split(","), ["read", "subagent", "escalate_to_parent"]);
+
+	const existing = buildSubagentChildProcessArgs({ tools: ["read", "escalate_to_parent"] }, {}, false);
+	const existingToolsIndex = existing.indexOf("--tools");
+	assert.deepEqual(existing[existingToolsIndex + 1]?.split(","), ["read", "escalate_to_parent"]);
+});
+
 test("contained child cwd uses its canonical path and retains parent project behavior", () => {
 	const root = mkdtempSync(path.join(tmpdir(), "pi-subagent-contained-boundary-"));
 	try {

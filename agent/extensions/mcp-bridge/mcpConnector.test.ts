@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
-import { createMcpConnector, formatMcpFooterStatus, formatMcpToolErrorMessage, normalizeMcpNotifyType, truncateMcpToolContent } from "./mcpConnector.ts";
+import { createMcpConnector, formatMcpFooterStatus, formatMcpToolErrorMessage, normalizeMcpNotifyType, toJsonCompatibleValue, truncateMcpToolContent } from "./mcpConnector.ts";
 
 const imageBlock = { type: "image" as const, data: "base64-image-data", mimeType: "image/png" };
 
@@ -106,7 +106,10 @@ async function createMcpFixture({ allowlistMode = false }: { allowlistMode?: boo
 			? { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "loopback", version: "1.0.0" } }
 			: message.method === "tools/list"
 				? { tools: catalogue.map((name) => ({ name, inputSchema: { type: "object" } })) }
-				: { content: [{ type: "text", text: `called ${message.params?.name}` }] };
+				: {
+					content: [{ type: "text", text: `called ${message.params?.name}` }],
+					structuredContent: { calledTool: message.params?.name },
+				};
 		response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -488,6 +491,31 @@ test("global persistence failure still disables and tears down locally", async (
 	await fixture.run("status test");
 	assert.match(fixture.notifications.at(-1) ?? "", /^test: disabled/);
 	assert.equal(fixture.notifications.some((message) => /persist|config/i.test(message) && /fail|unable/i.test(message)), true);
+});
+
+test("MCP result details are cloned into JSON-compatible values", () => {
+	const source = { nested: [{ value: "ok" }], omitted: undefined };
+	const cloned = toJsonCompatibleValue(source, "MCP result");
+	assert.deepEqual(cloned, { nested: [{ value: "ok" }] });
+	assert.notEqual(cloned, source);
+	assert.throws(() => toJsonCompatibleValue({ value: 1n }, "MCP result"), /JSON-compatible/);
+});
+
+test("registered MCP wrappers return JSON-normalized raw and structured details", async (t) => {
+	const fixture = await createMcpFixture();
+	t.after(() => fixture.close());
+	fixture.setCatalogue(["A"]);
+	await fixture.start();
+
+	const result = await fixture.registry.get("test_a")!.execute!("json-details", {}) as {
+		details: Record<string, unknown>;
+	};
+	assert.deepEqual(result.details.structuredContent, { calledTool: "A" });
+	assert.deepEqual(result.details.rawResult, {
+		content: [{ type: "text", text: "called A" }],
+		structuredContent: { calledTool: "A" },
+	});
+	assert.doesNotThrow(() => JSON.stringify(result.details));
 });
 
 test("small MCP text output and image blocks are preserved without truncation metadata", async () => {

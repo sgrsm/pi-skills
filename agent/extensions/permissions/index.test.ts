@@ -191,6 +191,32 @@ test("unexpected active Bash ownership fails closed after catastrophic preflight
 	});
 });
 
+test("user_bash always returns a valid terminal result under Pi 0.86 fail-closed dispatch", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp, fixture.fakeHome);
+		const ctx = createContext("Deny", "user-bash-contract-test", fixture.project);
+
+		const safe = await harness.emitFirst("user_bash", {
+			command: "printf ok",
+			cwd: fixture.project,
+			excludeFromContext: false,
+		}, ctx) as any;
+		assert.equal(typeof safe?.operations?.exec, "function");
+		assert.equal("result" in safe, false);
+
+		const denied = await harness.emitFirst("user_bash", {
+			command: "rm .",
+			cwd: fixture.project,
+			excludeFromContext: false,
+		}, ctx) as any;
+		assert.deepEqual(Object.keys(denied), ["result"]);
+		assert.equal(denied.result.exitCode, 1);
+		assert.equal(denied.result.cancelled, false);
+		assert.equal(denied.result.truncated, false);
+		assert.match(denied.result.output, /P0_DELETE_CRITICAL_TARGET/);
+	});
+});
+
 test("catastrophic deletion hard-denies without an interactive UI", async () => {
 	await withTestScratchFixture(async (fixture) => {
 		const harness = createPermissionsHarness(fixture.sessionTemp, fixture.fakeHome);

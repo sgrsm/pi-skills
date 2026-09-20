@@ -170,7 +170,7 @@ Execution behavior:
 - Each wrapper is permanently tied to its original MCP name. Before dispatch, execution checks that the current catalogue entry still has that exact original name; an ownership mismatch fails instead of calling a different MCP tool.
 - Calls use `client.callTool({ name, arguments }, ..., { signal, timeout })`.
 - MCP `isError` results are thrown as Pi tool errors after formatting/truncating error content.
-- Successful results return normalized content and details containing connector id, server name, original MCP tool, Pi tool, structured content when present, raw MCP result, and truncation metadata when present.
+- Successful results return normalized content and details containing connector id, server name, original MCP tool, Pi tool, structured content when present, a JSON-normalized clone of the raw MCP result, and truncation metadata when present.
 
 Content normalization:
 

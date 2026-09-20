@@ -1895,7 +1895,11 @@ export function buildSubagentChildProcessArgs(
 	if (externalChildCwd) args.push("--no-approve");
 	if (effectiveModelSelection.model) args.push("--model", effectiveModelSelection.model);
 	if (effectiveModelSelection.thinking) args.push("--thinking", effectiveModelSelection.thinking);
-	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	if (agent.tools && agent.tools.length > 0) {
+		const allowedTools = new Set(agent.tools);
+		allowedTools.add(PARENT_ESCALATION_TOOL_NAME);
+		args.push("--tools", Array.from(allowedTools).join(","));
+	}
 	return args;
 }
 

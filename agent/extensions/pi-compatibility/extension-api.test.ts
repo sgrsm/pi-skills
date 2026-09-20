@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import clarifyExtension from "../clarify/index.ts";
+import gitInspectExtension from "../git-inspect/index.ts";
 import subagentExtension from "../subagent/index.ts";
 import webSearchExtension from "../web-search/index.ts";
 
 const scopedExtensionFiles = [
 	"../clarify/index.ts",
+	"../git-inspect/index.ts",
+	"../mcp-bridge/mcpConnector.ts",
 	"../web-search/index.ts",
 	"../subagent/index.ts",
 ] as const;
@@ -33,6 +36,7 @@ type ToolExtension = (pi: ExtensionAPI) => void;
 
 const promptMetadataExtensions: Array<{ name: string; register: ToolExtension }> = [
 	{ name: "clarify", register: clarifyExtension },
+	{ name: "git-inspect", register: gitInspectExtension },
 	{ name: "subagent", register: subagentExtension },
 	{ name: "web-search", register: webSearchExtension },
 ];
@@ -44,7 +48,7 @@ function captureRegisteredTools(register: ToolExtension): RegisteredToolMetadata
 			tools.push(tool);
 		},
 		registerCommand() {},
-		on() {},
+		on() { return () => {}; },
 	} as unknown as ExtensionAPI;
 
 	register(pi);

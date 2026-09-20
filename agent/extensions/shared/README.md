@@ -13,6 +13,7 @@ Current managed display order:
 3. `web-search`
 4. `subagents`
 5. `mcp`
+6. `response-timer`
 
 The numeric prefixes in `FOOTER_STATUS_KEYS` (`0-`, `1-`, etc.) are intentional. Pi displays footer statuses sorted by key, so the prefixes encode the managed order while the suffixes keep the keys readable.
 
@@ -31,5 +32,6 @@ Consumers should call `clearLegacyFooterStatus(ctx, name)` before setting the cu
 - `web-search/index.ts` (`web-search`)
 - `subagent/index.ts` (`subagents`)
 - `mcp-bridge/mcpConnector.ts` (`mcp`)
+- `response-timer/index.ts` (`responseTimer`)
 
 The focused test coverage for ordering and legacy cleanup lives in `shared/footerStatus.test.ts`.

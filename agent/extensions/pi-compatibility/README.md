@@ -21,10 +21,10 @@ Protects rebrand-safe config path handling across local extensions.
 
 Protects Pi custom-tool API assumptions used by extensions that register tools.
 
-- Scans `clarify/index.ts`, `web-search/index.ts`, and `subagent/index.ts` for `return { ... isError: true ... }` from tool execution paths.
+- Scans the custom-tool execution paths in `clarify`, `git-inspect`, `mcp-bridge`, `web-search`, and `subagent` for `return { ... isError: true ... }`.
 - The invariant is that Pi custom-tool failures should throw `Error` from `execute()` instead of returning a successful-looking tool result marked with `isError: true`.
-- Checks the `escalate_to_parent` tool metadata in `subagent/index.ts`.
-- The invariant is that `promptSnippet` and every `promptGuidelines` entry for `escalate_to_parent` name the tool explicitly. Pi can compose tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
+- Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
+- The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 
 ### `ui-mode-guards.test.ts`
 

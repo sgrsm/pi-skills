@@ -5,6 +5,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import { uuidv7 } from "@earendil-works/pi-ai"
 import { CONFIG_DIR_NAME, buildSessionContext, CustomEditor, convertToLlm, getAgentDir, serializeConversation } from "@earendil-works/pi-coding-agent"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionContext } from "@earendil-works/pi-coding-agent"
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui"
 
 const HANDOFF_DIR = join(dirname(getAgentDir()), "handoff")
 const HANDOFF_DIR_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/handoff`
@@ -103,6 +104,7 @@ type SelectCapableContext = {
 type EditorLike = {
 	render(width: number): string[]
 	handleInput(data: string): void
+	handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined
 	invalidate(): void
 	getText(): string
 	setText(text: string): void
@@ -125,7 +127,7 @@ type EditorLike = {
 	onAction?(action: string, handler: () => void): void
 }
 
-class ContinueWarningEditor {
+export class ContinueWarningEditor {
 	private readonly base: EditorLike
 	private readonly originalOnSubmit?: (text: string) => void
 	private readonly originalOnChange?: (text: string) => void
@@ -236,6 +238,10 @@ class ContinueWarningEditor {
 
 	handleInput(data: string): void {
 		this.base.handleInput(data)
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		return this.base.handleMouse?.(event)
 	}
 
 	invalidate(): void {
