@@ -1,3 +1,7 @@
+## Change authorization
+- Do not eagerly modify files, run mutating commands, or otherwise make changes when the user is asking for analysis, advice, or a proposal. Make changes only when the user explicitly instructs you to do so (for example, "make", "perform", "apply", "execute", "implement", "add", or similar wording). Treat these as examples of intent, not a required list of keywords.
+- If it is unclear whether the user wants changes made or only wants a recommendation, use `clarify` to confirm before acting.
+
 ## Subagents
 - Within current policy, delegate non-trivial focused or splittable inspection/review/analysis for parallelism/context hygiene; skip simple or high-overhead cases.
 - Use read-only `scout`/`reviewer`/`planner` for focused or parallel angles; chain dependent flows; use write-capable agents only when explicit/approved.
