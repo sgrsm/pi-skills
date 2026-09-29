@@ -4,7 +4,7 @@ Shows the elapsed time for the current Pi response through Pi's extension status
 
 ## What it does
 
-- Adds a timer at the right edge of Pi's extension-status line, after the MCP indicator and its `•` delimiter, while preserving the built-in footer.
+- Adds a timer at the right edge of Pi's local extension-status line, while preserving the built-in footer.
 - Resets to `0s` when a new agent response starts.
 - Updates once per second while the agent is thinking, streaming, or running tools.
 - Stops at `agent_settled` and leaves the final duration visible until the next response.
@@ -33,7 +33,7 @@ Time uses `Xh Ym Zs` units. Leading zero values are hidden: seconds-only respons
 
 ## UI placement
 
-The extension publishes the timer with `ctx.ui.setStatus()`. Its shared sortable status key places it at the rightmost position after the MCP indicator, which contributes the separating `•` delimiter. Pi retains full ownership of the built-in footer, including cwd, model, usage, OAuth, and auto-compaction indicators.
+The extension publishes the timer with `ctx.ui.setStatus()`. Its shared sortable status key places it after the other local extension indicators. Pi retains full ownership of the built-in footer, including cwd, model, usage, OAuth, and auto-compaction indicators.
 
 This avoids depending on Pi's internal `FooterComponent` or fabricating a partial session object. It also composes with other extension statuses and custom footers according to Pi's documented status API.
 

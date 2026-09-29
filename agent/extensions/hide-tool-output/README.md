@@ -45,6 +45,8 @@ The extension re-registers these built-in tools with custom rendering:
 
 `git_inspect` independently honors the same setting, so its result output is hidden while its tool-call row remains visible.
 
+Native MCP tools remain visible under `/hide-tool`: Pi 0.99.1 provides no renderer-only override. Model/codemode results are unchanged.
+
 It no longer registers or owns `bash`. The global permissions extension owns the model Bash definition and composes Pi's full built-in Bash call renderer with this extension's persisted `isHideToolOutputEnabled()` state: results are empty when hiding is on and normal when hiding is off. The permissions wrapper keeps Pi's mutable built-in Bash result component in row-local renderer state, so a live row can move from hidden to visible without passing the empty placeholder back to Pi's built-in renderer. This avoids competing Bash definitions while preserving the existing UI behavior.
 
 That ownership supports the permissions extension's practical catastrophic-deletion accident guard; it is not a sandbox or hostile-code guarantee. `hide-tool-output` changes rendering only and adds no execution protection. The permissions-owned model Bash uses Pi's standard local shell operations, but permissions-provided guarded operations cannot currently forward a configured `shellPath` for either model Bash or TUI Bash. The model override also cannot forward its configured `shellCommandPrefix`; TUI `shellCommandPrefix` is still applied by Pi before the returned operations run and is final-checked by permissions.

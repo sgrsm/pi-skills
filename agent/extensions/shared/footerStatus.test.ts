@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS, FOOTER_STATUS_ORDER } from "./footerStatus.ts";
 
-const EXPECTED_DISPLAY_ORDER = ["permissions", "clarify", "web-search", "subagents", "mcp", "response-timer"];
+const EXPECTED_DISPLAY_ORDER = ["permissions", "clarify", "web-search", "subagents", "response-timer"];
 const DISPLAY_LABEL_BY_STATUS_NAME = {
 	responseTimer: "response-timer",
 	permissions: "permissions",
 	clarify: "clarify",
 	webSearch: "web-search",
 	subagents: "subagents",
-	mcp: "mcp",
 } as const;
 
 test("managed footer status keys sort in requested last-line indicator order", () => {
@@ -43,7 +42,6 @@ test("legacy footer status keys are cleared when managed statuses refresh", () =
 		["2-clarify", undefined],
 		["1-web-search", undefined],
 		["0-subagents", undefined],
-		["mcp", undefined],
 		["-1-response-timer", undefined],
 	]);
 });

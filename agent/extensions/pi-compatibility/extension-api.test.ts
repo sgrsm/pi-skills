@@ -10,7 +10,6 @@ import webSearchExtension from "../web-search/index.ts";
 const scopedExtensionFiles = [
 	"../clarify/index.ts",
 	"../git-inspect/index.ts",
-	"../mcp-bridge/mcpConnector.ts",
 	"../web-search/index.ts",
 	"../subagent/index.ts",
 ] as const;

@@ -21,7 +21,7 @@ Protects rebrand-safe config path handling across local extensions.
 
 Protects Pi custom-tool API assumptions used by extensions that register tools.
 
-- Scans the custom-tool execution paths in `clarify`, `git-inspect`, `mcp-bridge`, `web-search`, and `subagent` for `return { ... isError: true ... }`.
+- Scans the custom-tool execution paths in `clarify`, `git-inspect`, `web-search`, and `subagent` for `return { ... isError: true ... }`.
 - The invariant is that Pi custom-tool failures should throw `Error` from `execute()` instead of returning a successful-looking tool result marked with `isError: true`.
 - Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
 - The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.

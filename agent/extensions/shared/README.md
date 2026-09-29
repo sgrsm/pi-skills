@@ -12,8 +12,7 @@ Current managed display order:
 2. `clarify`
 3. `web-search`
 4. `subagents`
-5. `mcp`
-6. `response-timer`
+5. `response-timer`
 
 The numeric prefixes in `FOOTER_STATUS_KEYS` (`0-`, `1-`, etc.) are intentional. Pi displays footer statuses sorted by key, so the prefixes encode the managed order while the suffixes keep the keys readable.
 
@@ -21,7 +20,7 @@ Use `FOOTER_STATUS_ORDER` for logical iteration, `FooterStatusName` for the mana
 
 ## Legacy key cleanup
 
-Some local extensions previously used different prefixed keys or an unprefixed key (`mcp`). `LEGACY_FOOTER_STATUS_KEYS` records those old keys.
+Some local extensions previously used different prefixed keys. `LEGACY_FOOTER_STATUS_KEYS` records those old keys.
 
 Consumers should call `clearLegacyFooterStatus(ctx, name)` before setting the current key. This unsets legacy entries and prevents duplicate footer indicators after a key/order migration.
 
@@ -31,7 +30,6 @@ Consumers should call `clearLegacyFooterStatus(ctx, name)` before setting the cu
 - `clarify/index.ts` (`clarify`)
 - `web-search/index.ts` (`web-search`)
 - `subagent/index.ts` (`subagents`)
-- `mcp-bridge/mcpConnector.ts` (`mcp`)
 - `response-timer/index.ts` (`responseTimer`)
 
 The focused test coverage for ordering and legacy cleanup lives in `shared/footerStatus.test.ts`.

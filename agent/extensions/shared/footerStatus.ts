@@ -4,7 +4,7 @@
  * `FOOTER_STATUS_KEYS` encodes this order with sortable numeric prefixes so Pi
  * displays managed statuses left-to-right in the order listed here.
  */
-export const FOOTER_STATUS_ORDER = ["permissions", "clarify", "webSearch", "subagents", "mcp", "responseTimer"] as const;
+export const FOOTER_STATUS_ORDER = ["permissions", "clarify", "webSearch", "subagents", "responseTimer"] as const;
 
 /** Names of local-extension footer statuses managed by the shared key helper. */
 export type FooterStatusName = (typeof FOOTER_STATUS_ORDER)[number];
@@ -20,7 +20,6 @@ export const FOOTER_STATUS_KEYS: Record<FooterStatusName, string> = {
 	clarify: "1-clarify",
 	webSearch: "2-web-search",
 	subagents: "3-subagents",
-	mcp: "4-mcp",
 	responseTimer: "5-response-timer",
 };
 
@@ -35,7 +34,6 @@ export const LEGACY_FOOTER_STATUS_KEYS: Record<FooterStatusName, readonly string
 	clarify: ["2-clarify"],
 	webSearch: ["1-web-search"],
 	subagents: ["0-subagents"],
-	mcp: ["mcp"],
 	responseTimer: ["-1-response-timer"],
 };
 
