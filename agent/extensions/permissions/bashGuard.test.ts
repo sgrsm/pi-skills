@@ -257,5 +257,9 @@ function createToolHarness(options: PermissionsExtensionOptions) {
 }
 
 function createContext(cwd: string) {
-	return createTestExtensionContext({ cwd, sessionId: "bash-guard-test" });
+	return {
+		...createTestExtensionContext({ cwd, sessionId: "bash-guard-test" }),
+		tools: [],
+		async executeTool() { throw new Error("Unexpected nested tool call in Bash guard test"); },
+	};
 }
