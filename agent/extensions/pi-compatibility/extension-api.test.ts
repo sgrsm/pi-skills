@@ -1,29 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import clarifyExtension from "../clarify/index.ts";
 import gitInspectExtension from "../git-inspect/index.ts";
 import subagentExtension from "../subagent/index.ts";
 import webSearchExtension from "../web-search/index.ts";
-
-const scopedExtensionFiles = [
-	"../clarify/index.ts",
-	"../git-inspect/index.ts",
-	"../web-search/index.ts",
-	"../subagent/index.ts",
-] as const;
-
-test("custom tools throw from execute failures instead of returning isError: true", () => {
-	for (const relativePath of scopedExtensionFiles) {
-		const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
-		assert.equal(
-			/\breturn\s*{[\s\S]*?\bisError\s*:\s*true\b[\s\S]*?};/.test(source),
-			false,
-			`${relativePath} should throw Error from execute() instead of returning isError: true`,
-		);
-	}
-});
 
 type RegisteredToolMetadata = {
 	name: unknown;

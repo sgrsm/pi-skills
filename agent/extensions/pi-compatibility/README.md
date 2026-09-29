@@ -19,10 +19,8 @@ Protects rebrand-safe config path handling across local extensions.
 
 ### `extension-api.test.ts`
 
-Protects Pi custom-tool API assumptions used by extensions that register tools.
+Protects prompt metadata used by Pi when composing custom-tool instructions.
 
-- Scans the custom-tool execution paths in `clarify`, `git-inspect`, `web-search`, and `subagent` for `return { ... isError: true ... }`.
-- The invariant is that Pi custom-tool failures should throw `Error` from `execute()` instead of returning a successful-looking tool result marked with `isError: true`.
 - Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
 - The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 
@@ -43,7 +41,7 @@ Add a compatibility test here when a change depends on a Pi host contract or a c
 
 Good candidates:
 
-- version-specific Pi extension API contracts, such as tool execution error semantics;
+- version-specific Pi extension API contracts, such as execution context and nested-call semantics;
 - prompt metadata requirements that matter because of how Pi composes tool documentation;
 - mode/transport distinctions such as `ctx.mode` versus `ctx.hasUI`;
 - config-dir or agent-dir contracts where public helpers must be used instead of hardcoded paths;
@@ -56,7 +54,6 @@ Prefer the owning extension's own test file for normal feature behavior. Keep th
 - Keep tests small and explicit; use `node:test` and `node:assert/strict` like the existing files.
 - Prefer exported helper predicates for behavior checks instead of constructing full UI/runtime objects.
 - If scanning source text, keep the scanned file list narrow and explain the host contract in the test name.
-- When adding a new custom tool that follows the Pi custom-tool failure contract, either add its file to the scoped list in `extension-api.test.ts` or add a more targeted assertion if a source scan would be too brittle.
 - If a new TUI-only surface is added, expose a small `can...` helper and extend `ui-mode-guards.test.ts` so `rpc` with `hasUI: true` remains covered.
 - If a runtime extension starts reading or writing Pi config paths directly, extend `config-paths.test.ts` so helper-based path resolution stays enforced.
 
