@@ -2538,6 +2538,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: PARENT_ESCALATION_TOOL_NAME,
 		label: "Escalate to Parent",
+		exposure: "model-only",
 		description:
 			"Request that the parent agent obtain user clarification or approval before this delegated subagent continues.",
 		promptSnippet:
@@ -3026,6 +3027,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
+		exposure: "model-only",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Use one canonical request shape: mode (single, parallel, or chain) plus a non-empty items array. Single mode requires exactly one item; chain supports {previous}.",

@@ -42,7 +42,7 @@ Argument completion is available for `on` and `off`.
 
 ## Tool
 
-Tool name: `clarify`
+Tool name: `clarify`. It is model-only: direct model calls are supported, but codemode scripts and other tools cannot invoke it through `ctx.executeTool()`. The `/clarify` command is unchanged.
 
 Parameters:
 

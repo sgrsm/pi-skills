@@ -19,8 +19,9 @@ Protects rebrand-safe config path handling across local extensions.
 
 ### `extension-api.test.ts`
 
-Protects prompt metadata used by Pi when composing custom-tool instructions.
+Protects custom-tool prompt metadata and the chosen exposure of workflow tools.
 
+- Checks that `clarify`, `subagent`, and `escalate_to_parent` use model-only exposure, excluding programmatic nested calls.
 - Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
 - The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 

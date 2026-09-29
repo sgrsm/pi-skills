@@ -513,6 +513,7 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: CLARIFY_TOOL_NAME,
 		label: "Clarify",
+		exposure: "model-only",
 		description:
 			"Ask the user to choose between different paths or confirm/adjust an assumption. Use when multiple meaningful ways forward exist or when a non-trivial assumption needs confirmation.",
 		promptSnippet:

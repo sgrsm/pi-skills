@@ -10,6 +10,7 @@ type RegisteredToolMetadata = {
 	name: unknown;
 	promptSnippet?: unknown;
 	promptGuidelines?: unknown;
+	exposure?: unknown;
 };
 
 type ToolExtension = (pi: ExtensionAPI) => void;
@@ -39,6 +40,12 @@ function namesTool(text: string, toolName: string): boolean {
 	const escapedName = toolName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	return new RegExp(`(^|[^A-Za-z0-9_])${escapedName}($|[^A-Za-z0-9_])`).test(text);
 }
+
+test("clarification, delegation, and escalation tools are model-only", () => {
+	const tools = [clarifyExtension, subagentExtension].flatMap(captureRegisteredTools);
+	assert.deepEqual(tools.map((tool) => tool.name).sort(), ["clarify", "escalate_to_parent", "subagent"]);
+	for (const tool of tools) assert.equal(tool.exposure, "model-only", String(tool.name));
+});
 
 test("each registered custom tool names itself in every flat prompt metadata entry", () => {
 	for (const extension of promptMetadataExtensions) {
