@@ -87,6 +87,14 @@ Important invariants:
 Recheck current host declarations and installed `docs/extensions.md` and
 `docs/tui.md` when upgrading Pi; do not substitute private production imports.
 
+## Built-in replacement configuration
+
+File wrappers use `defaultActive: false` so host defaults, reload choices and allowlists control selection. Do not reconcile loadouts during `session_start`: subtraction can discard pending restored tools.
+
+Read forwards `pi.getSettings().images?.autoResize ?? true` at execution, after runtime binding. Changes apply immediately to wrapped reads; native read picks them up on reload. Preserve delegated arguments, context, results and native metadata.
+
+See [wrapper coverage and limitations](../pi-compatibility/host-contract-coverage.md#wrapped-builtinstestts).
+
 ## Validation
 
 See the [loader regression coverage and limitations](../pi-compatibility/short-paths-loader.md).
@@ -94,7 +102,7 @@ Prepare the [approved scratch setup](../permissions/README.md#safe-test-scratch-
 before running tests. From `agent/extensions/`:
 
 ```bash
-node --test pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
+node --test pi-compatibility/wrapped-builtins.test.ts pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
 npm run verify
 ```
 

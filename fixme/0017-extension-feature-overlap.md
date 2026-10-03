@@ -19,7 +19,7 @@ None of the remaining 12 local runtime extensions has a complete built-in replac
 | codex-verbosity | Thinking controls are not text verbosity | Keep; fix provider-coverage feedback |
 | git-inspect | Bash can run Git, but lacks this fixed read-only interface | Keep; improve visible result expansion/metadata |
 | handoff | Native sessions, forks/clones, compaction and summaries | Keep portable documents/injection/continuation; [nested file lists resolved (0007)](0007-handoff-nested-file-operations.md) |
-| hide-tool-output | Native collapse/expansion | Keep persistent hide preference; fix native-wrapper configuration parity |
+| hide-tool-output | Native collapse/expansion | Keep persistent hide preference; [native-wrapper configuration resolved (0009)](0009-wrapped-built-in-configuration.md) |
 | mcp-status | /mcp already provides detailed state/diagnostics | Keep optional always-visible config footer; fix parsing/display drift |
 | permissions | No shipped general approval layer or equivalent P0 policy | Keep; fix dialog scheduling and state explicit boundaries |
 | response-timer | Host status API and lifecycle hooks only | Keep; fix lifecycle/color/docs drift |
@@ -37,6 +37,10 @@ The nested-list acceptance criteria are now verified: direct/nested attempts fee
 ### Re-check after 0008
 
 Cross-loader preference synchronization and row-local refresh are now verified with the public Pi loader and actual host components. Final validation passed 17 focused and 547 full-gate tests, TypeScript and five host links. This updates only short-paths' repair recommendation; native path display still does not replace its user-controlled smart shortening. Assessment status and retirement authorization are unchanged. See [0008](0008-short-paths-loader-state.md) for review outcomes and limits.
+
+### Re-check after 0009
+
+[Wrapper configuration is resolved](0009-wrapped-built-in-configuration.md#resolution-and-validation); native expansion still does not replace persistent hiding. Assessment status and retirement authorization are unchanged.
 
 ## If simplification is requested later
 

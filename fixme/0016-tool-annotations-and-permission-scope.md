@@ -42,4 +42,8 @@ Review permissions README scope/trust language against actual dispatch. No destr
 
 `node --test pi-compatibility/extension-api.test.ts git-inspect/index.test.ts web-search/index.test.ts`; `npm run test:permissions`; `npm run verify` with approved scratch.
 
+### Re-check after 0009
+
+**Still Open:** source inspection confirms missing git/web annotations and unchanged permission scope. Passing registration/permission tests and [0009](0009-wrapped-built-in-configuration.md#resolution-and-validation)'s native-wrapper metadata checks do not establish this package's criteria.
+
 Related: [0002: dialog scheduling](0002-dialog-concurrency-and-cancellation.md), required before any future broad interactive approval policy.

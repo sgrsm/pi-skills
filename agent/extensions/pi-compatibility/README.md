@@ -64,6 +64,10 @@ Checks SDK/CLI resume against the local tool-availability fix and **characterize
 
 Checks that `/short-paths` updates wrapped summaries across independently loaded extensions while preserving row expansion and cleaning up on reload. See [short-paths loader coverage](short-paths-loader.md).
 
+### `wrapped-builtins.test.ts`
+
+Checks native/wrapped file-tool selection at startup and reload, restrictive SDK/CLI tool options, native declaration metadata, and actual read-image resizing with isolated settings. See [wrapper coverage and limitations](host-contract-coverage.md#wrapped-builtinstestts).
+
 ## Maintainer coverage notes
 
 [Host-contract coverage and limitations](host-contract-coverage.md) records what the larger tests cover and do not cover, the guarantee/characterization distinction, and what to re-check after a Pi upgrade.

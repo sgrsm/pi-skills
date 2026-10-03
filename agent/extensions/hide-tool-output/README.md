@@ -11,6 +11,7 @@ This is a UI rendering change only:
 - tools still execute normally
 - results are still returned to the agent
 - relative paths still resolve against the active session cwd
+- image reads honor Pi's `images.autoResize` setting (`true` by default; `false` preserves original image dimensions); changes apply on the next wrapped read without needing `/reload`
 
 If no saved state exists, hiding is enabled by default. The state is saved in `~/.pi/agent/hide-tool-output.json`.
 
@@ -52,6 +53,14 @@ With the [permissions extension](../permissions/README.md) loaded, Bash output a
 Custom-shell limitation: permissions-owned Bash cannot honor `shellPath`, or `shellCommandPrefix` for model-issued commands. TUI command prefixes are still applied and checked. See the permissions guide for guard scope and limitations.
 
 This extension adds no new agent-facing tools or flags.
+
+## Tool selection
+
+Wrapped file tools follow Pi's defaults and CLI selection; loading this extension no longer additionally enables `grep`, `find` or `ls`. Opt in with `"defaultTools": ["+grep", "+find", "+ls"]`. With `--tools`, list every tool you want.
+
+Empty defaults, `--no-builtin-tools`, restrictive allowlists and exclusions are respected. Hiding output never changes selection.
+
+`/reload` preserves current choices and enables newly added defaults. Previously active search tools may stay active; restart or explicitly select a loadout to remove them.
 
 ## UI behavior
 

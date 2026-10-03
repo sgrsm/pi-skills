@@ -121,4 +121,8 @@ Final parent-executed validation from `agent/extensions/`, with both required va
 
 Every final run reported **0 failed, 0 cancelled, 0 skipped**. Logs: `0005-resume-final-tests.log`, `0005-split-final-focused.log`, `0005-split-final-subagent.log`, `0005-split-final-verify.log` in the same approved ephemeral root. SDK/CLI resume validation is no longer missing; it confirms the separate unresolved host behavior. 0005 is closed only for the approved local scope; TDR-0004 remains Open. The 0004 regressions passed again, and 0009/0015 statuses remain unchanged. No extension runtime or installed-host changes were added during this follow-up.
 
+### Re-check after 0009
+
+Activation/restoration tests still pass; 0009 adds no subtractive startup update. **0005 stays Resolved; TDR-0004 stays Open**. See [0009 validation](0009-wrapped-built-in-configuration.md#resolution-and-validation).
+
 Related: [0009: wrapped built-in activation](0009-wrapped-built-in-configuration.md), [0015: child MCP startup](0015-subagent-mcp-startup.md), [TDR-0004: SDK/CLI resume restoration](../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).

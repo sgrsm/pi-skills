@@ -47,3 +47,7 @@ Related: [0008: loader state synchronization](0008-short-paths-loader-state.md).
 0008 is resolved. Public-loader tests verify synchronized path preferences across separate jiti instances; actual public `ToolExecutionComponent` tests verify `/short-paths` redraws existing rows without changing mixed expansion or result-line counts. Pi 1.0.0 exposes the supported `ToolRenderContext.invalidate()` callback, so this path does not require global expansion changes or private UI traversal. Final checks passed **17 focused, 26 related, and 547 full-gate tests**, plus TypeScript and five valid host links. See 0008 for review reconciliation, actual-host GC evidence and limits.
 
 **Status remains Open:** `/hide-tool` still uses global-expansion refresh, and source inspection still shows `git_inspect.renderResult()` ignoring expanded options. The related Git tests passing do not establish the compact/expanded acceptance criteria. Explicit hiding remains unchanged and was regression-tested; no Ctrl+O bypass, Git renderer change, or unrelated refresh fix was implemented here.
+
+### Re-check after 0009
+
+**Still Open:** source inspection confirms global `/hide-tool` expansion refresh and Git's ignored expansion options remain. Related rendering tests pass, but do not establish these criteria; [0009](0009-wrapped-built-in-configuration.md#resolution-and-validation) changes configuration only.

@@ -101,3 +101,7 @@ Files: `0008-test-first.log`, `0008-review-test-first.log`, `0008-focused.log`, 
 - **0012 remains Open.** Its `/short-paths` refresh portion is verified resolved, including real mixed row expansion; `/hide-tool` still flips global expansion, and visible `git_inspect` still ignores expanded options. Related tests passed, but those independent acceptance criteria were not implemented or established. Its evidence now distinguishes the resolved part from the remaining work.
 - **0009 remains Open.** Source inspection still shows directly registered wrappers and delegated read creation without effective image options. Native/wrapped activation parity and image-setting acceptance checks were not run for 0008; no status change or unrelated runtime fix was made.
 - **0017 remains Assessment complete — no retirement approved.** Only short-paths' cross-loader repair recommendation was updated; synchronization does not make native path rendering a complete replacement or authorize retirement.
+
+### Re-check after 0009
+
+Public-loader/row tests still pass; 0009 does not change renderers or synchronization. **0008 stays Resolved; 0012 stays Open**. The earlier Open note for 0009 is historical; see its [resolution](0009-wrapped-built-in-configuration.md#resolution-and-validation).

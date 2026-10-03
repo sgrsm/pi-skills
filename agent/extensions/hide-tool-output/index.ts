@@ -101,9 +101,16 @@ export default function (pi: ExtensionAPI) {
     const wrappedTool = tool as any;
     pi.registerTool({
       ...wrappedTool,
+      // Replacements follow native defaults/explicit selection, not extension
+      // auto-activation. Do not reconcile the loadout from session_start.
+      defaultActive: false,
       execute(toolCallId: any, params: any, signal: any, onUpdate: any, ctx: any) {
         const sessionCwd = typeof ctx?.cwd === "string" && ctx.cwd.length > 0 ? ctx.cwd : process.cwd();
-        return createToolDefinition(sessionCwd).execute(toolCallId, params, signal, onUpdate, ctx);
+        // Settings are available after runtime binding and can change mid-session.
+        const definition = wrappedTool.name === "read"
+          ? createReadToolDefinition(sessionCwd, { autoResizeImages: pi.getSettings().images?.autoResize ?? true })
+          : createToolDefinition(sessionCwd);
+        return definition.execute(toolCallId, params, signal, onUpdate, ctx);
       },
       renderCall(args: any, theme: any, context: any) {
         if (context?.state && typeof context.state === "object" && typeof context.invalidate === "function") {

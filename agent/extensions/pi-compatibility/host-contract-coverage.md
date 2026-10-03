@@ -59,6 +59,14 @@ Protects optional-tool availability without losing restored tools. See [tool ava
 - Also covers manual/ask/auto policies, fresh and reloaded depth caps, changed saved state, explicit persisted toggles, active and callable sets for available and withdrawn tools, model-only nested-call rejection, direct child escalation, unrelated session tool choices, `defaultTools`, `+codemode`, allowlists/exclusions (including late restoration), and no-tools options.
 - The codemode placeholder checks selection only, not the real sandbox or loadout renderer. The constructor-restoration case deliberately omits `initialActiveToolNames`; it does not fix or claim to fix the separate SDK/CLI resume defect below.
 
+## `wrapped-builtins.test.ts`
+
+Protects [built-in replacement configuration](../short-paths/maintenance.md#built-in-replacement-configuration).
+
+- Public loader/SDK native controls cover defaults/modifiers, explicit/restrictive selection, exclusions, no-tools options, reload choices, callable sets and declaration metadata.
+- Scratch PNG/text reads cover false/true/default settings, hiding, project overrides, immediate changes/reload, cwd, offsets/limits, cancellation, model context and complete result parity. Direct definitions prevent host post-result normalization from masking resize drift.
+- Codemode is selection-only; SDK options exercise shared CLI selection, not a wrapper-enabled CLI subprocess. No live terminal/provider/MCP or positive SDK/CLI resume-restoration claim.
+
 ## `sdk-resume.test.ts` (characterization plus controls)
 
 Exercises SDK/CLI resume with the local startup fix, and records the separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). On the tested Pi 1.0.0, SDK and CLI session creation omit the selected late tool declarations even without local extensions. This stays broken independently of the local fix; no host patch or local workaround exists.
