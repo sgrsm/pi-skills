@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { registerToolAvailability } from "../shared/toolAvailability.ts";
 import { getSessionDialogQueue, waitForDialog } from "../shared/dialogQueue.ts";
 import { boundedDialogDetails, showCancellableCustom, showCancellableEditor } from "../shared/dialogUi.ts";
 
@@ -511,7 +512,7 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 	const readModeState = options.loadModeState ?? loadClarifyModeState;
 	let clarifyEnabled = readModeState().enabled;
 
-	pi.registerTool({
+	const setClarifyAvailability = registerToolAvailability(pi, {
 		name: CLARIFY_TOOL_NAME,
 		label: "Clarify",
 		exposure: "model-only",
@@ -630,7 +631,7 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 			const prefix = details.selectedIndex ? `${details.selectedIndex}. ` : "";
 			return new Text(theme.fg("success", "✓ ") + theme.fg("accent", `${prefix}${details.answer ?? ""}`), 0, 0);
 		},
-	});
+	}, clarifyEnabled);
 
 	pi.registerCommand("clarify", {
 		description: "Enable or disable clarify globally (on|off)",
@@ -664,8 +665,10 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 			clarifyEnabled = nextEnabled;
 			await saveClarifyModeState({ enabled: clarifyEnabled });
 
+			// Explicit user deactivation may intentionally replace a restored loadout.
+			if (!clarifyEnabled) removeClarifyTool(pi);
+			setClarifyAvailability(clarifyEnabled);
 			if (clarifyEnabled) addClarifyTool(pi);
-			else removeClarifyTool(pi);
 			updateClarifyStatus(ctx, clarifyEnabled);
 
 			notify(ctx, `clarify ${mode} (saved globally to ${CLARIFY_MODE_STATE_PATH})`);
@@ -674,8 +677,8 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 
 	pi.on("session_start", async (_event, ctx) => {
 		clarifyEnabled = readModeState().enabled;
+		setClarifyAvailability(clarifyEnabled);
 		if (clarifyEnabled) addClarifyTool(pi);
-		else removeClarifyTool(pi);
 		updateClarifyStatus(ctx, clarifyEnabled);
 	});
 

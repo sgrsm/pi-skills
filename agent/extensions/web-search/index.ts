@@ -11,6 +11,7 @@ import {
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { registerToolAvailability } from "../shared/toolAvailability.ts";
 import { truncateWebSearchVisibleOutput } from "./outputTruncation.ts";
 
 const DEFAULT_BASE_URL = "https://agentsearch.area55.me";
@@ -347,15 +348,17 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 			webSearchEnabled = nextEnabled;
 			await saveWebSearchState({ enabled: webSearchEnabled });
 
+			// Explicit user deactivation may intentionally replace a restored loadout.
+			if (!webSearchEnabled) removeWebSearchTool(pi);
+			setWebSearchAvailability(webSearchEnabled);
 			if (webSearchEnabled) addWebSearchTool(pi);
-			else removeWebSearchTool(pi);
 			updateWebSearchStatus(ctx, webSearchEnabled);
 
 			notify(ctx, `web-search ${mode} (saved globally to ${getWebSearchStatePath()})`);
 		},
 	});
 
-	pi.registerTool({
+	const setWebSearchAvailability = registerToolAvailability(pi, {
 		name: WEB_SEARCH_TOOL_NAME,
 		label: "Web Search",
 		description: `Search the web using a self-hosted SearXNG instance and return snippets with source URLs. Visible text is a head preview bounded to ${DEFAULT_MAX_LINES.toLocaleString()} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first); when truncated, the exact full formatted output is saved to a temporary file path reported in the result. Tool details retain compact metadata, counts, and truncation information.`,
@@ -395,12 +398,12 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 				},
 			};
 		},
-	});
+	}, webSearchEnabled);
 
 	pi.on("session_start", async (_event, ctx) => {
 		webSearchEnabled = loadWebSearchState().enabled;
+		setWebSearchAvailability(webSearchEnabled);
 		if (webSearchEnabled) addWebSearchTool(pi);
-		else removeWebSearchTool(pi);
 		updateWebSearchStatus(ctx, webSearchEnabled);
 	});
 

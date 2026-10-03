@@ -108,7 +108,11 @@ Parent project trust applies to a child cwd only when its existing real path is 
 
 Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool. When an agent declares a non-empty `tools:` allowlist, the extension automatically adds `escalate_to_parent` to the child invocation so the advertised escalation path remains callable.
 
+Top-level escalation stays unavailable even if explicitly named in a tool selection. Applying child-relay availability, saved off mode, or a delegation depth cap during startup and `/reload` preserves pending restored MCP tools. Eligible delegation and escalation remain model-only. Existing global mode defaults and restrictive child/CLI allowlists are unchanged; mode commands cannot bypass those allowlists. An explicit `/subagents off` remains an intentional tool-loadout change.
+
 The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
+
+**Separate Pi 1.0 resume limitation:** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. This startup correction does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Settings
 

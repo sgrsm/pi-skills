@@ -44,6 +44,10 @@ Future enrollment candidates are **subagent approval/escalation, handoff dialogs
 
 See the [shared helper overview](./shared/README.md#dialog-helpers), the [permissions guide](./permissions/README.md#prompt-choices), the [clarify guide](./clarify/README.md#tool), and [cross-extension regression coverage](./pi-compatibility/README.md#dialog-concurrencytestts). Focused tests are in `shared/dialogQueue.test.ts`, `shared/dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`.
 
+## Tool availability at startup
+
+Do not reconcile optional-tool availability with subtractive `setActiveTools()` calls during `session_start`: Pi drops unrelated pending restored tools when a loadout removes an active tool. Use `shared/toolAvailability.ts` for hidden withdrawal of unavailable tools while retaining eligible exposure/defaults and host allowlist filtering. Keep intentional user loadout changes in command handlers. See [0005](../../fixme/0005-tool-activation-and-mcp-restoration.md) and `pi-compatibility/tool-activation.test.ts` for the public-host regression contract.
+
 ## Extension verification
 
 First prepare an approved test scratch root as described in the permissions extension's [safe test scratch setup](./permissions/README.md#safe-test-scratch-setup). Then run the combined Pi host declaration, TypeScript, and full test gate from `agent/extensions/`:

@@ -41,4 +41,8 @@ If the host provides no safe public child-only control, record the limitation an
 
 `npm run test:subagent`; a focused mocked MCP lifecycle test; `npm run verify` with approved scratch.
 
+### Re-check after 0005
+
+0005 changes only local tool availability/activation. Source inspection confirms child CLI arguments/environment construction and built-in MCP loading were not changed. Public activation regressions verify restrictive child allowlists and direct child escalation, but do not measure server startup or connections. No disposable mock-server lifecycle test was run for this package; process amplification remains **inconclusive / verify-first**, and **Status remains Open**. No external server or personal MCP configuration was enabled or changed.
+
 Existing transient-project-trust debt remains separate in [TDR-0002](../tdr/0002-propagate-transient-project-trust-to-subagents.md).

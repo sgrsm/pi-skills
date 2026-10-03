@@ -21,7 +21,7 @@ Protects rebrand-safe config path handling across local extensions.
 
 Protects custom-tool prompt metadata and the chosen exposure of workflow tools.
 
-- Checks that `clarify`, `subagent`, and `escalate_to_parent` use model-only exposure, excluding programmatic nested calls.
+- Checks that `clarify`, `subagent`, and `escalate_to_parent` use model-only exposure when available, or hidden/inactive registration when unavailable, excluding programmatic nested calls.
 - Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
 - The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 
@@ -73,6 +73,28 @@ Protects the [0004 structured-prompt contract](../../../fixme/0004-structured-pr
 - Uses approved scratch for isolated agent configuration and loader fixtures; restores test-process environment and shuts down and invalidates runtimes. No real session files, MCP connections, or model requests are used. Private host imports are not committed.
 
 Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Supplementary version-checked builder/differ probes and their limits are recorded in the finding.
+
+### `tool-activation.test.ts`
+
+Protects the [0005 startup/restoration contract](../../../fixme/0005-tool-activation-and-mcp-restoration.md) with the public loader, SDK selection, `AgentSession`, and in-memory sessions.
+
+- Late synthetic direct, deferred, and codemode tools register inactive, so their eventual activation proves restoration rather than default activation. No live MCP server or provider request is used.
+- Covers every combination of saved clarify/search/delegation off modes, top-level/child relay, and independently varied registration order in public-constructor transcript restoration and actual reload/fresh runtimes. Also covers public `/tree` restoration with delegation off or depth-capped.
+- Covers manual/ask/auto policies, fresh and reloaded depth caps, saved-state changes, explicit persisted toggles, active/callable sets for available and withdrawn tools, model-only nested-call rejection, direct child escalation, unrelated session choices, `defaultTools`, `+codemode`, allowlists/exclusions (including late restoration), and no-tools options.
+- The codemode placeholder checks selection only, not the real sandbox or loadout renderer. The public constructor restoration case deliberately omits `initialActiveToolNames`; it does not claim to fix the SDK’s separate resume-selection behavior.
+
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). All configuration writes target disposable fixtures, and environment/runtime state is restored or invalidated afterward.
+
+### `sdk-resume.test.ts`
+
+Exercises SDK/CLI resume integration for the local tool-activation fix and retains **characterizations of the separate open [TDR-0004 host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md)**. Passing these tests does not mean host restoration works.
+
+- Reopens real disposable JSONL transcripts through `SessionManager.open()` and creates sessions through the public SDK. A no-local-extension baseline reproduces omission of selected late declarations; all 16 local off-mode/relay combinations retain the same baseline and correct local availability.
+- Runs the actual package-declared CLI binary with `--session` in offline RPC mode, comparing baseline and local-all-off startup. No prompt or provider request is sent. Children have isolated agent configuration/fake HOME, an allowlisted environment without inherited provider keys, bounded output/timeouts, and orderly stdin shutdown.
+- Synthetic direct/deferred/codemode tools register inactive so default activation cannot mask missing restoration. Registered names/exposures and indirect callability are explicitly checked. A positive `/tree` control proves the same persisted fixture is restorable through that seam, not that SDK/CLI creation works. The direct control does not imply ordinary auto-active direct MCP tools all fail.
+- Version-checked for Pi 1.0.0; after an upgrade, re-evaluate the characterizations against TDR-0004's positive restoration criteria instead of preserving the defect as intended behavior or silently skipping it.
+
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), setting both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root. No personal session files, credentials, host patches, or enabled MCP servers are used.
 
 ## When to add tests here
 

@@ -39,4 +39,8 @@ Pass documented effective read options from `pi.getSettings()` into definitions 
 
 Focused wrapper and host-activation/image-setting tests; `npm run verify` with approved scratch.
 
+### Re-check after 0005
+
+0005 now uses public hidden withdrawal instead of subtractive startup updates. This wrapper does not use that helper; source inspection still shows independently active read/edit/write/grep/find/ls registrations and delegated read creation without effective `images.autoResize` options. 0005’s public SDK selection tests and full verification passed, but native/wrapped parity and image-setting acceptance criteria were not tested here. **Status remains Open**; no wrapper changes were made.
+
 Dependency/coordination: [0005: startup loadouts](0005-tool-activation-and-mcp-restoration.md). The permissions-owned Bash backend's documented custom-shell limitations are not an instruction to replace its guarded operations.

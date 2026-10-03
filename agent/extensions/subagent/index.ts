@@ -31,6 +31,7 @@ import {
 import { Container, Spacer, Text, truncateToWidth, type AutocompleteItem, type Component, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { registerToolAvailability } from "../shared/toolAvailability.ts";
 import {
 	PROJECT_AGENTS_DISPLAY_PATH,
 	USER_AGENTS_DISPLAY_PATH,
@@ -679,15 +680,6 @@ function setSubagentToolEnabled(pi: ExtensionAPI, enabled: boolean): void {
 	const activeSet = new Set(activeTools);
 	if (enabled) activeSet.add("subagent");
 	else activeSet.delete("subagent");
-	if (activeSet.size === activeTools.length && activeTools.every((tool) => activeSet.has(tool))) return;
-	pi.setActiveTools(Array.from(activeSet));
-}
-
-function setParentEscalationToolEnabled(pi: ExtensionAPI, enabled: boolean): void {
-	const activeTools = pi.getActiveTools();
-	const activeSet = new Set(activeTools);
-	if (enabled) activeSet.add(PARENT_ESCALATION_TOOL_NAME);
-	else activeSet.delete(PARENT_ESCALATION_TOOL_NAME);
 	if (activeSet.size === activeTools.length && activeTools.every((tool) => activeSet.has(tool))) return;
 	pi.setActiveTools(Array.from(activeSet));
 }
@@ -2314,7 +2306,9 @@ export default function (pi: ExtensionAPI) {
 			projectTrusted: ctx.isProjectTrusted(),
 		}),
 	): LoadedSubagentExecutionSettings {
-		setSubagentToolEnabled(pi, canUseSubagentToolInSession(policyState.mode, executionSettings));
+		const enabled = canUseSubagentToolInSession(policyState.mode, executionSettings);
+		setSubagentAvailability(enabled);
+		if (enabled) setSubagentToolEnabled(pi, true);
 		updateSubagentStatus(ctx, policyState.mode, getSessionSubagentApprovalState(ctx), executionSettings);
 		return executionSettings;
 	}
@@ -2357,6 +2351,8 @@ export default function (pi: ExtensionAPI) {
 	async function setPolicyMode(nextMode: SubagentPolicyMode, ctx: ExtensionContext): Promise<LoadedSubagentExecutionSettings> {
 		policyState = { mode: nextMode };
 		await saveSubagentPolicyState(policyState);
+		// Unlike automatic startup, an explicit off command may replace restoration.
+		if (nextMode === "off") setSubagentToolEnabled(pi, false);
 		return syncSubagentSessionState(ctx);
 	}
 
@@ -2535,7 +2531,7 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	pi.registerTool({
+	const setParentEscalationAvailability = registerToolAvailability(pi, {
 		name: PARENT_ESCALATION_TOOL_NAME,
 		label: "Escalate to Parent",
 		exposure: "model-only",
@@ -2601,12 +2597,12 @@ export default function (pi: ExtensionAPI) {
 			if (optionLines.length > 0) text += `\n${theme.fg("dim", optionLines.join(" | "))}`;
 			return new Text(text, 0, 0);
 		},
-	});
+	}, hasParentEscalationRelay());
 
 	pi.on("session_start", async (_event, ctx) => {
 		policyState = loadSubagentPolicyState();
 		subagentFooterActivity.clear();
-		setParentEscalationToolEnabled(pi, hasParentEscalationRelay());
+		setParentEscalationAvailability(hasParentEscalationRelay());
 		syncSubagentSessionState(ctx);
 	});
 
@@ -3026,7 +3022,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
+	const setSubagentAvailability = registerToolAvailability(pi, {
 		name: "subagent",
 		label: "Subagent",
 		exposure: "model-only",
@@ -3603,6 +3599,6 @@ export default function (pi: ExtensionAPI) {
 			const text = result.content[0];
 			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
 		}
-	});
+	}, policyState.mode !== "off");
 
 }

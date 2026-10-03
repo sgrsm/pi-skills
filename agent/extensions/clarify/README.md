@@ -40,6 +40,10 @@ Behavior:
 
 Argument completion is available for `on` and `off`.
 
+Saved off mode keeps clarify unavailable, even if a tool selection names it. Startup and `/reload` no longer discard pending restored MCP tools when applying that mode. Eligible clarify remains model-only and follows the existing global mode defaults; restrictive CLI allowlists and exclusions still take precedence. An explicit `/clarify off` remains an intentional tool-loadout change.
+
+**Separate Pi 1.0 resume limitation:** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. This startup correction does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+
 ## Tool
 
 Tool name: `clarify`. It is model-only: direct model calls are supported, but codemode scripts and other tools cannot invoke it through `ctx.executeTool()`. The `/clarify` command is unchanged.
@@ -96,7 +100,7 @@ Footer status uses the shared helper at `../shared/footerStatus.ts` (`agent/exte
 
 When the terminal UI is available, possible footer states are:
 
-- `clarify: on •` - clarify is enabled from saved state or `/clarify on`, and the `clarify` tool is active.
+- `clarify: on •` - saved/current clarify mode is on; a restrictive CLI tool selection can still exclude the tool.
 - `clarify: off •` - clarify is disabled by saved state or `/clarify off`, so the tool is removed/blocked.
 - no footer indicator - non-UI mode; the extension cannot write terminal footer status and the agent is told to ask in plain text when clarification is needed.
 
@@ -127,7 +131,7 @@ Tool display states:
 
 The extension listens for:
 
-- `session_start` - loads saved state, updates active tools, and refreshes footer status
+- `session_start` - loads saved state, applies tool availability without replacing pending restoration, and refreshes footer status
 - `session_shutdown` - cancels displayed and queued interactions, including on reload
 - `tool_call` - blocks `clarify` calls while disabled
 - `before_agent_start` - adds clarification guidance to the agent prompt, or tells the agent to ask in plain text when UI is unavailable

@@ -10,6 +10,12 @@ TUI permission selectors stay compact with persistent request details above them
 
 Focused coverage lives in `dialogQueue.test.ts`, `dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`. For integration rules and remaining enrollment candidates, see [Shared interactive dialogs](../maintenance.md#shared-interactive-dialogs).
 
+## Tool availability
+
+`toolAvailability.ts` lets clarify, web search, and subagent withdraw unavailable tools using Pi’s documented `hidden` re-registration. Eligible tools retain their original exposure and activation defaults; unavailable tools register inactive. This avoids replacing unrelated pending tool restoration during startup/reload, while host allowlists and exclusions still filter registration. Explicit user deactivation remains in the owning command handlers.
+
+Public-host regression coverage lives in `pi-compatibility/tool-activation.test.ts`; see [0005](../../../fixme/0005-tool-activation-and-mcp-restoration.md) for the contract and validation limits.
+
 ## `footerStatus.ts`
 
 `footerStatus.ts` centralizes footer status keys for local extensions that render persistent indicators in Pi's terminal footer. The shared keys keep those indicators from competing for arbitrary positions or leaving stale entries behind when key names change.

@@ -11,6 +11,7 @@ type RegisteredToolMetadata = {
 	promptSnippet?: unknown;
 	promptGuidelines?: unknown;
 	exposure?: unknown;
+	defaultActive?: unknown;
 };
 
 type ToolExtension = (pi: ExtensionAPI) => void;
@@ -43,10 +44,14 @@ function namesTool(text: string, toolName: string): boolean {
 	return new RegExp(`(^|[^A-Za-z0-9_])${escapedName}($|[^A-Za-z0-9_])`).test(text);
 }
 
-test("clarification, delegation, and escalation tools are model-only", () => {
+test("workflow tools are model-only when available, hidden and inactive otherwise", () => {
 	const tools = [testClarifyExtension, subagentExtension].flatMap(captureRegisteredTools);
 	assert.deepEqual(tools.map((tool) => tool.name).sort(), ["clarify", "escalate_to_parent", "subagent"]);
-	for (const tool of tools) assert.equal(tool.exposure, "model-only", String(tool.name));
+	assert.equal(tools.find((tool) => tool.name === "clarify")!.exposure, "model-only", "the enabled clarify fixture is model-only");
+	for (const tool of tools) {
+		assert.ok(tool.exposure === "model-only" || tool.exposure === "hidden", String(tool.name));
+		if (tool.exposure === "hidden") assert.equal(tool.defaultActive, false, String(tool.name));
+	}
 });
 
 test("each registered custom tool names itself in every flat prompt metadata entry", () => {

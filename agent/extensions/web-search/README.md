@@ -31,6 +31,10 @@ State is saved in the Pi agent dir (`~/.pi/agent/web-search.json` by default).
 
 Default state is enabled when no saved state exists.
 
+Saved off mode keeps web search unavailable, even if a tool selection names it. Startup and `/reload` preserve pending restored MCP tools when applying that mode. Eligible web search retains direct exposure and the existing global mode defaults; restrictive CLI allowlists and exclusions still take precedence. An explicit `/web-search off` remains an intentional tool-loadout change.
+
+**Separate Pi 1.0 resume limitation:** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. This startup correction does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+
 ## Tool
 
 Tool name: `web_search`  
@@ -76,7 +80,7 @@ Use Pi's `read` tool on the reported path when the complete response is needed. 
 
 ## Events and behavior
 
-- `session_start` reloads the saved on/off state, adds or removes `web_search` from active tools, and refreshes the footer status.
+- `session_start` reloads the saved on/off state, makes `web_search` available or unavailable without replacing pending tool restoration, and refreshes the footer status.
 - `tool_call` blocks `web_search` when the saved/current state is off.
 - No custom flags or shortcuts are registered.
 
