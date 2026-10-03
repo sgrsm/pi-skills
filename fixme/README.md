@@ -21,7 +21,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | Order | Work package | Priority / evidence | Source | Status |
 |---|---|---|---|---|
 | 1 | [0001: visible, safe Trash confirmation](0001-trash-history-fullscreen-confirmation.md) | High / reproduced | Audit summary | Resolved |
-| 2 | [0002: concurrent approval and clarification dialogs](0002-dialog-concurrency-and-cancellation.md) | High / permissions reproduced | Audit summary | Open |
+| 2 | [0002: concurrent approval and clarification dialogs](0002-dialog-concurrency-and-cancellation.md) | High / permissions reproduced | Audit summary | Resolved |
 | 3 | [0003: fullscreen clarify input and mouse ownership](0003-clarify-fullscreen-input.md) | Medium / input reproduced | Audit summary | Open |
 | 4 | [0004: structured prompt contributions](0004-structured-prompt-contributions.md) | Medium / reproduced, MCP latent | Audit summary | Open |
 | 5 | [0005: startup loadouts and MCP restoration](0005-tool-activation-and-mcp-restoration.md) | Medium / reproduced, MCP latent | Audit summary | Open |

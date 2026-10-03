@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import type { ExtensionUIContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionUIContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import permissionsExtension, { formatPermissionStatus, getPermissionsArgumentCompletions } from "./index.ts";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { createPiTempWorkspace } from "./tempWorkspace.ts";
@@ -257,6 +257,7 @@ function createPermissionsHarness(systemTempDir?: string, home?: string, ownerPa
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => Promise<unknown> | unknown>>();
 	const tools = new Map<string, ToolDefinition<any, any, any>>();
 	const pi = {
+		events: createEventBus(),
 		registerTool(tool: ToolDefinition<any, any, any>) {
 			tools.set(tool.name, tool);
 		},

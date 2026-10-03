@@ -45,6 +45,12 @@ Protects safe, visible Trash approval against the host selector and fullscreen l
 - Checks both choices and navigation help at 80×24, 40×24, and 30×24 with a large detailed preview and long paths.
 - Checks that initial Enter selects Cancel, Escape invokes cancellation exactly once without selection, and approval requires navigating to the affirmative option.
 
+### `dialog-concurrency.test.ts`
+
+Protects shared scheduling across permissions and clarify. Fake dialogs check that each selector/custom-instructions exchange owns the FIFO until it completes. The public Pi loader exercises separately loaded module/API instances in both registration orders, then shutdown/invalidation and fresh instances on the same event bus. Clarify state is supplied by a scratch test wrapper, never personal settings.
+
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), because the loader fixture creates disposable files.
+
 ## When to add tests here
 
 Add a compatibility test here when a change depends on a Pi host contract or a cross-extension integration point, especially when the behavior could regress silently during unrelated extension edits.

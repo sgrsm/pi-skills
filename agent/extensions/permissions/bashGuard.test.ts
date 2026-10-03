@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
-import { initTheme, type BashOperations, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createEventBus, initTheme, type BashOperations, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import permissionsExtension, { type PermissionsExtensionOptions } from "./index.ts";
 import { CatastrophicDeletionBlockedError, createGuardedBashOperations } from "./bashGuard.ts";
 import { withTestScratchFixture } from "./testScratch.ts";
@@ -234,6 +234,7 @@ function createToolHarness(options: PermissionsExtensionOptions) {
 	const tools = new Map<string, ToolDefinition<any, any, any>>();
 	const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
 	const pi = {
+		events: createEventBus(),
 		registerTool(tool: ToolDefinition<any, any, any>) {
 			tools.set(tool.name, tool);
 		},

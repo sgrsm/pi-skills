@@ -2,6 +2,14 @@
 
 `agent/extensions/shared` is not a standalone Pi extension. Do not enable it directly or add extension entrypoints here. This folder contains small helper modules imported by multiple local extensions under `agent/extensions/`.
 
+## Dialog helpers
+
+`dialogQueue.ts` and `dialogUi.ts` coordinate permission approvals and clarify questions within a session. They keep selector/custom-answer exchanges together, cancel waiting or displayed work on abort/shutdown/reload, and leave independent sessions separate. They are used by the owning extensions automatically; there is nothing to enable or configure here.
+
+TUI permission selectors stay compact with persistent request details above them. RPC selectors carry their own bounded details. Permission requests too large to display completely offer only Deny or Custom instructions, never approval of hidden scopes. Custom answers use an in-Pi multiline editor in TUI (external-editor launch disabled) and cancellable input in RPC. See the [permissions](../permissions/README.md#prompt-choices) and [clarify](../clarify/README.md#tool) guides for user-visible behavior and limitations.
+
+Focused coverage lives in `dialogQueue.test.ts`, `dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`. For integration rules and remaining enrollment candidates, see [Shared interactive dialogs](../maintenance.md#shared-interactive-dialogs).
+
 ## `footerStatus.ts`
 
 `footerStatus.ts` centralizes footer status keys for local extensions that render persistent indicators in Pi's terminal footer. The shared keys keep those indicators from competing for arbitrary positions or leaving stale entries behind when key names change.

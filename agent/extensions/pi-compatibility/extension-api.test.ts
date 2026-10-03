@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import clarifyExtension from "../clarify/index.ts";
 import gitInspectExtension from "../git-inspect/index.ts";
 import subagentExtension from "../subagent/index.ts";
@@ -14,9 +14,10 @@ type RegisteredToolMetadata = {
 };
 
 type ToolExtension = (pi: ExtensionAPI) => void;
+const testClarifyExtension: ToolExtension = (pi) => clarifyExtension(pi, { loadModeState: () => ({ enabled: true }) });
 
 const promptMetadataExtensions: Array<{ name: string; register: ToolExtension }> = [
-	{ name: "clarify", register: clarifyExtension },
+	{ name: "clarify", register: testClarifyExtension },
 	{ name: "git-inspect", register: gitInspectExtension },
 	{ name: "subagent", register: subagentExtension },
 	{ name: "web-search", register: webSearchExtension },
@@ -25,6 +26,7 @@ const promptMetadataExtensions: Array<{ name: string; register: ToolExtension }>
 function captureRegisteredTools(register: ToolExtension): RegisteredToolMetadata[] {
 	const tools: RegisteredToolMetadata[] = [];
 	const pi = {
+		events: createEventBus(),
 		registerTool(tool: RegisteredToolMetadata) {
 			tools.push(tool);
 		},
@@ -42,7 +44,7 @@ function namesTool(text: string, toolName: string): boolean {
 }
 
 test("clarification, delegation, and escalation tools are model-only", () => {
-	const tools = [clarifyExtension, subagentExtension].flatMap(captureRegisteredTools);
+	const tools = [testClarifyExtension, subagentExtension].flatMap(captureRegisteredTools);
 	assert.deepEqual(tools.map((tool) => tool.name).sort(), ["clarify", "escalate_to_parent", "subagent"]);
 	for (const tool of tools) assert.equal(tool.exposure, "model-only", String(tool.name));
 });

@@ -41,6 +41,9 @@ import { analyzeCatastrophicDeletion, type CatastrophicDeletionDecision } from "
 import { createGuardedBashOperations, formatCatastrophicDeletionBlock } from "./bashGuard.ts";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { isHideToolOutputEnabled } from "../hide-tool-output/state.ts";
+import { getSessionDialogQueue, waitForDialog, type SessionDialogQueue } from "../shared/dialogQueue.ts";
+import { boundedDialogDetails, DIALOG_DETAILS_LIMIT, permissionDialogTitle, showCancellableEditor, showPermissionSelect } from "../shared/dialogUi.ts";
+import type { ExtensionContext, ExtensionUIContext, ToolCallEvent } from "@earendil-works/pi-coding-agent";
 
 const STATUS_KEY = FOOTER_STATUS_KEYS.permissions;
 const PERMISSION_CHOICES = ["Allow once", "Allow for current session", "Deny", "Custom instructions"];
@@ -69,13 +72,13 @@ export interface PermissionsExtensionOptions {
 }
 
 export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions = {}) {
+	const dialogs = getSessionDialogQueue(pi);
 	const filePermissions = new PermissionStore();
 	const gitPermissions = new GitPermissionStore();
 	const packagePermissions = new PackagePermissionStore();
 	const agentBranches = new AgentBranchRegistry(AGENT_BRANCH_PREFIXES);
 	const pendingBranchCreations = new Map<string, AgentBranchRecord[]>();
 	const gitStateProvider = createGitStateProvider(pi);
-	const packageProjectResolver = createPackageProjectResolver(pi);
 	let permissionsEnabled = true;
 	let tempWorkspace: PiTempWorkspace | undefined;
 	const localBashOperationsFactory = options.localBashOperationsFactory ?? createLocalBashOperations;
@@ -165,35 +168,52 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 				return;
 			}
 
-			const fileGrants = filePermissions.list();
-			const gitGrants = gitPermissions.list();
-			const packageGrants = packagePermissions.list();
-			const trackedBranches = agentBranches.listTracked();
-			if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
-				ctx.ui.notify(
-					`Ordinary permission guards are ${formatPermissionMode(permissionsEnabled)}; catastrophic protection remains active. No active session permissions or tracked agent branches.`,
-					"info",
-				);
-				return;
-			}
-
-			const choice = ctx.hasUI
-				? await ctx.ui.select(formatGrants(permissionsEnabled, fileGrants, gitGrants, packageGrants, trackedBranches), [
-						"Keep",
-						"Clear permissions",
-					])
-				: undefined;
-			if (choice === "Clear permissions") {
-				filePermissions.clear();
-				gitPermissions.clear();
-				packagePermissions.clear();
-				updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
-				ctx.ui.notify("Session permissions cleared. Agent branch tracking was kept.", "info");
-			}
+			const signal = dialogs.scopeSignal(ctx.signal);
+			const showState = async (signal: AbortSignal) => {
+				signal.throwIfAborted();
+				// Gather after acquiring the lock: approvals ahead of this command
+				// may have added grants. Clear within the lock before releasing it.
+				const fileGrants = filePermissions.list();
+				const gitGrants = gitPermissions.list();
+				const packageGrants = packagePermissions.list();
+				const trackedBranches = agentBranches.listTracked();
+				if (fileGrants.length === 0 && gitGrants.length === 0 && packageGrants.length === 0 && trackedBranches.length === 0) {
+					ctx.ui.notify(`Ordinary permission guards are ${formatPermissionMode(permissionsEnabled)}; catastrophic protection remains active. No active session permissions or tracked agent branches.`, "info");
+					return;
+				}
+				if (!ctx.hasUI) return;
+				const choice = await showPermissionSelect(ctx, signal,
+					formatGrants(permissionsEnabled, fileGrants, gitGrants, packageGrants, trackedBranches),
+					"Session permissions\nSee details above.", ["Keep", "Clear permissions"]);
+				signal.throwIfAborted();
+				if (choice === "Clear permissions") {
+					filePermissions.clear();
+					gitPermissions.clear();
+					packagePermissions.clear();
+					updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
+					ctx.ui.notify("Session permissions cleared. Agent branch tracking was kept.", "info");
+				}
+			};
+			try {
+				if (ctx.hasUI) await dialogs.run(signal, showState);
+				else await showState(signal);
+			} catch (error) { if (!signal.aborted) throw error; }
 		},
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		const signal = dialogs.scopeSignal(ctx.signal);
+		try {
+			return await guardToolCall(event, ctx, signal);
+		} catch (error) {
+			if (signal.aborted) return cancelledPermission();
+			throw error;
+		}
+	});
+
+	async function guardToolCall(event: ToolCallEvent, ctx: ExtensionContext, signal: AbortSignal): Promise<ToolCallBlock | undefined> {
+		const gitStateProvider = createGitStateProvider(pi, signal);
+		const packageProjectResolver = createPackageProjectResolver(pi, signal);
 		if (event.toolName === "bash") {
 			const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
 			if (typeof input.command !== "string") {
@@ -203,11 +223,13 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 			if (catastrophic.kind === "hard-deny") {
 				return { block: true, reason: formatCatastrophicDeletionBlock(catastrophic) };
 			}
+			if (signal.aborted) return cancelledPermission();
 			if (!hasExpectedBashOwnership(pi)) {
 				return { block: true, reason: "Blocked Bash call (P0_BASH_OWNERSHIP_UNEXPECTED): permissions does not own the active model Bash definition" };
 			}
 		}
 
+		if (signal.aborted) return cancelledPermission();
 		const refreshStatus = () => updateStatus(ctx, permissionsEnabled, filePermissions, gitPermissions, packagePermissions);
 		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx, options.systemTempDir);
 		tempWorkspace = workspace;
@@ -215,8 +237,11 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 		const tempWorkspaceAutoApproved = fileRequest
 			? await tryAutoApproveTempWorkspaceRequest(fileRequest, workspace)
 			: false;
+		if (signal.aborted) return cancelledPermission();
 		if (permissionsEnabled && fileRequest && !tempWorkspaceAutoApproved && !filePermissions.hasGrant(fileRequest)) {
-			const decision = await requestFilePermission(fileRequest, ctx, filePermissions, refreshStatus);
+			const decision = await requestPermission(fileRequest, ctx, filePermissions, refreshStatus, dialogs, signal, () => permissionsEnabled, {
+				kind: "file mutation", prompt: formatFilePermissionPrompt, summary: formatFileRequestSummary, scopes: formatTargetScopes,
+			});
 			if (decision) return decision;
 		}
 
@@ -233,8 +258,11 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 				gitStateProvider,
 				agentBranches,
 			);
+			if (signal.aborted) return cancelledPermission();
 			if (gitRequest && !gitPermissions.hasGrant(gitRequest)) {
-				const decision = await requestGitPermission(gitRequest, ctx, gitPermissions, refreshStatus);
+				const decision = await requestPermission(gitRequest, ctx, gitPermissions, refreshStatus, dialogs, signal, () => permissionsEnabled, {
+					kind: "git mutation", prompt: formatGitPermissionPrompt, summary: formatGitRequestSummary, scopes: formatGitScopes,
+				});
 				if (decision) return decision;
 			}
 		}
@@ -247,8 +275,11 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 					command,
 					packageProjectResolver,
 				);
+				if (signal.aborted) return cancelledPermission();
 				if (packageRequest && !packagePermissions.hasGrant(packageRequest)) {
-					const decision = await requestPackagePermission(packageRequest, ctx, packagePermissions, refreshStatus);
+					const decision = await requestPermission(packageRequest, ctx, packagePermissions, refreshStatus, dialogs, signal, () => permissionsEnabled, {
+						kind: "dependencies", prompt: formatPackagePermissionPrompt, summary: formatPackageRequestSummary, scopes: formatPackageScopes,
+					});
 					if (decision) return decision;
 				}
 			}
@@ -256,11 +287,13 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 
 		if (gitAnalysis.branchCreations.length > 0) {
 			const creations = await resolveBranchCreations(gitAnalysis.branchCreations, gitStateProvider);
+			if (signal.aborted) return cancelledPermission();
 			if (creations.length > 0) pendingBranchCreations.set(event.toolCallId, creations);
 		}
 
+		signal.throwIfAborted();
 		return undefined;
-	});
+	}
 
 	pi.on("user_bash", async (event) => {
 		let catastrophic: CatastrophicDeletionDecision;
@@ -366,91 +399,56 @@ function formatTempWorkspacePrompt(workspace: PiTempWorkspace): string {
 	return `Use scratch temp dir instead of /tmp: ${workspace.sessionDir}`;
 }
 
-async function requestFilePermission(
-	request: PermissionRequest,
-	ctx: PermissionPromptContext,
-	permissions: PermissionStore,
-	refreshStatus: () => void,
-): Promise<ToolCallBlock | undefined> {
-	if (!ctx.hasUI) {
-		return {
-			block: true,
-			reason: `${request.summary} requires permission, but this Pi mode has no interactive UI. ${formatTargetScopes(request)}`,
-		};
-	}
-
-	const choice = await ctx.ui.select(formatFilePermissionPrompt(request, ctx.cwd), PERMISSION_CHOICES);
-	return handlePermissionChoice({
-		choice,
-		ctx,
-		requestSummary: formatFileRequestSummary(request),
-		scopeSummary: formatTargetScopes(request),
-		onAllowSession: () => {
-			permissions.addSessionGrant(request);
-			refreshStatus();
-		},
-	});
+function cancelledPermission(): ToolCallBlock {
+	return { block: true, reason: "Permission checks cancelled; tool call was not allowed." };
 }
 
-async function requestGitPermission(
-	request: GitPermissionRequest,
+async function requestPermission<R extends { summary: string }>(
+	request: R,
 	ctx: PermissionPromptContext,
-	permissions: GitPermissionStore,
+	permissions: { hasGrant(request: R): boolean; addSessionGrant(request: R): unknown },
 	refreshStatus: () => void,
+	dialogs: SessionDialogQueue,
+	signal: AbortSignal,
+	isEnabled: () => boolean,
+	format: { kind: string; prompt(request: R, cwd: string): string; summary(request: R): string; scopes(request: R): string },
 ): Promise<ToolCallBlock | undefined> {
 	if (!ctx.hasUI) {
-		return {
-			block: true,
-			reason: `${request.summary} requires permission, but this Pi mode has no interactive UI. ${formatGitScopes(request)}`,
-		};
+		return { block: true, reason: `${request.summary} requires permission, but this Pi mode has no interactive UI. ${format.scopes(request)}` };
 	}
-
-	const choice = await ctx.ui.select(formatGitPermissionPrompt(request, ctx.cwd), PERMISSION_CHOICES);
-	return handlePermissionChoice({
-		choice,
-		ctx,
-		requestSummary: formatGitRequestSummary(request),
-		scopeSummary: formatGitScopes(request),
-		onAllowSession: () => {
-			permissions.addSessionGrant(request);
-			refreshStatus();
-		},
-	});
-}
-
-async function requestPackagePermission(
-	request: PackagePermissionRequest,
-	ctx: PermissionPromptContext,
-	permissions: PackagePermissionStore,
-	refreshStatus: () => void,
-): Promise<ToolCallBlock | undefined> {
-	if (!ctx.hasUI) {
-		return {
-			block: true,
-			reason: `${request.summary} requires permission, but this Pi mode has no interactive UI. ${formatPackageScopes(request)}`,
-		};
+	try {
+		return await dialogs.run(signal, async (signal) => {
+			// Earlier queued approvals may cover this request, but never another scope.
+			if (!isEnabled() || permissions.hasGrant(request)) return undefined;
+			const prompt = format.prompt(request, ctx.cwd);
+			const completeDetails = prompt.length <= DIALOG_DETAILS_LIMIT;
+			// Never approve a request whose tail may contain undisplayed scopes.
+			const choices = completeDetails ? PERMISSION_CHOICES : ["Deny", "Custom instructions"];
+			const details = completeDetails ? prompt : `Cannot approve: request details exceed the display limit. Split the request or give custom instructions.\n\n${prompt}`;
+			const title = permissionDialogTitle(format.kind, completeDetails ? request.summary : "TRUNCATED: cannot approve");
+			const choice = await showPermissionSelect(ctx, signal, details, title, choices);
+			return handlePermissionChoice({
+				choice, ctx, signal,
+				requestSummary: boundedDialogDetails(format.summary(request)),
+				scopeSummary: format.scopes(request),
+				onAllowSession: () => { permissions.addSessionGrant(request); refreshStatus(); },
+			});
+		});
+	} catch (error) {
+		if (signal.aborted) return cancelledPermission();
+		throw error;
 	}
-
-	const choice = await ctx.ui.select(formatPackagePermissionPrompt(request, ctx.cwd), PERMISSION_CHOICES);
-	return handlePermissionChoice({
-		choice,
-		ctx,
-		requestSummary: formatPackageRequestSummary(request),
-		scopeSummary: formatPackageScopes(request),
-		onAllowSession: () => {
-			permissions.addSessionGrant(request);
-			refreshStatus();
-		},
-	});
 }
 
 async function handlePermissionChoice(options: {
 	choice: string | undefined;
 	ctx: PermissionPromptContext;
+	signal: AbortSignal;
 	requestSummary: string;
 	scopeSummary: string;
 	onAllowSession(): void;
 }): Promise<ToolCallBlock | undefined> {
+	options.signal.throwIfAborted();
 	if (options.choice === "Allow once") {
 		options.ctx.ui.notify("Allowed guarded action once.", "info");
 		return undefined;
@@ -463,10 +461,12 @@ async function handlePermissionChoice(options: {
 	}
 
 	if (options.choice === "Custom instructions") {
-		const instructions = await options.ctx.ui.editor(
+		const instructions = await showCancellableEditor(
+			options.ctx, options.signal,
 			"Custom permission instructions",
 			`The permission-gated action was not allowed yet. Tell Pi how to proceed instead.\n\nRequested action:\n${options.requestSummary}\n\nInstructions:\n`,
 		);
+		options.signal.throwIfAborted();
 		const trimmed = instructions?.trim();
 		if (trimmed) {
 			return { block: true, reason: `Blocked by user. Custom instructions: ${trimmed}` };
@@ -477,29 +477,33 @@ async function handlePermissionChoice(options: {
 	return { block: true, reason: `Blocked by user. ${options.scopeSummary}` };
 }
 
-function createGitStateProvider(pi: ExtensionAPI): GitRepositoryStateProvider {
+function permissionGitExec(pi: ExtensionAPI, args: string[], signal?: AbortSignal) {
+	return signal ? waitForDialog(signal, () => pi.exec("git", args, { signal })) : pi.exec("git", args);
+}
+
+function createGitStateProvider(pi: ExtensionAPI, signal?: AbortSignal): GitRepositoryStateProvider {
 	return {
 		async getRepoRoot(cwd: string) {
-			const result = await pi.exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+			const result = await permissionGitExec(pi, ["-C", cwd, "rev-parse", "--show-toplevel"], signal);
 			if (result.code !== 0) return undefined;
 			return result.stdout.trim() || undefined;
 		},
 		async getCurrentBranch(repoRoot: string) {
-			const result = await pi.exec("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"]);
+			const result = await permissionGitExec(pi, ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], signal);
 			if (result.code !== 0) return undefined;
 			return result.stdout.trim() || undefined;
 		},
 		async branchExists(repoRoot: string, branch: string) {
-			const result = await pi.exec("git", ["-C", repoRoot, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
+			const result = await permissionGitExec(pi, ["-C", repoRoot, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`], signal);
 			return result.code === 0;
 		},
 	};
 }
 
-function createPackageProjectResolver(pi: ExtensionAPI): PackageProjectResolver {
+function createPackageProjectResolver(pi: ExtensionAPI, signal?: AbortSignal): PackageProjectResolver {
 	return {
 		async getProjectRoot(cwd: string) {
-			const result = await pi.exec("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+			const result = await permissionGitExec(pi, ["-C", cwd, "rev-parse", "--show-toplevel"], signal);
 			if (result.code !== 0) return cwd;
 			return result.stdout.trim() || cwd;
 		},
@@ -816,13 +820,4 @@ type SessionTempContext = {
 	};
 };
 
-type PermissionPromptContext = {
-	cwd: string;
-	hasUI: boolean;
-	ui: {
-		select(title: string, items: string[]): Promise<string | undefined>;
-		editor(title: string, prefilled?: string): Promise<string | undefined>;
-		notify(message: string, type?: "info" | "warning" | "error"): void;
-		setStatus(key: string, value: string | undefined): void;
-	};
-};
+type PermissionPromptContext = Pick<ExtensionContext, "cwd" | "hasUI" | "mode"> & { ui: ExtensionUIContext };

@@ -76,7 +76,19 @@ Possible results:
 - custom answer: `User provided custom instructions: ...`
 - cancellation: `User cancelled the clarification.`
 
+Clarify calls run sequentially and share a session-local dialog queue with permission approvals. A question and its custom-answer editor stay together; a second question or approval waits until that exchange finishes. Cancellation while queued or displayed, turn abort, and session shutdown/reload all return the existing cancelled result. Late replies are ignored.
+
+In TUI mode, custom answers use a prefilled multiline editor inside Pi. Its external-editor shortcut (normally Ctrl+G) is disabled so an uncancellable external process cannot restart the terminal after abort; edit inside Pi instead. In RPC mode, custom answers use cancellable text input rather than a multiline editor. `customPrompt` is shown as a placeholder there, not editable prefill. RPC selector details are capped at 8,000 characters.
+
 If clarify is disabled, the tool call is blocked with: `clarify is disabled. Run /clarify on to enable it.`
+
+### Dialog collisions and stale RPC dialogs
+
+Scheduling coordinates clarify and permissions only. Subagent approvals/escalations, handoff dialogs, and Trash confirmations are not yet enrolled. If one opens during a clarification or approval, it can replace the visible dialog and leave work waiting invisibly.
+
+If a dialog unexpectedly replaces another and work stalls, cancel the visible dialog, then abort the turn once the normal editor returns. Retry with the interactive steps separated. Aborting settles the clarify/permission side; an unrelated request may still require reloading or restarting Pi.
+
+In RPC clients, an obsolete dialog may remain visible after abort because Pi 1.0 sends no client-side dismissal event. The cancelled backend request is settled and late replies are ignored; dismiss the obsolete dialog or refresh the client. This RPC visibility limitation does not apply to Pi's terminal UI.
 
 ## UI and status
 
@@ -97,7 +109,7 @@ Interactive selector in TUI mode:
 - non-selected options use the theme accent color; the selected option uses fixed blue `#0066CC` and bold text
 - keys: `↑` / `↓` navigate, `Enter` selects, `Esc` cancels
 - long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or mouse wheel
-- choosing `Custom instructions` opens the editor
+- choosing `Custom instructions` opens the cancellable in-Pi editor
 
 Tool display states:
 
@@ -112,6 +124,7 @@ Tool display states:
 The extension listens for:
 
 - `session_start` - loads saved state, updates active tools, and refreshes footer status
+- `session_shutdown` - cancels displayed and queued interactions, including on reload
 - `tool_call` - blocks `clarify` calls while disabled
 - `before_agent_start` - adds clarification guidance to the agent prompt, or tells the agent to ask in plain text when UI is unavailable
 

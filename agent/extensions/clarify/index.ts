@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type AgentToolResult, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import {
 	Key,
 	matchesKey,
@@ -14,6 +14,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
+import { getSessionDialogQueue, waitForDialog } from "../shared/dialogQueue.ts";
+import { boundedDialogDetails, showCancellableCustom, showCancellableEditor } from "../shared/dialogUi.ts";
 
 interface ClarifyOption {
 	label: string;
@@ -195,12 +197,8 @@ function buildDescriptionPreviewLines(
 }
 
 async function showClarifySelector(
-	ctx: {
-		mode: string;
-		ui: {
-			custom<T>(factory: (tui: any, theme: any, keybindings: any, done: (result: T) => void) => any): Promise<T>;
-		};
-	},
+	ctx: { mode: string; ui: Pick<ExtensionUIContext, "custom"> },
+	signal: AbortSignal,
 	question: string,
 	options: ClarifyOption[],
 	allowCustom: boolean,
@@ -226,7 +224,7 @@ async function showClarifySelector(
 	const items: SelectItem[] = optionItems.map(({ value, label }) => ({ value, label }));
 	const descriptionsByValue = new Map(optionItems.map((item) => [item.value, item.description]));
 
-	return ctx.ui.custom<ClarifySelection | undefined>((tui, theme, _keybindings, done) => {
+	return showCancellableCustom<ClarifySelection>(ctx.ui, signal, (tui, theme, _keybindings, done) => {
 		const selectList = new SelectList(items, Math.min(items.length, CLARIFY_MAX_VISIBLE_OPTIONS), {
 			selectedPrefix: (text: string) => theme.fg("accent", text),
 			selectedText: (text: string) => theme.fg("accent", text),
@@ -394,7 +392,8 @@ function buildBasicSelectTitle(question: string, options: ClarifyOption[], allow
 }
 
 async function showClarifyBasicSelect(
-	ctx: { ui: { select(title: string, items: string[]): Promise<string | undefined> } },
+	ctx: { ui: Pick<ExtensionUIContext, "select"> },
+	signal: AbortSignal,
 	question: string,
 	options: ClarifyOption[],
 	allowCustom: boolean,
@@ -403,7 +402,7 @@ async function showClarifyBasicSelect(
 	const customChoice = buildChoiceLabel(options.length, "Custom instructions");
 	if (allowCustom) choices.push(customChoice);
 
-	const selected = await ctx.ui.select(buildBasicSelectTitle(question, options, allowCustom), choices);
+	const selected = await waitForDialog(signal, () => ctx.ui.select(boundedDialogDetails(buildBasicSelectTitle(question, options, allowCustom)), choices, { signal }));
 	if (!selected) return undefined;
 	if (allowCustom && selected === customChoice) return { kind: "custom" };
 
@@ -412,21 +411,16 @@ async function showClarifyBasicSelect(
 }
 
 async function showClarifySelection(
-	ctx: {
-		mode: string;
-		ui: {
-			custom<T>(factory: (tui: any, theme: any, keybindings: any, done: (result: T) => void) => any): Promise<T>;
-			select(title: string, items: string[]): Promise<string | undefined>;
-		};
-	},
+	ctx: { mode: string; ui: ExtensionUIContext },
+	signal: AbortSignal,
 	question: string,
 	options: ClarifyOption[],
 	allowCustom: boolean,
 ): Promise<ClarifySelection | undefined> {
 	if (canUseClarifyCustomSelector(ctx)) {
-		return showClarifySelector(ctx, question, options, allowCustom);
+		return showClarifySelector(ctx, signal, question, options, allowCustom);
 	}
-	return showClarifyBasicSelect(ctx, question, options, allowCustom);
+	return showClarifyBasicSelect(ctx, signal, question, options, allowCustom);
 }
 
 function buildCancelledDetails(question: string, options: ClarifyOption[]): ClarifyDetails {
@@ -507,13 +501,21 @@ function updateClarifyStatus(ctx: {
 	ctx.ui.setStatus(CLARIFY_STATUS_KEY, ctx.ui.theme.fg("dim", `clarify: ${formatClarifyMode(enabled)} •`));
 }
 
-export default function clarifyExtension(pi: ExtensionAPI) {
-	let clarifyEnabled = loadClarifyModeState().enabled;
+export interface ClarifyExtensionOptions {
+	/** Injectable state reader for isolated tests; production uses the agent-dir state files. */
+	loadModeState?: () => { enabled: boolean };
+}
+
+export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExtensionOptions = {}) {
+	const dialogs = getSessionDialogQueue(pi);
+	const readModeState = options.loadModeState ?? loadClarifyModeState;
+	let clarifyEnabled = readModeState().enabled;
 
 	pi.registerTool({
 		name: CLARIFY_TOOL_NAME,
 		label: "Clarify",
 		exposure: "model-only",
+		executionMode: "sequential",
 		description:
 			"Ask the user to choose between different paths or confirm/adjust an assumption. Use when multiple meaningful ways forward exist or when a non-trivial assumption needs confirmation.",
 		promptSnippet:
@@ -528,7 +530,8 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 		],
 		parameters: ClarifyParamsSchema,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, executionSignal, _onUpdate, ctx) {
+			const signal = dialogs.scopeSignal(executionSignal, ctx.signal);
 			if (!clarifyEnabled) {
 				throw new Error("clarify is disabled. Run /clarify on to enable it.");
 			}
@@ -549,72 +552,41 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 				throw new Error("clarify needs at least one option or allowCustom=true.");
 			}
 
-			if (options.length === 0) {
-				const customAnswer = await ctx.ui.editor(question, params.customPrompt ?? "");
-				const trimmed = customAnswer?.trim();
-				if (!trimmed) {
+			const cancelled = (): AgentToolResult<ClarifyDetails> => ({
+				content: [{ type: "text", text: "User cancelled the clarification." }],
+				details: buildCancelledDetails(question, options),
+			});
+			try {
+				return await dialogs.run<AgentToolResult<ClarifyDetails>>(signal, async (signal) => {
+					if (!clarifyEnabled) throw new Error("clarify is disabled. Run /clarify on to enable it.");
+					const selected = options.length === 0
+						? { kind: "custom" } as const
+						: await showClarifySelection(ctx, signal, question, options, allowCustom);
+					signal.throwIfAborted();
+					if (!selected) return cancelled();
+					if (selected.kind === "custom") {
+						const title = options.length === 0 ? question : `Custom instructions\n\n${question}`;
+						const customAnswer = await showCancellableEditor(ctx, signal, title, params.customPrompt ?? "");
+						signal.throwIfAborted();
+						const trimmed = customAnswer?.trim();
+						if (!trimmed) return cancelled();
+						return {
+							content: [{ type: "text", text: `User provided custom instructions: ${trimmed}` }],
+							details: { question, options, answer: trimmed, answerType: "custom" },
+						};
+					}
+					const selectedIndex = selected.index;
+					const selectedOption = options[selectedIndex];
+					if (!selectedOption) throw new Error("selected option could not be resolved.");
 					return {
-						content: [{ type: "text", text: "User cancelled the clarification." }],
-						details: buildCancelledDetails(question, options),
+						content: [{ type: "text", text: `User selected: ${buildChoiceLabel(selectedIndex, selectedOption.label)}` }],
+						details: { question, options, answer: selectedOption.label, answerType: "option", selectedIndex: selectedIndex + 1 },
 					};
-				}
-
-				return {
-					content: [{ type: "text", text: `User provided custom instructions: ${trimmed}` }],
-					details: {
-						question,
-						options,
-						answer: trimmed,
-						answerType: "custom",
-					} as ClarifyDetails,
-				};
+				});
+			} catch (error) {
+				if (signal.aborted) return cancelled();
+				throw error;
 			}
-
-			const selected = await showClarifySelection(ctx, question, options, allowCustom);
-			if (!selected) {
-				return {
-					content: [{ type: "text", text: "User cancelled the clarification." }],
-					details: buildCancelledDetails(question, options),
-				};
-			}
-
-			if (selected.kind === "custom") {
-				const customAnswer = await ctx.ui.editor(`Custom instructions\n\n${question}`, params.customPrompt ?? "");
-				const trimmed = customAnswer?.trim();
-				if (!trimmed) {
-					return {
-						content: [{ type: "text", text: "User cancelled the clarification." }],
-						details: buildCancelledDetails(question, options),
-					};
-				}
-
-				return {
-					content: [{ type: "text", text: `User provided custom instructions: ${trimmed}` }],
-					details: {
-						question,
-						options,
-						answer: trimmed,
-						answerType: "custom",
-					} as ClarifyDetails,
-				};
-			}
-
-			const selectedIndex = selected.index;
-			const selectedOption = options[selectedIndex];
-			if (!selectedOption) {
-				throw new Error("selected option could not be resolved.");
-			}
-
-			return {
-				content: [{ type: "text", text: `User selected: ${buildChoiceLabel(selectedIndex, selectedOption.label)}` }],
-				details: {
-					question,
-					options,
-					answer: selectedOption.label,
-					answerType: "option",
-					selectedIndex: selectedIndex + 1,
-				} as ClarifyDetails,
-			};
 		},
 
 		renderCall(args, theme, _context) {
@@ -701,7 +673,7 @@ export default function clarifyExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		clarifyEnabled = loadClarifyModeState().enabled;
+		clarifyEnabled = readModeState().enabled;
 		if (clarifyEnabled) addClarifyTool(pi);
 		else removeClarifyTool(pi);
 		updateClarifyStatus(ctx, clarifyEnabled);

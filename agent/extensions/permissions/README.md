@@ -98,7 +98,23 @@ Session grant scopes are narrow:
 
 Auto-approval for the Pi temp workspace does not create a visible session grant and does not count in the footer.
 
+Approval dialogs and clarify questions share one session-local FIFO. Only one of these interactions opens at a time, including its custom-instructions exchange. An earlier session approval can eliminate a queued duplicate prompt only when the existing grant covers its exact operation and scope. Read-only/noninteractive calls are not queued; no-UI blocks and catastrophic hard denials do not wait for a dialog.
+
+Cancelling a queued or displayed request, aborting the turn, or shutting down/reloading the session blocks unapproved work. Late replies do not create grants or revive cancelled requests.
+
+In TUI mode, detailed requests appear as persistent warning notifications above a compact selector, keeping choices visible in fullscreen. Details are capped at 8,000 characters. If the full request exceeds that cap, approval is unavailable: only Deny or Custom instructions are offered, with a visible truncation notice. Ask Pi to split the action into smaller requests rather than approving undisplayed scopes. RPC selectors include the bounded details directly, so approval does not depend on a client displaying notifications.
+
+Custom instructions use a prefilled multiline editor inside Pi's TUI. Its external-editor shortcut (normally Ctrl+G) is disabled because Pi's external-editor process cannot be cancelled safely; edit inside Pi instead. In RPC mode, custom instructions use cancellable text input rather than a multiline editor; any supplied starter text is a placeholder, not editable prefill.
+
 In non-interactive/no-UI mode, guarded actions are blocked instead of prompting.
+
+### Dialog collisions and stale RPC dialogs
+
+Scheduling coordinates permissions and clarify only. Subagent approvals/escalations, handoff dialogs, and Trash confirmations are not yet enrolled. If one opens while an approval or clarification is pending, it can replace the visible dialog and leave work waiting invisibly.
+
+If a dialog unexpectedly replaces another and work stalls, cancel the visible dialog, then abort the turn once the normal editor returns. Retry with the interactive steps separated. Aborting settles the permission/clarify side; an unrelated request may still require reloading or restarting Pi. Do not disable permission guards to work around a UI hang.
+
+In RPC clients, an obsolete dialog may remain visible after abort because Pi 1.0 sends no client-side dismissal event. The cancelled backend request is settled and late replies cannot approve it; dismiss the obsolete dialog or refresh the client. This RPC visibility limitation does not apply to Pi's terminal UI.
 
 ## Slash command
 
@@ -119,7 +135,7 @@ Arguments:
 - `off` - disable ordinary permission prompts for the current session; catastrophic deletion protection remains active
 - `clear` - clear file, git, and dependency session grants
 
-Running `/permissions` with active grants opens a small UI choice to keep or clear grants. Agent-created branch tracking is kept when grants are cleared.
+Running `/permissions` with active grants opens a small UI choice to keep or clear grants. This interaction uses the same queue and shows grants current when it opens, including approvals made while it waited. Agent-created branch tracking is kept when grants are cleared.
 
 Argument completions are provided for `on`, `off`, and `clear`.
 
