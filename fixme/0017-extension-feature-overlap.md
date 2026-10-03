@@ -18,7 +18,7 @@ None of the remaining 12 local runtime extensions has a complete built-in replac
 | clarify | Generic host dialogs only; no equivalent model-callable workflow | Keep; fix fullscreen, scheduling, and prompt composition |
 | codex-verbosity | Thinking controls are not text verbosity | Keep; fix provider-coverage feedback |
 | git-inspect | Bash can run Git, but lacks this fixed read-only interface | Keep; improve visible result expansion/metadata |
-| handoff | Native sessions, forks/clones, compaction and summaries | Keep portable documents/injection/continuation; fix nested file lists |
+| handoff | Native sessions, forks/clones, compaction and summaries | Keep portable documents/injection/continuation; [nested file lists resolved (0007)](0007-handoff-nested-file-operations.md) |
 | hide-tool-output | Native collapse/expansion | Keep persistent hide preference; fix native-wrapper configuration parity |
 | mcp-status | /mcp already provides detailed state/diagnostics | Keep optional always-visible config footer; fix parsing/display drift |
 | permissions | No shipped general approval layer or equivalent P0 policy | Keep; fix dialog scheduling and state explicit boundaries |
@@ -29,6 +29,10 @@ None of the remaining 12 local runtime extensions has a complete built-in replac
 | web-search | MCP could supply a separately configured search server | Keep existing SearXNG tool; no current equivalent configured server |
 
 References: owning extension READMEs; `HOST/docs/extensions.md`, `settings.md`, `sessions.md`, `session-format.md`, `slash-commands.md`, `mcp.md`, `security.md`, and changelog 0.99.0–1.0.0.
+
+### Re-check after 0007
+
+The nested-list acceptance criteria are now verified: direct/nested attempts feed the same model/fallback candidates, known record loss is disclosed, and unselected raw branches are excluded. Final checks passed 22 focused and 535 full-gate tests, TypeScript and an in-memory actual-host recorder probe; these do not establish a shipped replacement for portable documents or continuation commands. This updates only handoff's fix recommendation, not the assessment status or retirement authorization. See [0007](0007-handoff-nested-file-operations.md) for evidence and limits.
 
 ## If simplification is requested later
 

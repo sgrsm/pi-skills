@@ -12,6 +12,7 @@ const HANDOFF_DIR_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/handoff`
 const HANDOFF_FILE_PATTERN = /^(\d{8}-\d{6})(?:-(.+))?\.md$/i
 const MAX_FALLBACK_EXCERPT_CHARS = 6000
 const MAX_RELEVANT_FILES = 12
+const INCOMPLETE_FILE_OPS_NOTICE = "> File lists may be incomplete: some nested tool-call records or arguments were unavailable or unfinished."
 const CONTINUE_WARNING_WIDGET_KEY = "handoff-continue-warning"
 
 const HANDOFF_SUMMARY_SYSTEM_PROMPT = `You create compact but high-signal handoff summaries for Pi coding-agent sessions.
@@ -80,6 +81,8 @@ type HandoffDoc = {
 type FileOps = {
 	readFiles: string[]
 	modifiedFiles: string[]
+	/** Present only when nested records lost information; paths represent attempts, not successful outcomes. */
+	incomplete?: boolean
 }
 
 type SummarizeResult = {
@@ -504,6 +507,23 @@ function addPath(target: Set<string>, value: unknown): void {
 function extractFileOps(messages: AgentMessage[]): FileOps {
 	const readFiles = new Set<string>()
 	const modifiedFiles = new Set<string>()
+	let incomplete = false
+
+	// Use identical path normalization for direct calls and the host's flat, bounded nested records.
+	const addFileOp = (name: unknown, args: unknown): void => {
+		if (!args || typeof args !== "object" || Array.isArray(args)) return
+		const path = (args as Record<string, unknown>).path
+		switch (name) {
+			case "read":
+			case "grep":
+				addPath(readFiles, path)
+				break
+			case "edit":
+			case "write":
+				addPath(modifiedFiles, path)
+				break
+		}
+	}
 
 	for (const message of messages) {
 		if (!message) continue
@@ -514,36 +534,40 @@ function extractFileOps(messages: AgentMessage[]): FileOps {
 			continue
 		}
 
+		if (message.role === "toolResult") {
+			const nested = message.nestedCalls
+			if (nested === undefined) continue
+			if (!nested || !Array.isArray(nested.calls)) {
+				incomplete = true
+				continue
+			}
+			if (nested.complete !== true) incomplete = true
+			for (const call of nested.calls) {
+				if (!call || typeof call !== "object" || Array.isArray(call)) {
+					incomplete = true
+					continue
+				}
+				if (typeof call.name !== "string" || call.arguments === undefined ||
+					call.argumentsBytes !== undefined || call.status === "unfinished") incomplete = true
+				// Failed and unfinished calls are attempts, just like direct assistant tool calls.
+				addFileOp(call.name, call.arguments)
+			}
+			continue
+		}
+
 		if (message.role !== "assistant" || !Array.isArray(message.content)) continue
 
 		for (const part of message.content) {
 			if (!part || typeof part !== "object") continue
-			const block = part as { type?: string; name?: string; arguments?: Record<string, unknown> }
-			if (block.type !== "toolCall" || typeof block.name !== "string") continue
-			const args = block.arguments ?? {}
-
-			switch (block.name) {
-				case "read":
-					addPath(readFiles, args.path)
-					break
-				case "edit":
-					addPath(modifiedFiles, args.path)
-					break
-				case "write":
-					addPath(modifiedFiles, args.path)
-					break
-				case "grep":
-					addPath(readFiles, args.path)
-					break
-				default:
-					break
-			}
+			const block = part as { type?: string; name?: string; arguments?: unknown }
+			if (block.type === "toolCall") addFileOp(block.name, block.arguments)
 		}
 	}
 
 	return {
 		readFiles: [...readFiles].sort((a, b) => a.localeCompare(b)),
 		modifiedFiles: [...modifiedFiles].sort((a, b) => a.localeCompare(b)),
+		...(incomplete ? { incomplete: true } : {}),
 	}
 }
 
@@ -570,13 +594,20 @@ function buildRelevantFilesSection(fileOps: FileOps): string {
 		}
 	}
 
-	return ["## Relevant Files", ...(lines.length > 0 ? lines : ["- None noted."])].join("\n")
+	return ["## Relevant Files", ...(lines.length > 0 ? lines : ["- None noted."]),
+		...(fileOps.incomplete ? ["", INCOMPLETE_FILE_OPS_NOTICE] : [])].join("\n")
 }
 
 function ensureRelevantFilesSection(body: string, fileOps: FileOps): string {
 	const trimmed = body.trim()
 	if (!trimmed) return buildRelevantFilesSection(fileOps)
-	if (/^##\s+Relevant Files\b/im.test(trimmed)) return trimmed
+	if (/^##\s+Relevant Files\b/im.test(trimmed)) {
+		// Preserve the model's lean file selection, but never let it hide known record loss.
+		if (fileOps.incomplete && !trimmed.includes(INCOMPLETE_FILE_OPS_NOTICE)) {
+			return trimmed.replace(/^##\s+Relevant Files\b[^\n]*/im, `$&\n\n${INCOMPLETE_FILE_OPS_NOTICE}\n`)
+		}
+		return trimmed
+	}
 
 	const relevantFilesSection = buildRelevantFilesSection(fileOps)
 	const lines = trimmed.split("\n")
@@ -618,6 +649,7 @@ function buildSummaryUserPrompt(input: {
 		`Session file: ${input.sessionFile ?? "(ephemeral or unavailable)"}`,
 		"",
 		"Use the candidate file lists only as hints. In the final handoff, include only materially relevant files under ## Relevant Files, with a 2-5 word description for each.",
+		...(input.fileOps.incomplete ? [INCOMPLETE_FILE_OPS_NOTICE] : []),
 		"",
 		"Candidate files read:",
 		formatPathsForPrompt(input.fileOps.readFiles),
@@ -1331,4 +1363,5 @@ export {
 	formatTimestamp,
 	parseFrontmatter,
 	slugifyTitle,
+	summarizeCurrentSession,
 }

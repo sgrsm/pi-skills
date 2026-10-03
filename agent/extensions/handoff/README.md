@@ -5,7 +5,7 @@ Creates compact Markdown handoff documents for continuing Pi work in a fresh ses
 ## What it does
 
 - Summarizes the current session into the Pi handoff dir (`~/.pi/handoff/` by default).
-- Records the original `cwd`, session file/name when available, and a short list of relevant files.
+- Records the original `cwd`, session file/name when available, and a short list of relevant files, including `read`/`grep`/`edit`/`write` calls made through codemode or other nested tools.
 - Requests no prompt-cache retention and uses a fresh request session ID for each model-based summary.
 - Lets a new session continue from a saved handoff, or inject a handoff into the current session.
 - Falls back to a recent conversation excerpt if model-based summarization is unavailable or fails.
@@ -15,6 +15,14 @@ Handoff files are named like this by default:
 ```text
 ~/.pi/handoff/YYYYMMDD-HHMMSS-<slug>.md
 ```
+
+## Relevant Files and record limits
+
+File candidates come from the current branch's session context: direct tool calls, Pi's recorded nested calls, and file tags in compaction/branch summaries. Unselected branches are not scanned; a branch summary deliberately included in the current context can still carry their summarized file references. Paths are normalized, deduplicated, and sorted. Recorded calls are **attempts**, including failed or unfinished edits/writes—not proof that a file changed.
+
+Model-based summaries receive these candidates as hints and select only materially relevant files. If the model omits the Relevant Files section, the extension adds it from the candidates. Fallback summaries use the same candidates, prioritizing modified paths and listing at most 12 files.
+
+Pi's nested records are bounded: at most 256 calls per top-level tool result, with arguments omitted above 8 KiB per call or 32 KiB total. Dropped calls, omitted arguments, or unfinished calls make the record incomplete. Handoffs show **“File lists may be incomplete”** when this loss is known, including in model-written Relevant Files sections. This notice is conservative: loss from a non-file tool can trigger it too. Missing/malformed arguments are ignored, not reconstructed from script or error text. Earlier summaries may already have lost detail; this is not an exhaustive filesystem audit.
 
 ## When to use it
 
