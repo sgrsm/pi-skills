@@ -165,7 +165,9 @@ The TUI footer shows the policy mode and compact running/queued counts. In ask m
 
 Large child outputs use Pi's standard truncation limits. The complete output is saved to a temporary file and linked from the truncation marker.
 
-Usage from completed child work is aggregated into the parent session. Usage from failed or cancelled work is best effort.
+Single and chain child failures remain error results and retain the collected child diagnostics and reported token/cost usage. A chain stops at the failed step; earlier completed steps and their usage are kept. Cancelling between steps keeps completed work without starting another child. `Ctrl+O` shows retained diagnostics and usage; errors without valid child details use a plain-text fallback.
+
+Usage reported by completed single/chain children is aggregated once into the parent session, including child failures and cancellations. Accounting is still best effort: tokens/cost not reported before a child exits or is cancelled cannot be recovered. Parallel calls keep their per-child failure summary and usage on normal completion; cancelling a parallel call still returns an abort-only error without collected usage/details. Parent-input requests remain escalation outcomes rather than child-failure errors. Remaining orchestration-accounting debt is tracked in [TDR-0005](../../../tdr/0005-subagent-orchestration-failure-accounting.md).
 
 Top-level children run in POSIX process groups so cancelling them also cleans up nested work. Cancellation is bounded and reports when process cleanup cannot be confirmed.
 
@@ -178,3 +180,5 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 - **Unexpected child model/thinking:** set `subagents.agentDefaults.<agent>` in `settings.json`, or set Pi's ordinary `defaultProvider`, `defaultModel`, and `defaultThinkingLevel` for agents without an entry.
 - **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
 - **Output truncated:** open the temporary file shown in the result marker.
+
+For local validation, prepare [approved test scratch](../permissions/README.md#safe-test-scratch-setup), set both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to it, then run `npm run test:subagent` or `npm run verify` from `agent/extensions/`.

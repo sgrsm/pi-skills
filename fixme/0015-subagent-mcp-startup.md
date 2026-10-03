@@ -46,3 +46,7 @@ If the host provides no safe public child-only control, record the limitation an
 0005 changes only local tool availability/activation. Source inspection confirms child CLI arguments/environment construction and built-in MCP loading were not changed. Public activation regressions verify restrictive child allowlists and direct child escalation, but do not measure server startup or connections. No disposable mock-server lifecycle test was run for this package; process amplification remains **inconclusive / verify-first**, and **Status remains Open**. No external server or personal MCP configuration was enabled or changed.
 
 Existing transient-project-trust debt remains separate in [TDR-0002](../tdr/0002-propagate-transient-project-trust-to-subagents.md).
+
+### Re-check after 0006
+
+Source inspection confirms 0006 changes failure retention/rendering and catches a next-step preparation abort, but leaves child argument/environment construction, built-in MCP startup and process termination unchanged. Parent-executed subagent tests passed **149** and the final full gate **517** (TypeScript and host links valid); these include lifecycle/allowlist controls, not MCP startup measurements. No disposable mock-server lifecycle test or live MCP connection was run. The server-startup/connection acceptance criteria remain unverified, so **0015 remains Open / verify-first**; no related runtime fix or status promotion was made.

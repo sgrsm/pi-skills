@@ -50,6 +50,7 @@ import {
 import { truncateSubagentVisibleOutput } from "./outputTruncation.ts";
 import {
 	ChildUsageAccumulator,
+	addUsage,
 	aggregateUsageStats,
 	createUsageStats,
 	toBillableUsage,
@@ -1379,8 +1380,40 @@ interface SubagentDetails {
 	agentScope: AgentScope;
 	projectAgentsDir: string | null;
 	results: SingleResult[];
+	/** Call-level failure when no child result represents it (e.g. abort between steps). */
+	errorMessage?: string;
 	footerActivity?: SubagentFooterActivitySnapshot;
 	parentEscalationResolutions?: ParentEscalationResolution[];
+}
+
+// Validate the fields rendering uses; normalize older saved usage without changing
+// persisted data or execution accounting. Malformed result entries use text fallback.
+function normalizeRenderableSubagentResult(value: unknown): SingleResult | null {
+	if (!isRecord(value) || typeof value.agent !== "string" || typeof value.task !== "string" ||
+		typeof value.exitCode !== "number" || !Number.isFinite(value.exitCode)) return null;
+	const messages = value.messages ?? [];
+	const parentEscalations = value.parentEscalations ?? [];
+	if (!Array.isArray(messages) || !Array.from(messages).every((message) =>
+		isRecord(message) && (!Array.isArray(message.content) || Array.from(message.content).every(isRecord))) ||
+		!Array.isArray(parentEscalations) || !Array.from(parentEscalations).every((escalation) =>
+			isRecord(escalation) && typeof escalation.question === "string" && Array.isArray(escalation.options) &&
+			Array.from(escalation.options).every((option) => isRecord(option) && typeof option.label === "string")) ||
+		![value.stderr, value.errorMessage, value.stopReason, value.model].every((text) => text === undefined || typeof text === "string")) return null;
+
+	const finiteOrAbsent = (number: unknown) => number === undefined || (typeof number === "number" && Number.isFinite(number));
+	const rawUsage = value.usage;
+	if (rawUsage !== undefined && (!isRecord(rawUsage) ||
+		![rawUsage.input, rawUsage.output, rawUsage.cacheRead, rawUsage.cacheWrite, rawUsage.totalTokens,
+			rawUsage.turns, rawUsage.contextTokens].every(finiteOrAbsent))) return null;
+	const cost = rawUsage?.cost;
+	if (cost !== undefined && !(typeof cost === "number" && Number.isFinite(cost)) &&
+		!(isRecord(cost) && [cost.input, cost.output, cost.cacheRead, cost.cacheWrite, cost.total].every(finiteOrAbsent))) return null;
+	const usage = createUsageStats();
+	addUsage(usage, rawUsage);
+	if (typeof cost === "number") usage.cost.total = cost;
+	usage.turns = rawUsage?.turns ?? 0;
+	usage.contextTokens = rawUsage?.contextTokens ?? 0;
+	return { ...value, messages, parentEscalations, usage } as SingleResult;
 }
 
 function createSubagentActivityTreeComponent(
@@ -1412,6 +1445,7 @@ function parseSubagentDetails(value: unknown): SubagentDetails | null {
 		agentScope,
 		projectAgentsDir: typeof value.projectAgentsDir === "string" ? value.projectAgentsDir : null,
 		results: value.results.filter(isRecord) as SingleResult[],
+		...(typeof value.errorMessage === "string" ? { errorMessage: value.errorMessage } : {}),
 		...(isRecord(value.footerActivity) && Array.isArray(value.footerActivity.runningByDepth) && Array.isArray(value.footerActivity.queuedByDepth)
 			? { footerActivity: value.footerActivity as SubagentFooterActivitySnapshot }
 			: {}),
@@ -3158,10 +3192,23 @@ export default function (pi: ExtensionAPI) {
 			if (requestMode === "chain") {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
+				const buildChainAbortResult = (index: number) => {
+					const usage = aggregateBillableUsage(results);
+					const errorMessage = `Chain aborted before step ${index + 1} (${params.items[index].agent}).`;
+					return {
+						content: [{ type: "text" as const, text: errorMessage }],
+						details: { ...makeDetails("chain")(results), errorMessage },
+						...(usage ? { usage } : {}),
+						isError: true,
+					};
+				};
 
 				for (let i = 0; i < params.items.length; i++) {
-					if (signal?.aborted) throw createAbortError();
 					const step = params.items[i];
+					if (signal?.aborted) {
+						if (results.length === 0) throw createAbortError();
+						return buildChainAbortResult(i);
+					}
 					const stepDiscovery = resolveDiscovery(step.cwd);
 					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
 
@@ -3185,27 +3232,37 @@ export default function (pi: ExtensionAPI) {
 						step.cwd,
 						projectTrusted,
 					).executionSettings;
-					const result = await runTrackedSubagentTask(toolCallId, ctx, () =>
-						runSingleAgent(
-							ctx.cwd,
-							stepDiscovery.agents,
-							{
-								agent: step.agent,
-								task: taskWithContext,
-								cwd: step.cwd,
-							},
-							i + 1,
-							signal,
-							chainUpdate,
-							stepExecutionSettings,
-							resolveInheritedApprovalScopeForAgent(
-								inheritedDelegationApproval,
-								step.agent,
+					let result: SingleResult;
+					try {
+						result = await runTrackedSubagentTask(toolCallId, ctx, () =>
+							runSingleAgent(
+								ctx.cwd,
+								stepDiscovery.agents,
+								{
+									agent: step.agent,
+									task: taskWithContext,
+									cwd: step.cwd,
+								},
+								i + 1,
+								signal,
+								chainUpdate,
 								stepExecutionSettings,
+								resolveInheritedApprovalScopeForAgent(
+									inheritedDelegationApproval,
+									step.agent,
+									stepExecutionSettings,
+								),
+								makeDetails("chain"),
 							),
-							makeDetails("chain"),
-						),
-					);
+						);
+					} catch (error) {
+						// A next child can abort during asynchronous prompt preparation.
+						// Preserve earlier work, but do not convert unrelated exceptions.
+						if (signal?.aborted && results.length > 0 && error instanceof Error && error.name === "AbortError") {
+							return buildChainAbortResult(i);
+						}
+						throw error;
+					}
 					results.push(result);
 
 					if (hasParentEscalations(result)) {
@@ -3215,7 +3272,13 @@ export default function (pi: ExtensionAPI) {
 					const isError = isFailedResult(result);
 					if (isError) {
 						const errorMsg = await truncateSubagentVisibleOutput(getResultOutput(result));
-						throw new Error(`Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg.text}`);
+						const usage = aggregateBillableUsage(results);
+						return {
+							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg.text}` }],
+							details: makeDetails("chain")(results),
+							...(usage ? { usage } : {}),
+							isError: true,
+						};
 					}
 					previousOutput = getFinalOutput(result.messages);
 				}
@@ -3370,7 +3433,13 @@ export default function (pi: ExtensionAPI) {
 				const isError = isFailedResult(result);
 				if (isError) {
 					const errorMsg = await truncateSubagentVisibleOutput(getResultOutput(result));
-					throw new Error(`Agent ${result.stopReason || "failed"}: ${errorMsg.text}`);
+					const usage = aggregateBillableUsage([result]);
+					return {
+						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg.text}` }],
+						details: makeDetails("single")([result]),
+						...(usage ? { usage } : {}),
+						isError: true,
+					};
 				}
 				const finalOutput = await truncateSubagentVisibleOutput(getFinalOutput(result.messages) || "(no output)");
 				const usage = aggregateBillableUsage([result]);
@@ -3435,14 +3504,23 @@ export default function (pi: ExtensionAPI) {
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, { expanded }, theme, context) {
-			const details = result.details as SubagentDetails | undefined;
+		renderResult(result, { expanded, isPartial }, theme, context) {
+			const rawDetails = result.details;
+			const results = isRecord(rawDetails) && Array.isArray(rawDetails.results)
+				? Array.from(rawDetails.results).map(normalizeRenderableSubagentResult)
+				: null;
+			const details = isRecord(rawDetails) && results?.every((child) => child !== null)
+				? parseSubagentDetails({ ...rawDetails, results })
+				: null;
 			if (!details || details.results.length === 0) {
 				const text = result.content[0];
 				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
 			}
 
-			const activityTreeArgs = isRecord(context.args) ? context.args : {};
+			const terminalChainFailure = !isPartial && details.mode === "chain" &&
+				!details.results.some(hasParentEscalations) &&
+				(details.errorMessage || details.results.some(isFailedResult));
+			const activityTreeArgs = !terminalChainFailure && isRecord(context.args) ? context.args : {};
 			const createActivityTree = () => createSubagentActivityTreeComponent(details, theme.fg.bind(theme), activityTreeArgs);
 			const createActivityTreeWithText = (text: string): Container => {
 				const container = new Container();
@@ -3520,7 +3598,7 @@ export default function (pi: ExtensionAPI) {
 				if (isRunning) return createActivityTree();
 
 				const successCount = details.results.filter((r) => !isFailedResult(r)).length;
-				const icon = successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
+				const icon = !details.errorMessage && successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
 				const header =
 					icon +
 					" " +
@@ -3530,6 +3608,7 @@ export default function (pi: ExtensionAPI) {
 				if (expanded) {
 					const container = new Container();
 					container.addChild(new Text(header, 0, 0));
+					if (details.errorMessage) container.addChild(new Text(theme.fg("error", details.errorMessage), 0, 0));
 					container.addChild(new Spacer(1));
 					container.addChild(createActivityTree());
 					for (const r of details.results) {
@@ -3548,6 +3627,7 @@ export default function (pi: ExtensionAPI) {
 					const failure = formatFailureSummary(r);
 					if (failure) text += `\n${theme.fg("error", `Step ${r.step ?? "?"} ${r.agent}: ${failure}`)}`;
 				}
+				if (details.errorMessage) text += `\n${theme.fg("error", details.errorMessage)}`;
 				const usage = formatUsageStats(aggregateUsage(details.results));
 				if (usage) text += `\n${theme.fg("dim", `Total: ${usage}`)}`;
 				return createActivityTreeWithText(text);
