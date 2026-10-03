@@ -31,11 +31,11 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 9 | [0009: wrapped built-in configuration contracts](0009-wrapped-built-in-configuration.md) | Low–medium / reproduced test-first | Additional observation | Resolved |
 | 10 | [0010: MCP footer parsing and exposure drift](0010-mcp-status-config-drift.md) | Low / source-verified | Audit summary | Resolved |
 | 11 | [0011: Codex provider and virtual-model coverage](0011-codex-verbosity-provider-coverage.md) | Low / test-first local regressions | Audit summary | Resolved — local coverage fix; host API enhancement in TDR-0006 |
-| 12 | [0012: native tool expansion and refresh state](0012-tool-rendering-expansion.md) | Low / verify UX contract first | Additional observation | Open |
-| 13 | [0013: footer timer lifecycle, themes, and docs](0013-footer-lifecycle-and-theme-drift.md) | Low / mixed evidence | Additional observation | Open |
-| 14 | [0014: custom session-directory cleanup scope](0014-trash-history-custom-session-directory.md) | Medium if configured / source-verified, latent | Additional observation | Open |
-| 15 | [0015: unnecessary MCP startup in children](0015-subagent-mcp-startup.md) | Low / verify first, latent | Additional observation | Open |
-| 16 | [0016: tool annotations and permission boundaries](0016-tool-annotations-and-permission-scope.md) | Low / metadata and documentation gap | Additional observation | Open |
+| 12 | [0012: visible Git preview/expansion](0012-tool-rendering-expansion.md) | Low / source-verified UX gap | Additional observation | Open — narrowed; hide-refresh limitation accepted |
+| 13 | [0013: footer presentation and docs](0013-footer-lifecycle-and-theme-drift.md) | Low / definite corrections; lifecycle verify-first | Additional observation | Open — presentation/docs only; lifecycle deprioritized |
+| 14 | [0014: shared/custom session cleanup scope](0014-trash-history-custom-session-directory.md) | Medium in shared storage / source-verified, latent | Additional observation | Open — project safeguard; all-projects policy undecided |
+| 15 | [0015: unnecessary MCP startup in children](0015-subagent-mcp-startup.md) | Low / startup source-supported; impact unmeasured, latent | Additional observation | Deferred — runtime; maintenance note actionable |
+| 16 | [0016: tool annotations and permission boundaries](0016-tool-annotations-and-permission-scope.md) | Low / documentation gap; metadata optional | Additional observation | Open — permission docs first |
 | Host follow-up | [TDR-0004: SDK/CLI resume tool restoration](../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) | Medium / reproduced without local extensions | 0005 resume validation | Open — confirmed host defect |
 | Local debt follow-up | [TDR-0005: orchestration failure accounting](../tdr/0005-subagent-orchestration-failure-accounting.md) | Medium / parallel cancellation reproduced; exceptions verify first | 0006 review | Open |
 | Host API follow-up | [TDR-0006: physical provider-request identity](../tdr/0006-provider-request-physical-model-identity.md) | Low / source-verified API limitation | Codex coverage | Open — enhancement deferred |
@@ -56,7 +56,11 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 
 0010 is Resolved: MCP footer normalization and conservative configuration projection are corrected; see [0010](0010-mcp-status-config-drift.md#resolution-and-validation) for evidence and retained limits.
 
-Order reflects actual exposure in the audited configuration, not severity alone. Move 0014 earlier if custom session storage is enabled. Update Status to Resolved, Closed-not-reproduced, or Deferred with evidence in the owning document.
+Order reflects actual exposure in the audited configuration, not severity alone. Shared custom storage or opening/resuming a session from a shared directory increases 0014's exposure. Update Status to Resolved, Closed-not-reproduced, or Deferred with evidence in the owning document.
+
+For the remaining 0012–0016 work, prioritize 0014's minimal project-identity safeguard, 0016's permission-boundary documentation, and 0013's definite color/docs corrections. Git preview and owned-tool hints are low-priority follow-ups. 0015's runtime work is deferred pending isolated impact measurement before routine MCP use; its maintenance limitation can be documented now.
+
+Each owning document now distinguishes actionable work, accepted behavior, and verify-first observations. Historical re-checks in the index and findings retain their original evidence, not an instruction to implement superseded scope. These dispositions do not claim new runtime fixes or validation. Before changing 0014 all-projects behavior, explicitly select its storage policy; the current-project safeguard can proceed independently. Use TDRs for meaningful intentionally deferred debt, not every cosmetic mismatch or intended behavior.
 
 [0017: built-in feature overlap](0017-extension-feature-overlap.md) records the retirement assessment. It is a completed assessment, **not** an instruction to disable extensions.
 
