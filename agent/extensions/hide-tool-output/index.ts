@@ -16,10 +16,10 @@ import {
   type HideToolOutputState,
 } from "./state.ts";
 import {
-  getShortPathsState,
   renderSmartToolCall,
   renderSmartVisibleToolCall,
-} from "../short-paths/index.ts";
+} from "../short-paths/toolCallSummary.ts";
+import { loadShortPathsState, SHORT_PATHS_STATE_CHANGED } from "../short-paths/state.ts";
 import { getToolCallRenderStrategy } from "./renderStrategy.ts";
 
 type HideToolMode = "on" | "off";
@@ -50,7 +50,37 @@ function refreshToolRows(ctx: ExtensionCommandContext): void {
 
 export default function (pi: ExtensionAPI) {
   const state: HideToolOutputState = loadHideToolOutputState();
-  const shortPathsState = getShortPathsState();
+  const shortPathsState = loadShortPathsState();
+  const rowSlot = Symbol("short-paths-row");
+  type RowRegistration = { invalidate: () => void };
+  // The row owns its registration. Weak references do not retain rows discarded
+  // by compaction/chat rebuilds, for which Pi has no renderer-dispose callback.
+  const rows = new Set<WeakRef<RowRegistration>>();
+  let unsubscribeShortPaths: (() => void) | undefined;
+  const updateShortPaths = (enabled: boolean) => {
+    if (shortPathsState.enabled === enabled) return;
+    shortPathsState.enabled = enabled;
+    // Public row invalidation redraws without resetting mixed expansion choices.
+    for (const reference of rows) {
+      const row = reference.deref();
+      if (row) row.invalidate();
+      else rows.delete(reference);
+    }
+  };
+  pi.on("session_start", () => {
+    unsubscribeShortPaths?.();
+    updateShortPaths(loadShortPathsState().enabled);
+    unsubscribeShortPaths = pi.events.on(SHORT_PATHS_STATE_CHANGED, (data: unknown) => {
+      if (data && typeof data === "object" && "enabled" in data && typeof data.enabled === "boolean") {
+        updateShortPaths(data.enabled);
+      }
+    });
+  });
+  pi.on("session_shutdown", () => {
+    unsubscribeShortPaths?.();
+    unsubscribeShortPaths = undefined;
+    rows.clear();
+  });
   const initialCwd = process.cwd();
   const toolFactories: BuiltInToolFactory[] = [
     createReadToolDefinition,
@@ -76,6 +106,14 @@ export default function (pi: ExtensionAPI) {
         return createToolDefinition(sessionCwd).execute(toolCallId, params, signal, onUpdate, ctx);
       },
       renderCall(args: any, theme: any, context: any) {
+        if (context?.state && typeof context.state === "object" && typeof context.invalidate === "function") {
+          let row = context.state[rowSlot] as RowRegistration | undefined;
+          if (!row) {
+            row = { invalidate: context.invalidate };
+            context.state[rowSlot] = row;
+            rows.add(new WeakRef(row));
+          } else row.invalidate = context.invalidate;
+        }
         const fallback = new Text(theme.fg("toolTitle", theme.bold(wrappedTool.label ?? wrappedTool.name)), 0, 0);
         const strategy = getToolCallRenderStrategy(wrappedTool.name, state.enabled, wrappedTool.renderShell);
 

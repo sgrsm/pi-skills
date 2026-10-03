@@ -23,7 +23,7 @@ None of the remaining 12 local runtime extensions has a complete built-in replac
 | mcp-status | /mcp already provides detailed state/diagnostics | Keep optional always-visible config footer; fix parsing/display drift |
 | permissions | No shipped general approval layer or equivalent P0 policy | Keep; fix dialog scheduling and state explicit boundaries |
 | response-timer | Host status API and lifecycle hooks only | Keep; fix lifecycle/color/docs drift |
-| short-paths | Native home shortening and compact path rendering | Keep user-controlled smart shortening; fix cross-loader state |
+| short-paths | Native home shortening and compact path rendering | Keep user-controlled smart shortening; [cross-loader state resolved (0008)](0008-short-paths-loader-state.md) |
 | subagent | Codemode orchestrates tools, not isolated child agents | Keep policy/delegation/relay; fix restoration and failure accounting |
 | trash-history | Native /resume supports deleting individual sessions | Keep bulk age/scoped cleanup and verified archives; fix confirmation/custom scope |
 | web-search | MCP could supply a separately configured search server | Keep existing SearXNG tool; no current equivalent configured server |
@@ -33,6 +33,10 @@ References: owning extension READMEs; `HOST/docs/extensions.md`, `settings.md`, 
 ### Re-check after 0007
 
 The nested-list acceptance criteria are now verified: direct/nested attempts feed the same model/fallback candidates, known record loss is disclosed, and unselected raw branches are excluded. Final checks passed 22 focused and 535 full-gate tests, TypeScript and an in-memory actual-host recorder probe; these do not establish a shipped replacement for portable documents or continuation commands. This updates only handoff's fix recommendation, not the assessment status or retirement authorization. See [0007](0007-handoff-nested-file-operations.md) for evidence and limits.
+
+### Re-check after 0008
+
+Cross-loader preference synchronization and row-local refresh are now verified with the public Pi loader and actual host components. Final validation passed 17 focused and 547 full-gate tests, TypeScript and five host links. This updates only short-paths' repair recommendation; native path display still does not replace its user-controlled smart shortening. Assessment status and retirement authorization are unchanged. See [0008](0008-short-paths-loader-state.md) for review outcomes and limits.
 
 ## If simplification is requested later
 

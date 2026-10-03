@@ -34,7 +34,7 @@ The command provides `on` and `off` completions.
 
 ## Integrated tools
 
-The extension re-registers these built-in tools with custom rendering:
+The extension controls display for these file tools:
 
 - `read`
 - `edit`
@@ -45,13 +45,13 @@ The extension re-registers these built-in tools with custom rendering:
 
 `git_inspect` independently honors the same setting, so its result output is hidden while its tool-call row remains visible.
 
-Native MCP tools remain visible under `/hide-tool`: Pi 0.99.1 provides no renderer-only override. Model/codemode results are unchanged.
+Native MCP tools remain visible under `/hide-tool`. Model/codemode results are unchanged.
 
-It no longer registers or owns `bash`. The global permissions extension owns the model Bash definition and composes Pi's full built-in Bash call renderer with this extension's persisted `isHideToolOutputEnabled()` state: results are empty when hiding is on and normal when hiding is off. The permissions wrapper keeps Pi's mutable built-in Bash result component in row-local renderer state, so a live row can move from hidden to visible without passing the empty placeholder back to Pi's built-in renderer. This avoids competing Bash definitions while preserving the existing UI behavior.
+With the [permissions extension](../permissions/README.md) loaded, Bash output also follows this preference while the full command remains visible. Permission guards are unchanged; hiding output is not an execution-safety control or a sandbox.
 
-That ownership supports the permissions extension's practical catastrophic-deletion accident guard; it is not a sandbox or hostile-code guarantee. `hide-tool-output` changes rendering only and adds no execution protection. The permissions-owned model Bash uses Pi's standard local shell operations, but permissions-provided guarded operations cannot currently forward a configured `shellPath` for either model Bash or TUI Bash. The model override also cannot forward its configured `shellCommandPrefix`; TUI `shellCommandPrefix` is still applied by Pi before the returned operations run and is final-checked by permissions.
+Custom-shell limitation: permissions-owned Bash cannot honor `shellPath`, or `shellCommandPrefix` for model-issued commands. TUI command prefixes are still applied and checked. See the permissions guide for guard scope and limitations.
 
-It does not add new agent-facing tools, flags, or events.
+This extension adds no new agent-facing tools or flags.
 
 ## UI behavior
 
@@ -59,22 +59,28 @@ When `hide-tool` is `on`:
 
 - result output for supported tools is suppressed in the conversation UI
 - the tool call row remains visible
-- permissions-owned `bash` keeps Pi's built-in call renderer so the full command remains visible; only the result output is hidden through renderer composition
+- Bash commands remain fully visible; only their result output is hidden
 - non-`bash` tools use compact one-line summaries such as `read <path>`, `grep /pattern/ in <path>`, or `write <path>`
-- compact path display follows the shared `short-paths` state when that extension is available
+- compact path display follows the saved [short-paths](../short-paths/README.md) preference; `/short-paths on|off` updates it immediately
 
 When `hide-tool` is `off`:
 
 - wrapped tool results render normally
-- non-`bash` default-shell tool calls still use the smart visible summary header
-- self-rendered tools fall back to Pi's built-in call renderer
+- `read`, `grep`, `find`, and `ls` keep their compact path summaries
+- `edit` and `write` use Pi's normal call display
+
+Changing `/short-paths` updates existing summaries without changing which rows are expanded. The saved preference is also used when the command extension is not loaded; changes from another session or manual file edits require `/reload` or a restart.
+
+## Troubleshooting
+
+- **Expanding a row does not reveal its output:** while hiding is on, expansion does not override it. Use `/hide-tool off`.
+- **Some rows changed expansion after a toggle:** `/hide-tool on|off` can reset individual expansion choices. `/short-paths` does not.
+- **MCP output is still visible:** native MCP tools are not covered by this extension.
+
+For extension developers, see the [state and rendering maintenance notes](../short-paths/maintenance.md).
 
 ## Visual states
 
-For compact self-rendered tool calls, the row background follows Pi's normal tool state colors:
-
-- pending / partial: `toolPendingBg`
-- success: `toolSuccessBg`
-- error: `toolErrorBg`
+Tool rows use Pi's normal pending, success, and error colors.
 
 There is no separate footer or status-bar indicator beyond command notifications such as `hide-tool on`, `hide-tool off`, and `hide-tool is on`.

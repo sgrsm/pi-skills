@@ -10,9 +10,9 @@
 
 `renderGitInspectionResult` (`git-inspect/index.ts:525-546`) renders the entire available output (up to 2,000 lines) when output is not hidden. Its registered `renderResult` at `:614` does not use `_options`, including expanded state. This defeats a compact fullscreen default.
 
-`hide-tool-output/index.ts:107-111` intentionally returns an empty result component while hiding is enabled. Native expansion therefore cannot reveal a hidden result. This is not automatically a bug: the extension promises a persistent hiding preference.
+The wrapped `renderResult()` in `hide-tool-output/index.ts` intentionally returns an empty result component while hiding is enabled. Native expansion therefore cannot reveal a hidden result. This is not automatically a bug: the extension promises a persistent hiding preference.
 
-Both `hide-tool-output/index.ts:44-49` and `short-paths/index.ts:25-30` refresh rows by flipping `setToolsExpanded()` twice. The host applies this globally and resets per-block expansion state (`HOST/dist/modes/interactive/interactive-mode.js`, `setToolsExpanded`).
+At the audit baseline, both extensions refreshed rows by flipping `setToolsExpanded()` twice. The host applies this globally and resets per-block expansion state (`HOST/dist/modes/interactive/interactive-mode.js`, `setToolsExpanded`). After 0008, only `hide-tool-output/index.ts`'s `refreshToolRows()` retains that behavior for `/hide-tool`. `/short-paths` uses public per-row invalidation instead, as verified below.
 
 ## Reproduce / test first
 
@@ -40,4 +40,10 @@ Test error results, partial results, lastComponent reuse, huge single lines, and
 
 `node --test git-inspect/index.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts`; focused refresh tests; `npm run verify` with approved scratch.
 
-Related: [0008: loader state synchronization](0008-short-paths-loader-state.md). Fix stale state before attributing all toggle failures to rendering.
+Related: [0008: loader state synchronization](0008-short-paths-loader-state.md).
+
+### Re-check after 0008
+
+0008 is resolved. Public-loader tests verify synchronized path preferences across separate jiti instances; actual public `ToolExecutionComponent` tests verify `/short-paths` redraws existing rows without changing mixed expansion or result-line counts. Pi 1.0.0 exposes the supported `ToolRenderContext.invalidate()` callback, so this path does not require global expansion changes or private UI traversal. Final checks passed **17 focused, 26 related, and 547 full-gate tests**, plus TypeScript and five valid host links. See 0008 for review reconciliation, actual-host GC evidence and limits.
+
+**Status remains Open:** `/hide-tool` still uses global-expansion refresh, and source inspection still shows `git_inspect.renderResult()` ignoring expanded options. The related Git tests passing do not establish the compact/expanded acceptance criteria. Explicit hiding remains unchanged and was regression-tested; no Ctrl+O bypass, Git renderer change, or unrelated refresh fix was implemented here.

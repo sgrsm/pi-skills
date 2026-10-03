@@ -10,9 +10,7 @@ The extension defaults to `on` when no saved state exists.
 
 ## When it is used
 
-This extension registers the `/short-paths` command and exports rendering helpers used by `agent/extensions/hide-tool-output`.
-
-When `hide-tool-output` wraps the built-in tools, the `short-paths` state controls whether path-bearing tool-call summaries use smart shortening. It affects summaries for:
+Use this extension with [hide-tool-output](../hide-tool-output/README.md). The `/short-paths` command controls smart shortening in its file-tool summaries:
 
 - `read`
 - `edit`
@@ -21,7 +19,7 @@ When `hide-tool-output` wraps the built-in tools, the `short-paths` state contro
 - `find`
 - `ls`
 
-`bash` keeps Pi's built-in call renderer in the `hide-tool-output` wrapper, so `/short-paths` does not normally change bash call display there.
+When tool output is visible, `edit` and `write` keep Pi's normal headers and are not affected by this preference. `/short-paths` never changes Bash command display.
 
 ## Slash command
 
@@ -46,6 +44,10 @@ State is persisted in:
 ~/.pi/agent/short-paths.json
 ```
 
+If you set `PI_CODING_AGENT_DIR`, the file is stored there instead. Missing or invalid saved state defaults to `on`.
+
+Successful command changes update existing summaries immediately without changing which tool rows are expanded. If saving fails, the preference stays unchanged. Changes made in another Pi session or by editing the file take effect after `/reload` or a restart.
+
 ## Display behavior
 
 With smart paths enabled, paths are shortened to fit the available row width:
@@ -69,18 +71,12 @@ Tool summaries also include small metadata where available:
 
 There is no separate footer badge or long-running status indicator.
 
-For self-rendered compact tool rows, the background follows Pi's normal tool status theme keys:
+Tool rows use Pi's normal pending, success, and error colors. Paths use the theme's accent color.
 
-- pending/partial: `toolPendingBg`
-- completed successfully: `toolSuccessBg`
-- error: `toolErrorBg`
+## Troubleshooting
 
-Paths are styled with the theme accent color; metadata uses the normal muted/tool-output styling.
+- **The command has no effect:** check that both `short-paths` and `hide-tool-output` are loaded. A path that already fits may look unchanged.
+- **A manually edited preference is not reflected:** run `/reload` or restart Pi.
+- **Off still shows `~`:** disabling smart compaction does not disable ordinary home-directory formatting.
 
-## Extension surface
-
-- Slash commands: `/short-paths [on|off]`
-- Registered tools: none
-- Flags: none
-- Events/hooks: none
-- Exports: `getShortPathsState`, `saveShortPathsState`, `smartShortenPath`, `renderSmartToolCall`, `renderSmartVisibleToolCall`
+For extension developers, see the [state and rendering maintenance notes](maintenance.md).

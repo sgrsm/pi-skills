@@ -17,6 +17,7 @@ test("wrapped built-in ls resolves a relative path against ctx.cwd", async () =>
         registeredTools.set(tool.name, tool);
       },
       registerCommand() {},
+      on() { return () => {}; },
     } as Partial<ExtensionAPI> as ExtensionAPI;
 
     hideToolOutputExtension(pi);

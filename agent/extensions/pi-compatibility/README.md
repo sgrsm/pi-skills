@@ -47,15 +47,15 @@ Protects safe, visible Trash approval against the host selector and fullscreen l
 
 ### `clarify-input.test.ts`
 
-Characterizes the confirmed, deferred [0003 finding](../../../fixme/0003-clarify-fullscreen-input.md), rather than treating its defects as intentional behavior or claiming its acceptance criteria pass.
+Characterizes existing fullscreen input and dialog-lifecycle defects, rather than treating them as intentional behavior. See the durable [fullscreen dialog host-blocker record](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md).
 
 - Uses public `TuiAltScreen`/`TuiMainScreen` with fake terminal input and buffers, a simplified fixed-dock composition, and a faithful local model of `custom()` installation/completion.
 - Reproduces fullscreen page/home/end/wheel interception, bottom-help clipping, and clarify's mouse-mode writes; regular-mode keyboard selection/scrolling and raw-SGR wheel handling are controls. Fullscreen captures also confirm host tracking was enabled before clarify's interaction writes.
 - The overlay wheel control covers the host's raw-SGR fallback, not normalized mouse support in the unchanged selector.
 - A **test-only** custom-overlay adapter demonstrates restored input routing, then reproduces the cancellation blocker: stacked transcript search is popped instead of the owned dialog, and cancellation before installation can pop an unrelated overlay.
-- No private host imports are committed. A version-checked scratch probe independently exercised the actual host completion method; its results are recorded in the finding.
+- No private host imports are committed. The host-blocker record describes the supplementary version-checked completion probe and how to reconstruct it.
 
-Revisit these characterization expectations when implementing 0003 or updating Pi. The local custom-dialog model will not automatically detect an identity-safe completion change in Pi: compare it with the actual host `showExtensionCustom()` close path and reconstruct the optional probe after a version change. Passing the characterizations records existing defects; it does not close the finding.
+Revisit these characterization expectations when changing clarify's fullscreen behavior or updating Pi. The local custom-dialog model will not automatically detect an identity-safe completion change in Pi: compare it with the actual host `showExtensionCustom()` close path and reconstruct the optional probe after a version change. Passing the characterizations records existing defects; it does not demonstrate their resolution.
 
 ### `dialog-concurrency.test.ts`
 
@@ -65,18 +65,18 @@ Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch
 
 ### `structured-prompt.test.ts`
 
-Protects the [0004 structured-prompt contract](../../../fixme/0004-structured-prompt-contributions.md) across clarify, permissions, and subagent.
+Protects additive structured-prompt contributions across clarify, permissions, and subagent.
 
 - Uses the public Pi loader and `ExtensionRunner`, an in-memory `SessionManager`, fake UI/theme, and synthetic late MCP/extension contributors. The last handler reads `event.systemPrompt` through the actual host renderer, not a copied prompt builder.
 - Checks that additive handlers leave `forceSystemPrompt` unset; stable owned sections preserve guidance, unrelated sections, and late contributions without duplicates.
 - Covers repeated/reused options, no-UI mode, inactive tools and saved off modes, manual/ask/auto policies, child-only escalation, session/write approvals, inherited read-only/broad approval, depth caps, new session ids on the same runtime, fresh-loader reload with the same session id, and deliberate whole-prompt overrides before/after local handlers.
 - Uses approved scratch for isolated agent configuration and loader fixtures; restores test-process environment and shuts down and invalidates runtimes. No real session files, MCP connections, or model requests are used. Private host imports are not committed.
 
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Supplementary version-checked builder/differ probes and their limits are recorded in the finding.
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). These tests do not measure provider cache behavior or use live MCP connections.
 
 ### `tool-activation.test.ts`
 
-Protects the [0005 startup/restoration contract](../../../fixme/0005-tool-activation-and-mcp-restoration.md) with the public loader, SDK selection, `AgentSession`, and in-memory sessions.
+Protects optional-tool availability and preservation of restored tools with the public loader, SDK selection, `AgentSession`, and in-memory sessions.
 
 - Late synthetic direct, deferred, and codemode tools register inactive, so their eventual activation proves restoration rather than default activation. No live MCP server or provider request is used.
 - Covers every combination of saved clarify/search/delegation off modes, top-level/child relay, and independently varied registration order in public-constructor transcript restoration and actual reload/fresh runtimes. Also covers public `/tree` restoration with delegation off or depth-capped.
@@ -95,6 +95,12 @@ Exercises SDK/CLI resume integration for the local tool-activation fix and retai
 - Version-checked for Pi 1.0.0; after an upgrade, re-evaluate the characterizations against TDR-0004's positive restoration criteria instead of preserving the defect as intended behavior or silently skipping it.
 
 Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), setting both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root. No personal session files, credentials, host patches, or enabled MCP servers are used.
+
+### `short-paths-loader.test.ts`
+
+Checks that `/short-paths` updates wrapped summaries across independently loaded extensions while preserving row expansion and cleaning up on reload.
+
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). See the durable [test coverage and limitations](short-paths-loader.md) for maintainer details.
 
 ## When to add tests here
 

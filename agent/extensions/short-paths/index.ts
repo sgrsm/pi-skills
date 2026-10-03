@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import { getShortPathsState, saveShortPathsState } from "./state.ts";
+import { loadShortPathsState, saveShortPathsState, SHORT_PATHS_STATE_CHANGED } from "./state.ts";
 
 type ShortPathsMode = "on" | "off";
 
@@ -20,15 +20,10 @@ function notify(
   else console.log(message);
 }
 
-function refreshToolRows(ctx: ExtensionCommandContext): void {
-  if (!ctx.hasUI) return;
-  const expanded = ctx.ui.getToolsExpanded();
-  ctx.ui.setToolsExpanded(!expanded);
-  ctx.ui.setToolsExpanded(expanded);
-}
-
 export default function (pi: ExtensionAPI) {
-  const state = getShortPathsState();
+  // Factories may be reused by independent SDK runtimes; caches stay per API/bus.
+  const state = loadShortPathsState();
+  pi.on("session_start", () => { state.enabled = loadShortPathsState().enabled; });
 
   pi.registerCommand("short-paths", {
     description: "Enable or disable smart path shortening in tool call display",
@@ -59,9 +54,10 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      await saveShortPathsState({ enabled: nextEnabled });
+      // Each loader instance has its own cache; publish only committed state.
       state.enabled = nextEnabled;
-      await saveShortPathsState(state);
-      refreshToolRows(ctx);
+      pi.events.emit(SHORT_PATHS_STATE_CHANGED, { enabled: nextEnabled });
       notify(ctx, `short-paths ${mode}`);
     },
   });

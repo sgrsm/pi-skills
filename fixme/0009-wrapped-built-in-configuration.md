@@ -43,4 +43,8 @@ Focused wrapper and host-activation/image-setting tests; `npm run verify` with a
 
 0005 now uses public hidden withdrawal instead of subtractive startup updates. This wrapper does not use that helper; source inspection still shows independently active read/edit/write/grep/find/ls registrations and delegated read creation without effective `images.autoResize` options. 0005’s public SDK selection tests and full verification passed, but native/wrapped parity and image-setting acceptance criteria were not tested here. **Status remains Open**; no wrapper changes were made.
 
+### Re-check after 0008
+
+0008 changed path-state synchronization and renderer invalidation only. Source inspection still shows direct wrapper registrations without `defaultActive: false` and delegated read construction without effective image options; execution, activation, schemas and result data were not modified. Final 0008 validation passed **547 full-gate tests**, TypeScript and five host links, including the existing session-cwd check. Native/wrapped activation parity and image-setting acceptance checks were not executed for this package. **Status remains Open**; passing rendering tests do not verify these independent criteria.
+
 Dependency/coordination: [0005: startup loadouts](0005-tool-activation-and-mcp-restoration.md). The permissions-owned Bash backend's documented custom-shell limitations are not an instruction to replace its guarded operations.

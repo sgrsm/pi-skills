@@ -9,7 +9,9 @@ export type ShortPathsState = {
 
 export const SHORT_PATHS_STATE_PATH = join(getAgentDir(), "short-paths.json");
 
-function loadShortPathsState(defaultEnabled = true): ShortPathsState {
+export const SHORT_PATHS_STATE_CHANGED = "short-paths:state-change:v1";
+
+export function loadShortPathsState(defaultEnabled = true): ShortPathsState {
   try {
     const parsed = JSON.parse(readFileSync(SHORT_PATHS_STATE_PATH, "utf-8")) as Partial<ShortPathsState>;
     return {
@@ -27,9 +29,9 @@ export function getShortPathsState(): ShortPathsState {
 }
 
 export async function saveShortPathsState(nextState: ShortPathsState): Promise<void> {
-  state.enabled = nextState.enabled;
-
+  const snapshot = { enabled: nextState.enabled };
   await withFileMutationQueue(SHORT_PATHS_STATE_PATH, async () => {
-    await writeFile(SHORT_PATHS_STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+    await writeFile(SHORT_PATHS_STATE_PATH, `${JSON.stringify(snapshot, null, 2)}\n`, "utf-8");
+    state.enabled = snapshot.enabled;
   });
 }
