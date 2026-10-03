@@ -124,7 +124,7 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 	pi.on("before_agent_start", (event, ctx) => {
 		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx, options.systemTempDir);
 		tempWorkspace = workspace;
-		return { systemPrompt: `${event.systemPrompt}\n\n${formatTempWorkspacePrompt(workspace)}` };
+		event.systemPromptOptions.sections.permissions_scratch = formatTempWorkspacePrompt(workspace);
 	});
 
 	pi.registerCommand("permissions", {

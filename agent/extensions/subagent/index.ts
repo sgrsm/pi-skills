@@ -2615,20 +2615,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (!pi.getActiveTools().includes("subagent") && !pi.getActiveTools().includes(PARENT_ESCALATION_TOOL_NAME)) return undefined;
+		const { sections } = event.systemPromptOptions;
+		if (!pi.getActiveTools().includes("subagent") && !pi.getActiveTools().includes(PARENT_ESCALATION_TOOL_NAME)) {
+			delete sections.subagent_policy;
+			return;
+		}
 		const executionSettings = loadSubagentExecutionSettings(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
 		const sessionApprovalState = getSessionSubagentApprovalState(ctx);
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${buildSubagentPolicyPrompt(
-				policyState.mode,
-				ctx.hasUI,
-				getInheritedSubagentApprovalScope(),
-				sessionApprovalState.askModeApproved,
-				executionSettings,
-				hasParentEscalationRelay(),
-				sessionApprovalState.writeCapableApproved,
-			)}`,
-		};
+		sections.subagent_policy = buildSubagentPolicyPrompt(
+			policyState.mode,
+			ctx.hasUI,
+			getInheritedSubagentApprovalScope(),
+			sessionApprovalState.askModeApproved,
+			executionSettings,
+			hasParentEscalationRelay(),
+			sessionApprovalState.writeCapableApproved,
+		);
 	});
 
 	pi.on("tool_execution_update", async (event, ctx) => {

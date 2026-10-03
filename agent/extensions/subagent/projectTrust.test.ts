@@ -127,19 +127,23 @@ test("before_agent_start ignores project subagent settings unless the context is
 		const [beforeAgentStart] = handlers.get("before_agent_start") ?? [];
 		assert.ok(beforeAgentStart, "before_agent_start handler should be registered");
 
-		const untrustedResult = await beforeAgentStart({ systemPrompt: "Base prompt" }, createCtx(cwd, false).ctx);
+		const untrustedOptions = { sections: {} as Record<string, string> };
+		const untrustedResult = await beforeAgentStart({ systemPrompt: "Base prompt", systemPromptOptions: untrustedOptions }, createCtx(cwd, false).ctx);
+		assert.equal(untrustedResult, undefined);
 		assert.match(
-			untrustedResult?.systemPrompt ?? "",
+			untrustedOptions.sections.subagent_policy!,
 			/Current parallel limits: 8 task\(s\) per call, with up to 5 subagent\(s\) running at once\./,
 		);
-		assert.match(untrustedResult?.systemPrompt ?? "", /Max delegation depth for this session is ∞\./);
+		assert.match(untrustedOptions.sections.subagent_policy!, /Max delegation depth for this session is ∞\./);
 
-		const trustedResult = await beforeAgentStart({ systemPrompt: "Base prompt" }, createCtx(cwd, true).ctx);
+		const trustedOptions = { sections: {} as Record<string, string> };
+		const trustedResult = await beforeAgentStart({ systemPrompt: "Base prompt", systemPromptOptions: trustedOptions }, createCtx(cwd, true).ctx);
+		assert.equal(trustedResult, undefined);
 		assert.match(
-			trustedResult?.systemPrompt ?? "",
+			trustedOptions.sections.subagent_policy!,
 			/Current parallel limits: 2 task\(s\) per call, with up to 1 subagent\(s\) running at once\./,
 		);
-		assert.match(trustedResult?.systemPrompt ?? "", /Max delegation depth for this session is 0\./);
+		assert.match(trustedOptions.sections.subagent_policy!, /Max delegation depth for this session is 0\./);
 	});
 });
 

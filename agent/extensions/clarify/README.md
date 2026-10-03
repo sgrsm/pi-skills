@@ -132,4 +132,6 @@ The extension listens for:
 - `tool_call` - blocks `clarify` calls while disabled
 - `before_agent_start` - adds clarification guidance to the agent prompt, or tells the agent to ask in plain text when UI is unavailable
 
+Clarification guidance is an additive structured prompt section. It updates rather than accumulating across turns, switches to the plain-text note without UI, and is omitted while clarify is disabled or inactive. Other extensions' later guidance (including MCP) remains available. When another extension deliberately forces a complete prompt, this guidance is not injected into that provider prompt.
+
 There are no user-facing CLI flags for this extension.

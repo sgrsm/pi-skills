@@ -95,9 +95,14 @@ test("before_agent_start adds only a one-line scratch temp dir hint without crea
 		const workspace = createPiTempWorkspace("permissions-prompt-test", { systemTempDir: fixture.sessionTemp });
 
 		await harness.emit("session_start", {}, ctx);
-		const result = await harness.emitFirst("before_agent_start", { systemPrompt: "Base prompt" }, ctx) as { systemPrompt?: string } | undefined;
+		const systemPromptOptions = { sections: { unrelated: "Keep me" } as Record<string, string> };
+		const result = await harness.emitFirst("before_agent_start", { systemPrompt: "Base prompt", systemPromptOptions }, ctx);
 
-		assert.equal(result?.systemPrompt, `Base prompt\n\nUse scratch temp dir instead of /tmp: ${workspace.sessionDir}`);
+		assert.equal(result, undefined);
+		assert.deepEqual(systemPromptOptions.sections, {
+			unrelated: "Keep me",
+			permissions_scratch: `Use scratch temp dir instead of /tmp: ${workspace.sessionDir}`,
+		});
 		await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
 	});
 });

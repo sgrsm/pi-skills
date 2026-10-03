@@ -50,6 +50,8 @@ Paths inside the current working directory are not guarded by the ordinary promp
 
 The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir instead of /tmp: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
 
+The hint is an additive structured prompt section, replaced for the current session rather than appended repeatedly. It does not suppress later MCP or extension guidance. When another extension deliberately forces a complete prompt, this guidance is not injected into that provider prompt; the actual scratch permission checks are unchanged.
+
 ### Git mutations on existing non-agent branches
 
 Prompts before protected `git` operations on an existing branch that is not considered agent-created:

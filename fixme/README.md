@@ -23,7 +23,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 1 | [0001: visible, safe Trash confirmation](0001-trash-history-fullscreen-confirmation.md) | High / reproduced | Audit summary | Resolved |
 | 2 | [0002: concurrent approval and clarification dialogs](0002-dialog-concurrency-and-cancellation.md) | High / permissions reproduced | Audit summary | Resolved |
 | 3 | [0003: fullscreen clarify input and mouse ownership](0003-clarify-fullscreen-input.md) | Medium / input reproduced | Audit summary | Deferred |
-| 4 | [0004: structured prompt contributions](0004-structured-prompt-contributions.md) | Medium / reproduced, MCP latent | Audit summary | Open |
+| 4 | [0004: structured prompt contributions](0004-structured-prompt-contributions.md) | Medium / reproduced, MCP latent | Audit summary | Resolved |
 | 5 | [0005: startup loadouts and MCP restoration](0005-tool-activation-and-mcp-restoration.md) | Medium / reproduced, MCP latent | Audit summary | Open |
 | 6 | [0006: failed subagent results and usage](0006-subagent-failure-results.md) | Medium / renderer reproduced | Audit summary | Open |
 | 7 | [0007: nested-call file lists in handoffs](0007-handoff-nested-file-operations.md) | Medium / source-verified | Audit summary | Open |
@@ -38,6 +38,8 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 16 | [0016: tool annotations and permission boundaries](0016-tool-annotations-and-permission-scope.md) | Low / metadata and documentation gap | Additional observation | Open |
 
 0003 was reconfirmed on Pi 1.0.0. Its custom-overlay approach exposed unsafe stacked/pre-install completion in the host; the user chose to defer the runtime fix pending a host correction. Only characterization coverage/docs were retained; the original defect remains. See the finding for final validation (**342 tests**, TypeScript) and the actual-host scratch probe.
+
+0004 was confirmed and resolved on Pi 1.0.0: clarify, permissions and subagent now contribute stable structured sections instead of forcing the whole prompt. Public loader/runner regressions preserve late MCP/extension guidance, modes, owned removal, same-id reload and deliberate foreign forces. Final verification: **356 tests passed**, valid host links and TypeScript; a version-checked scratch builder/differ probe verified unchanged-turn/no-delta, owned removals and scratch-only replacement. Two independent read-only reviews led to test/docs refinements, not further runtime changes. No provider cache measurement or real MCP connection was used. **0005 remains Open**: its independent startup-restoration loss still reproduced. See 0004 for evidence, limits and related rechecks.
 
 Order reflects actual exposure in the audited configuration, not severity alone. Move 0014 earlier if custom session storage is enabled. Update Status to Resolved, Closed-not-reproduced, or Deferred with evidence in the owning document.
 

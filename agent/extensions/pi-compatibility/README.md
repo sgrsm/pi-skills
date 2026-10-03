@@ -63,6 +63,17 @@ Protects shared scheduling across permissions and clarify. Fake dialogs check th
 
 Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), because the loader fixture creates disposable files.
 
+### `structured-prompt.test.ts`
+
+Protects the [0004 structured-prompt contract](../../../fixme/0004-structured-prompt-contributions.md) across clarify, permissions, and subagent.
+
+- Uses the public Pi loader and `ExtensionRunner`, an in-memory `SessionManager`, fake UI/theme, and synthetic late MCP/extension contributors. The last handler reads `event.systemPrompt` through the actual host renderer, not a copied prompt builder.
+- Checks that additive handlers leave `forceSystemPrompt` unset; stable owned sections preserve guidance, unrelated sections, and late contributions without duplicates.
+- Covers repeated/reused options, no-UI mode, inactive tools and saved off modes, manual/ask/auto policies, child-only escalation, session/write approvals, inherited read-only/broad approval, depth caps, new session ids on the same runtime, fresh-loader reload with the same session id, and deliberate whole-prompt overrides before/after local handlers.
+- Uses approved scratch for isolated agent configuration and loader fixtures; restores test-process environment and shuts down and invalidates runtimes. No real session files, MCP connections, or model requests are used. Private host imports are not committed.
+
+Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Supplementary version-checked builder/differ probes and their limits are recorded in the finding.
+
 ## When to add tests here
 
 Add a compatibility test here when a change depends on a Pi host contract or a cross-extension integration point, especially when the behavior could regress silently during unrelated extension edits.

@@ -688,16 +688,17 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (!clarifyEnabled || !pi.getActiveTools().includes(CLARIFY_TOOL_NAME)) return;
-
-		if (!ctx.hasUI) {
-			return {
-				systemPrompt: `${event.systemPrompt}\n\nClarification note:\n- The clarify tool requires interactive UI and is not usable in this mode.\n- If user input is required, ask in plain text instead of calling clarify.`,
-			};
+		const { sections } = event.systemPromptOptions;
+		if (!clarifyEnabled || !pi.getActiveTools().includes(CLARIFY_TOOL_NAME)) {
+			delete sections.clarify_policy;
+			return;
 		}
 
-		return {
-			systemPrompt: `${event.systemPrompt}\n\nClarification policy:\n- If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.\n- If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.\n- Keep choices focused and distinct. Prefer around 2-5 options plus the custom-instructions path.\n- Phrase options as actionable paths, and use descriptions only for brief trade-offs or consequences.\n- Do not interrupt for trivial defaults, obvious next steps, or decisions the user already made.\n- After the user answers, follow that direction and continue.`,
-		};
+		if (!ctx.hasUI) {
+			sections.clarify_policy = "Clarification note:\n- The clarify tool requires interactive UI and is not usable in this mode.\n- If user input is required, ask in plain text instead of calling clarify.";
+			return;
+		}
+
+		sections.clarify_policy = "Clarification policy:\n- If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.\n- If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.\n- Keep choices focused and distinct. Prefer around 2-5 options plus the custom-instructions path.\n- Phrase options as actionable paths, and use descriptions only for brief trade-offs or consequences.\n- Do not interrupt for trivial defaults, obvious next steps, or decisions the user already made.\n- After the user answers, follow that direction and continue.";
 	});
 }
