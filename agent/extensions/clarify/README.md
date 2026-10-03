@@ -108,8 +108,12 @@ Interactive selector in TUI mode:
 - shows the question, numbered options, and the selected option's description preview
 - non-selected options use the theme accent color; the selected option uses fixed blue `#0066CC` and bold text
 - keys: `↑` / `↓` navigate, `Enter` selects, `Esc` cancels
-- long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or mouse wheel
+- in regular mode, long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or wheel; keyboard scrolling is recommended
 - choosing `Custom instructions` opens the cancellable in-Pi editor
+
+**Known Pi 1.0 fullscreen limitation:** despite the on-screen help, question-scrolling keys and wheel input go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
+
+The selector writes mouse-mode enable/disable sequences in both modes; in fullscreen these conflict with host-owned tracking. Captured writes and source inspection confirm the conflict, but its terminal-specific effect has not been live-tested. [Work package 0003](../../../fixme/0003-clarify-fullscreen-input.md) is confirmed but deferred; no runtime workaround was retained.
 
 Tool display states:
 

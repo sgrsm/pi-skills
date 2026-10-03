@@ -84,6 +84,28 @@ for (const reason of ["shutdown", "reload"] as const) {
 	});
 }
 
+test("RPC uses basic select with descriptions, never a custom terminal component", async () => {
+	const h = createDialogHarness();
+	clarifyExtension(h.pi, { loadModeState: () => ({ enabled: true }) });
+	const result = h.tools.get("clarify")!.execute("rpc", {
+		question: "Choose a path", options: [{ label: "First", description: "Trade-off" }], allowCustom: false,
+	}, undefined, undefined, { ...h.context(), tools: [], executeTool: async () => { throw new Error("unexpected nested call"); } });
+	await expectRequestCount(h.requests, 1);
+	assert.equal(h.requests[0]!.method, "select");
+	assert.match(h.requests[0]!.title, /Trade-off/);
+	h.requests[0]!.answer("1. First");
+	assert.equal((await result).details.answerType, "option");
+});
+
+for (const mode of ["json", "print"] as const) {
+	test(`clarify ${mode} has no UI and still asks for a plain-text question instead`, async () => {
+		const h = createDialogHarness();
+		clarifyExtension(h.pi, { loadModeState: () => ({ enabled: true }) });
+		await assert.rejects(h.clarify("no-ui", { ...h.context(), mode, hasUI: false }), /interactive clarification UI is not available/);
+		assert.equal(h.requests.length, 0);
+	});
+}
+
 const theme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 };

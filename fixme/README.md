@@ -22,7 +22,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 |---|---|---|---|---|
 | 1 | [0001: visible, safe Trash confirmation](0001-trash-history-fullscreen-confirmation.md) | High / reproduced | Audit summary | Resolved |
 | 2 | [0002: concurrent approval and clarification dialogs](0002-dialog-concurrency-and-cancellation.md) | High / permissions reproduced | Audit summary | Resolved |
-| 3 | [0003: fullscreen clarify input and mouse ownership](0003-clarify-fullscreen-input.md) | Medium / input reproduced | Audit summary | Open |
+| 3 | [0003: fullscreen clarify input and mouse ownership](0003-clarify-fullscreen-input.md) | Medium / input reproduced | Audit summary | Deferred |
 | 4 | [0004: structured prompt contributions](0004-structured-prompt-contributions.md) | Medium / reproduced, MCP latent | Audit summary | Open |
 | 5 | [0005: startup loadouts and MCP restoration](0005-tool-activation-and-mcp-restoration.md) | Medium / reproduced, MCP latent | Audit summary | Open |
 | 6 | [0006: failed subagent results and usage](0006-subagent-failure-results.md) | Medium / renderer reproduced | Audit summary | Open |
@@ -36,6 +36,8 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 14 | [0014: custom session-directory cleanup scope](0014-trash-history-custom-session-directory.md) | Medium if configured / source-verified, latent | Additional observation | Open |
 | 15 | [0015: unnecessary MCP startup in children](0015-subagent-mcp-startup.md) | Low / verify first, latent | Additional observation | Open |
 | 16 | [0016: tool annotations and permission boundaries](0016-tool-annotations-and-permission-scope.md) | Low / metadata and documentation gap | Additional observation | Open |
+
+0003 was reconfirmed on Pi 1.0.0. Its custom-overlay approach exposed unsafe stacked/pre-install completion in the host; the user chose to defer the runtime fix pending a host correction. Only characterization coverage/docs were retained; the original defect remains. See the finding for final validation (**342 tests**, TypeScript) and the actual-host scratch probe.
 
 Order reflects actual exposure in the audited configuration, not severity alone. Move 0014 earlier if custom session storage is enabled. Update Status to Resolved, Closed-not-reproduced, or Deferred with evidence in the owning document.
 

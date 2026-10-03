@@ -45,6 +45,18 @@ Protects safe, visible Trash approval against the host selector and fullscreen l
 - Checks both choices and navigation help at 80×24, 40×24, and 30×24 with a large detailed preview and long paths.
 - Checks that initial Enter selects Cancel, Escape invokes cancellation exactly once without selection, and approval requires navigating to the affirmative option.
 
+### `clarify-input.test.ts`
+
+Characterizes the confirmed, deferred [0003 finding](../../../fixme/0003-clarify-fullscreen-input.md), rather than treating its defects as intentional behavior or claiming its acceptance criteria pass.
+
+- Uses public `TuiAltScreen`/`TuiMainScreen` with fake terminal input and buffers, a simplified fixed-dock composition, and a faithful local model of `custom()` installation/completion.
+- Reproduces fullscreen page/home/end/wheel interception, bottom-help clipping, and clarify's mouse-mode writes; regular-mode keyboard selection/scrolling and raw-SGR wheel handling are controls. Fullscreen captures also confirm host tracking was enabled before clarify's interaction writes.
+- The overlay wheel control covers the host's raw-SGR fallback, not normalized mouse support in the unchanged selector.
+- A **test-only** custom-overlay adapter demonstrates restored input routing, then reproduces the cancellation blocker: stacked transcript search is popped instead of the owned dialog, and cancellation before installation can pop an unrelated overlay.
+- No private host imports are committed. A version-checked scratch probe independently exercised the actual host completion method; its results are recorded in the finding.
+
+Revisit these characterization expectations when implementing 0003 or updating Pi. The local custom-dialog model will not automatically detect an identity-safe completion change in Pi: compare it with the actual host `showExtensionCustom()` close path and reconstruct the optional probe after a version change. Passing the characterizations records existing defects; it does not close the finding.
+
 ### `dialog-concurrency.test.ts`
 
 Protects shared scheduling across permissions and clarify. Fake dialogs check that each selector/custom-instructions exchange owns the FIFO until it completes. The public Pi loader exercises separately loaded module/API instances in both registration orders, then shutdown/invalidation and fresh instances on the same event bus. Clarify state is supplied by a scratch test wrapper, never personal settings.
