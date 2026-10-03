@@ -79,7 +79,7 @@ test("command without arguments shows usage and a safe example without scanning"
     await harness.command("");
 
     assert.equal(harness.sessionRootCalls, 0);
-    assert.equal(harness.confirmCalls, 0);
+    assert.equal(harness.selectCalls, 0);
     assert.deepEqual(harness.execCalls, []);
     assert.equal(harness.audits.length, 0);
     const help = harness.messages.join("\n");
@@ -217,14 +217,80 @@ test("default preview and confirmation omit raw eligible paths and UUIDs", async
     const harness = createHarness(root);
     await harness.command("1");
 
-    const visible = [...harness.messages, ...harness.confirmationMessages].join("\n");
+    const visible = [...harness.messages, ...harness.selectionTitles].join("\n");
     assert.match(visible, /Eligible by project:/);
     assert.doesNotMatch(visible, /Largest individual sessions:/);
-    assert.deepEqual(harness.confirmationTitles, ["Trash eligible Pi sessions?"]);
-    assert.match(harness.confirmationMessages[0]!, /^Scope:/);
+    assert.match(harness.selectionTitles[0]!, /^Trash Pi sessions\?\nScope:/);
+    assert.deepEqual(harness.selectionOptions, [["Cancel", "Move to Trash"]]);
     assert.doesNotMatch(visible, /Eligible Pi sessions may be moved to Trash\./);
     assert.doesNotMatch(visible, new RegExp(storageName));
     assert.doesNotMatch(visible, new RegExp(sessionId));
+  });
+});
+
+test("large detailed reports and long paths stay in the preview, not the confirmation selector", async () => {
+  await fixture(async (root) => {
+    for (let index = 0; index < 32; index += 1) {
+      await session(join(root, `session-${index}.jsonl`), {
+        cwd: `/long-project-path/${"界".repeat(180)}/project-${index % 10}`,
+        mtime: NOW - 3 * 86_400_000,
+      });
+    }
+    await session(join(root, "named.jsonl"), { name: "Keep", mtime: NOW - 3 * 86_400_000 });
+    const archiveDirectory = join(root, "long-archive-path-".repeat(8));
+
+    for (const flags of ["", "--details", "--archive", "--archive --details --include-named"]) {
+      const includeNamed = flags.includes("--include-named");
+      const archive = flags.includes("--archive");
+      const harness = createHarness(root, undefined, undefined, true, {
+        globalSessionRoot: () => root,
+        archiveDirectory: () => archiveDirectory,
+      }, (options) => options[0]);
+
+      await harness.command(`1 --all-projects ${flags}`);
+
+      assert.equal(harness.selectCalls, 1, flags);
+      const title = harness.selectionTitles[0]!;
+      assert.match(title, /^Trash Pi sessions\?\nScope: all-projects\n/);
+      assert.match(title, new RegExp(`Eligible: ${includeNamed ? 33 : 32} · .+`));
+      assert.match(title, new RegExp(`Named: ${includeNamed ? "included" : "protected"}`));
+      assert.match(title, new RegExp(`Archive first: ${archive ? "yes" : "no"}`));
+      assert.match(title, /See preview for details\./);
+      assert.equal(title.split("\n").length, 6);
+      assert.doesNotMatch(title, /long-project-path|界|project-\d|long-archive-path|\.zip|Session details|Cutoff|Skipped/);
+      assert.deepEqual(harness.selectionOptions, [["Cancel", archive ? "Archive, then Trash" : "Move to Trash"]]);
+      const preview = harness.messages[0]!;
+      for (let index = 0; index < 10; index += 1) assert.ok(preview.includes(`/project-${index}`));
+      assert.equal(preview.includes("Session details (largest 30):"), flags.includes("--details"));
+      assert.equal(preview.includes("Archive before Trash:"), archive);
+      assert.deepEqual(harness.execCalls, []);
+      await assert.rejects(lstat(archiveDirectory), { code: "ENOENT" });
+    }
+  });
+});
+
+test("Cancel, Escape, and unexpected selector responses never authorize archive or Trash work", async () => {
+  await fixture(async (root) => {
+    const file = join(root, "old.jsonl");
+    const archiveDirectory = join(root, "archives");
+    await session(file, { mtime: NOW - 3 * 86_400_000 });
+    for (const archive of [false, true]) {
+      for (const response of ["Cancel", undefined, "Yes", "unknown", archive ? "Move to Trash" : "Archive, then Trash"]) {
+        const harness = createHarness(root, undefined, undefined, true, {
+          archiveDirectory: () => archiveDirectory,
+        }, () => response);
+
+        await harness.command(`1 ${archive ? "--archive" : ""}`);
+
+        assert.equal(harness.selectCalls, 1);
+        assert.deepEqual(harness.execCalls, []);
+        assert.match(harness.messages.join("\n"), /Trash-history cancelled; no files were moved\./);
+        assert.equal((harness.audits[0] as { cancelled: boolean }).cancelled, true);
+        if (archive) assert.deepEqual((harness.audits[0] as { archive: unknown }).archive, { requested: true, status: "cancelled" });
+        await lstat(file);
+        await assert.rejects(lstat(archiveDirectory), { code: "ENOENT" });
+      }
+    }
   });
 });
 
@@ -416,7 +482,7 @@ test("command skips a file that becomes the active session before revalidation",
 
     await harness.command("1");
 
-    assert.equal(harness.confirmCalls, 1);
+    assert.equal(harness.selectCalls, 1);
     assert.deepEqual(harness.execCalls, []);
     assert.match(harness.messages.join("\n"), /active=1/);
     await lstat(candidate);
@@ -429,7 +495,7 @@ test("command dry-run never confirms or invokes Trash, while non-dry-run uses fi
     await session(dryFile, { mtime: NOW - 3 * 86_400_000 });
     const dryHarness = createHarness(root);
     await dryHarness.command("1 --dry-run");
-    assert.equal(dryHarness.confirmCalls, 0);
+    assert.equal(dryHarness.selectCalls, 0);
     assert.deepEqual(dryHarness.execCalls, []);
     assert.match(dryHarness.messages.join("\n"), /Dry run/i);
     assert.match(dryHarness.messages.join("\n"), /Eligible: 1/);
@@ -444,8 +510,8 @@ test("command dry-run never confirms or invokes Trash, while non-dry-run uses fi
       return { code: 0, stdout: "", stderr: "", killed: false };
     });
     await moveHarness.command("1 --include-named");
-    assert.equal(moveHarness.confirmCalls, 1);
-    assert.match(moveHarness.confirmationMessages[0]!, /Scope: current-project/);
+    assert.equal(moveHarness.selectCalls, 1);
+    assert.match(moveHarness.selectionTitles[0]!, /Scope: current-project/);
     assert.deepEqual(moveHarness.execCalls, [["/usr/bin/trash", [canonicalMoveFile]]]);
     await assert.rejects(lstat(moveFile), { code: "ENOENT" });
     assert.equal(moveHarness.audits.length, 1);
@@ -461,7 +527,7 @@ test("--archive dry-runs only report the dated ZIP plan", async () => {
 
     await harness.command("1 --archive --dry-run");
 
-    assert.equal(harness.confirmCalls, 0);
+    assert.equal(harness.selectCalls, 0);
     assert.deepEqual(harness.execCalls, []);
     await assert.rejects(lstat(archiveDirectory), { code: "ENOENT" });
     const report = harness.messages.join("\n");
@@ -509,7 +575,7 @@ test("--archive creates and verifies one dated ZIP before any Trash call", async
 
     await harness.command("1 --archive");
 
-    assert.equal(harness.confirmCalls, 1);
+    assert.equal(harness.selectCalls, 1);
     assert.deepEqual(harness.execCalls.map(([command]) => command), ["/usr/bin/env", "/usr/bin/unzip", "/usr/bin/unzip", "/usr/bin/trash"]);
     const archiveStats = await lstat(expectedArchive);
     assert.equal(archiveStats.mode & 0o077, 0);
@@ -546,7 +612,7 @@ test("--archive aborts the entire Trash batch when ZIP creation fails or is inco
 
       await harness.command("1 --archive");
 
-      assert.equal(harness.confirmCalls, 1, name);
+      assert.equal(harness.selectCalls, 1, name);
       assert.deepEqual(harness.execCalls.map(([command]) => command), name === "zip-failure" ? ["/usr/bin/env"] : ["/usr/bin/env", "/usr/bin/unzip", "/usr/bin/unzip"], name);
       await lstat(old);
       assert.match(harness.messages.join("\n"), expectedFailure, name);
@@ -562,7 +628,7 @@ test("command rejects an unrepresentable cutoff before reading the session root 
     await harness.command("104000000");
 
     assert.equal(harness.sessionRootCalls, 0);
-    assert.equal(harness.confirmCalls, 0);
+    assert.equal(harness.selectCalls, 0);
     assert.deepEqual(harness.execCalls, []);
     assert.match(harness.messages.join("\n"), /outside the supported date range/i);
   });
@@ -575,7 +641,7 @@ test("non-dry-run fails closed without UI and failed Trash preflight performs no
 
     const noUi = createHarness(root, undefined, undefined, false);
     await noUi.command("1");
-    assert.equal(noUi.confirmCalls, 0);
+    assert.equal(noUi.selectCalls, 0);
     assert.deepEqual(noUi.execCalls, []);
     await lstat(file);
 
@@ -583,7 +649,7 @@ test("non-dry-run fails closed without UI and failed Trash preflight performs no
       accessTrash: async () => { throw new Error("unavailable"); },
     });
     await unavailable.command("1");
-    assert.equal(unavailable.confirmCalls, 0);
+    assert.equal(unavailable.selectCalls, 0);
     assert.deepEqual(unavailable.execCalls, []);
     assert.match(unavailable.messages.join("\n"), /Trash is unavailable/i);
   });
@@ -595,7 +661,7 @@ test("normal runs append an audit entry even when no session is eligible", async
 
     await harness.command("1");
 
-    assert.equal(harness.confirmCalls, 0);
+    assert.equal(harness.selectCalls, 0);
     assert.deepEqual(harness.execCalls, []);
     assert.equal(harness.audits.length, 1);
     assert.deepEqual(harness.audits[0], {
@@ -651,7 +717,7 @@ test("reports every failed Trash outcome without deleting the source file", asyn
 
       await harness.command("1");
 
-      assert.equal(harness.confirmCalls, 1, name);
+      assert.equal(harness.selectCalls, 1, name);
       assert.equal(harness.execCalls.length, 1, name);
       await lstat(file);
       assert.match(harness.messages.join("\n"), /Action-time failures: 1 sessions · .+/, name);
@@ -738,14 +804,15 @@ function createHarness(
   execImplementation?: ExecImplementation,
   hasUI = true,
   dependencies: Partial<TrashHistoryDependencies> = {},
+  selectImplementation: (options: string[]) => string | undefined = (options) => options[1],
 ) {
   let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
   const messages: string[] = [];
   const execCalls: Array<[string, string[]]> = [];
   const audits: unknown[] = [];
-  const confirmationMessages: string[] = [];
-  const confirmationTitles: string[] = [];
-  let confirmCalls = 0;
+  const selectionTitles: string[] = [];
+  const selectionOptions: string[][] = [];
+  let selectCalls = 0;
   let sessionRootCalls = 0;
   const pi = {
     registerCommand(name: string, command: { handler(args: string, ctx: unknown): Promise<void> }) {
@@ -763,9 +830,9 @@ function createHarness(
     messages,
     execCalls,
     audits,
-    confirmationMessages,
-    confirmationTitles,
-    get confirmCalls() { return confirmCalls; },
+    selectionTitles,
+    selectionOptions,
+    get selectCalls() { return selectCalls; },
     get sessionRootCalls() { return sessionRootCalls; },
     async command(args: string) {
       assert.ok(commandHandler);
@@ -780,7 +847,14 @@ function createHarness(
         },
         ui: {
           notify(message: string) { messages.push(message); },
-          async confirm(title: string, message: string) { confirmCalls += 1; confirmationTitles.push(title); confirmationMessages.push(message); return true; },
+          async confirm() { assert.fail("Trash approval must not use default-Yes confirm"); },
+          async select(title: string, options: string[]) {
+            selectCalls += 1;
+            selectionTitles.push(title);
+            selectionOptions.push([...options]);
+            assert.deepEqual(execCalls, [], "No archive or Trash work before explicit approval");
+            return selectImplementation(options);
+          },
         },
       });
     },

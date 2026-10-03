@@ -36,6 +36,15 @@ Protects TUI-only UI gating.
 - Exercises `tui`, `rpc`, `json`, and `print` mode shapes, including `rpc` with `hasUI: true`.
 - The invariant is that custom TUI components and editor wrappers are allowed only when `ctx.mode === "tui"`, not merely when `ctx.hasUI` is true. RPC mode may have UI capabilities such as notifications or selections, but it cannot host terminal-only custom widgets.
 
+### `trash-confirmation.test.ts`
+
+Protects safe, visible Trash approval against the host selector and fullscreen layout contracts.
+
+- Uses public `ExtensionSelectorComponent` and pi-tui APIs with a fake terminal; the fixed-dock layout is a manual copy of Pi 1.0's `chat-viewport` contract, including a three-line footer.
+- Includes a legacy full-report control that reproduces clipped choices, proving the fixture exercises fullscreen clipping.
+- Checks both choices and navigation help at 80×24, 40×24, and 30×24 with a large detailed preview and long paths.
+- Checks that initial Enter selects Cancel, Escape invokes cancellation exactly once without selection, and approval requires navigating to the affirmative option.
+
 ## When to add tests here
 
 Add a compatibility test here when a change depends on a Pi host contract or a cross-extension integration point, especially when the behavior could regress silently during unrelated extension edits.

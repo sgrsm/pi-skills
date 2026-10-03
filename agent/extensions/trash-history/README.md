@@ -19,7 +19,7 @@ Examples:
 /trash-history 90 --include-named              # current project, including named sessions
 /trash-history 365 --all-projects --dry-run    # standard global Pi session root
 /trash-history 365 --all-projects --details    # add a bounded per-session summary before confirmation
-/trash-history 365 --all-projects --archive    # make one verified ZIP, then confirm Trash operations
+/trash-history 365 --all-projects --archive    # confirm, then make one verified ZIP before Trash
 /trash-history 365 --all-projects              # confirm before Trash operations
 ```
 
@@ -29,7 +29,7 @@ Examples:
 - `--dry-run` scans and reports what would be eligible. It does not ask for confirmation and never invokes Trash.
 - `--details` appends at most 30 eligible-session rows, ordered by size. Each row is only `date · size · cwd`; if more rows exist, the report says how many were omitted.
 - `--dry-run --archive` only reports the planned archive name. It neither creates the archive directory nor writes a ZIP.
-- Normal runs first show a bounded preview that identifies its scope and then require confirmation. In a non-interactive Pi mode they fail closed without moving anything; use `--dry-run` for a report instead.
+- Normal runs first show the full metadata preview, then a compact confirmation with Cancel selected by default. In a non-interactive Pi mode they fail closed without moving anything; use `--dry-run` for a report instead.
 - Invalid input is rejected, including missing days, decimal/scientific/signed values, leading-zero values, unknown flags, duplicate flags, and extra positional tokens. Flags may be in any order, but each may appear only once. A syntactically valid day count whose calculated cutoff is outside JavaScript's representable `Date` range is also rejected before scanning.
 
 ## What it scans
@@ -49,9 +49,15 @@ It never moves directories. Every preview, confirmation, completion report, and 
 
 ## Preview and confirmation output
 
-The standard preview and confirmation are structured and bounded. They show the scope, cutoff, and eligible session count and size. By default, they also show the count and size of **stale named sessions protected by the default policy**. With `--include-named`, they instead show the count and size of named sessions included. A named session that is active, unsafe, malformed, or too recent is not counted in either named-session total.
+The preview shows the scope, cutoff, and eligible session count and size. By default, it also shows the count and size of **stale named sessions protected by the default policy**. With `--include-named`, it instead shows the count and size of named sessions included. A named session that is active, unsafe, malformed, or too recent is not counted in either named-session total.
 
-With `--archive`, the preview and confirmation also show the planned ZIP name. A successful completion report identifies the verified archive and its compressed size before reporting Trash outcomes.
+The separate confirmation shows only a compact summary: scope, eligible count and size, whether named sessions are protected or included, whether an archive will be created first, and a reminder to consult the preview. Project paths, per-session details, cutoff, and skip counts stay in the preview so both choices and navigation help remain visible in fullscreen, including narrow terminals.
+
+- **Cancel** is the initial selection; pressing Enter immediately or Escape cancels without creating an archive or moving files.
+- Choose **Move to Trash** explicitly to approve a normal run.
+- With `--archive`, choose **Archive, then Trash** explicitly to approve creation and verification of the ZIP before any Trash work.
+
+With `--archive`, the preview shows the planned ZIP name; the compact confirmation does not repeat the path. A successful completion report identifies the verified archive and its compressed size before reporting Trash outcomes.
 
 After a confirmed batch, the completion report separately shows:
 

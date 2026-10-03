@@ -749,6 +749,21 @@ export function formatScanReport(
   ].join("\n");
 }
 
+/** Keep the selector compact at narrow widths; all paths and detailed rows stay in the preview. */
+export function createTrashHistoryConfirmation(scan: ScanResult, archive: boolean): { title: string; options: [string, string] } {
+  return {
+    title: [
+      "Trash Pi sessions?",
+      `Scope: ${scan.scope}`,
+      `Eligible: ${scan.candidates.length} · ${formatDisplayBytes(scan.eligibleBytes)}`,
+      `Named: ${scan.includeNamed ? "included" : "protected"}`,
+      `Archive first: ${archive ? "yes" : "no"}`,
+      "See preview for details.",
+    ].join("\n"),
+    options: ["Cancel", archive ? "Archive, then Trash" : "Move to Trash"],
+  };
+}
+
 function output(ctx: ExtensionCommandContext, message: string, type: "info" | "warning" | "error" = "info"): void {
   if (ctx.hasUI) ctx.ui.notify(message, type);
   else console.log(message);
@@ -919,11 +934,9 @@ export function registerTrashHistoryExtension(pi: ExtensionAPI, dependencies: Tr
         }
       }
 
-      const confirmed = await ctx.ui.confirm(
-        "Trash eligible Pi sessions?",
-        `${formatScanReport(scan, cutoffMs, "", reportOptions)}\n\n${request.archive ? "This first creates and verifies one ZIP archive, then moves only archived eligible sessions to macOS Trash." : "This moves only the summarized eligible session files to macOS Trash."} Continue?`,
-      );
-      if (!confirmed) {
+      const confirmation = createTrashHistoryConfirmation(scan, request.archive);
+      const choice = await ctx.ui.select(confirmation.title, confirmation.options);
+      if (choice !== confirmation.options[1]) {
         output(ctx, "Trash-history cancelled; no files were moved.", "warning");
         auditSnapshot({
           dryRun: false,
