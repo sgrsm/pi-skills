@@ -42,4 +42,8 @@ Use actual host themes for the finished token, not only a marker theme. Change t
 
 `node --test response-timer/index.test.ts mcp-status/index.test.ts shared/footerStatus.test.ts`; `npm run verify` with approved scratch. Document any setup-error scenario that cannot be reproduced through a supported host seam.
 
+### Re-check after 0010
+
+**Status remains Open.** Source re-check confirms 0010 changes configuration projection/cache scope, not lifecycle handlers or stale-context boundaries. Existing footer/timer tests pass, but do not verify this package's setup-error/stale-context acceptance criteria; no status promotion is justified. See [0010's resolution](0010-mcp-status-config-drift.md#resolution-and-validation).
+
 Related: [0010: MCP config projection](0010-mcp-status-config-drift.md); coordinate changes to mcp-status without conflating config semantics with status lifecycle.

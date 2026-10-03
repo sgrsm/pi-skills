@@ -29,17 +29,75 @@ test("projection defaults enabled/exposure, supports all exposures, and skips ma
     { name: "docs", enabled: true, exposure: "codemode" },
     { name: "hidden", enabled: false, exposure: "hidden" },
   ]);
-  for (const exposure of ["codemode", "codemode-deferred", "deferred", "direct", "hidden"]) {
+  for (const exposure of ["codemode", "deferred", "direct", "hidden"]) {
     assert.equal(parseMcpStatuses(config(true, exposure))[0]?.exposure, exposure);
+  }
+  assert.deepEqual(parseMcpStatuses(config(true, "codemode-deferred")), parseMcpStatuses(config(true, "codemode")));
+  for (const enabled of [true, false]) {
+    assert.equal(formatMcpStatus(parseMcpStatuses(config(enabled, "codemode-deferred")), theme),
+      formatMcpStatus(parseMcpStatuses(config(enabled, "codemode")), theme));
   }
   assert.throws(() => parseMcpStatuses("{"));
   assert.throws(() => parseMcpStatuses('{"mcpServers":[]}'));
 });
 
-function harness(mode = "tui") {
+test("cheap rejection checks omit invalid entries without losing valid transport choices", () => {
+  const invalid = [
+    { type: "sse", url: "https://example.com/sse" },
+    { type: "other", command: "server" },
+    { type: "http", command: "server" },
+    { type: "stdio", url: "https://example.com/mcp" },
+    { url: "not a URL", command: "server" }, // HTTP takes precedence; no stdio fallback.
+    { url: "file:///mcp" }, { url: "https://" },
+    { command: "server", args: "--flag" }, { command: "server", args: [1] },
+    { command: "server", env: { KEY: 1 } }, { command: "server", env: [] },
+    { command: "server", cwd: 1 },
+    { url: "https://example.com/mcp", headers: { Authorization: 1 } },
+    { url: "https://example.com/mcp", headers: [] },
+    { url: "https://example.com/mcp", auth: { provider: "" } },
+    { url: "http://example.com/mcp", auth: { provider: "fixture" } },
+    { command: "server", enabled: "true" }, { command: "server", exposure: null },
+    { command: "server", description: 1 }, { command: "server", timeout: 0 },
+    { command: "server", toolExposure: [] },
+    { command: "server", toolExposure: { tool: "wrong" } },
+  ];
+  for (const value of invalid) {
+    assert.deepEqual(parseMcpStatuses(JSON.stringify({ mcpServers: { bad: value, good: { command: "server" } } })),
+      [{ name: "good", enabled: true, exposure: "codemode" }], JSON.stringify(value));
+  }
+  const valid = [
+    { type: "stdio", command: "server", args: ["--flag"], env: { KEY: "${KEY}" }, cwd: "." },
+    { type: "http", url: "http://example.com/mcp", headers: { Authorization: "${TOKEN}" } },
+    { type: "streamable-http", url: "https://example.com/mcp" },
+    { command: "server", url: "https://example.com/mcp", args: [1] }, // HTTP ignores stdio fields.
+    { type: "stdio", command: "server", url: "not a URL" },
+    { url: "http://localhost/mcp", auth: { provider: "fixture" } },
+    { url: "http://[::1]/mcp", auth: { provider: "fixture" } },
+    { command: "server", toolExposure: { "*": "codemode-deferred", exact: "deferred" } },
+  ];
+  for (const value of valid) {
+    assert.deepEqual(parseMcpStatuses(JSON.stringify({ mcpServers: { good: value } })),
+      [{ name: "good", enabled: true, exposure: "codemode" }], JSON.stringify(value));
+  }
+});
+
+test("project provider-auth restriction is source-aware and projection retains no secret fields", () => {
+  const text = JSON.stringify({ mcpServers: { docs: {
+    url: "https://example.com/mcp", auth: { provider: "fixture" },
+    headers: { Authorization: "!never-run-this" }, oauth: { clientSecret: "fixture-secret" },
+  } } });
+  assert.deepEqual(parseMcpStatuses(text, "global"), [{ name: "docs", enabled: true, exposure: "codemode" }]);
+  assert.deepEqual(parseMcpStatuses(text, "project"), []);
+  // The host restriction also covers a stdio entry carrying a URL and auth.
+  assert.deepEqual(parseMcpStatuses(JSON.stringify({ mcpServers: { docs: {
+    type: "stdio", command: "server", url: "ignored", auth: { provider: "fixture" },
+  } } }), "project"), []);
+});
+
+function harness(mode = "tui", agentDir = "/agent") {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
   const statuses = new Map<string, string | undefined>();
-  const files = new Map<string, string>([["/agent/mcp.json", config(false)]]);
+  const files = new Map<string, string>([[`${agentDir}/mcp.json`, config(false)]]);
   const reads: string[] = [];
   const readErrors = new Set<string>();
   const writes: Array<[string, string | undefined]> = [];
@@ -59,7 +117,7 @@ function harness(mode = "tui") {
     on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, handler),
   } as unknown as ExtensionAPI;
   const dependencies: McpStatusDependencies = {
-    agentDir: () => "/agent",
+    agentDir: () => agentDir,
     readFile(path) {
       reads.push(path);
       if (readErrors.has(path)) throw new Error("Read failed");
@@ -101,6 +159,82 @@ test("polling tracks /mcp changes, trusted project overrides, and malformed writ
   h.files.delete("/agent/mcp.json");
   h.tick();
   assert.equal(h.statuses.get(MCP_STATUS_KEY), undefined);
+});
+
+test("merge rejects later normalized-name collisions, but accepts exact project overrides", async () => {
+  const h = harness();
+  h.files.set("/agent/mcp.json", JSON.stringify({ mcpServers: {
+    "foo-bar": { command: "global", exposure: "direct" },
+    foo_bar: { command: "collision" },
+  } }));
+  h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: {
+    foo_bar: { command: "project-collision", enabled: false },
+    "foo-bar": { command: "project", exposure: "deferred" },
+    other: { command: "other" },
+  } }));
+  h.setTrusted(true);
+  await h.emit("session_start");
+  assert.equal(h.statuses.get(MCP_STATUS_KEY),
+    "<success>MCP: </success><success>foo-bar · deferred</success><dim>, </dim><success>other · codemode</success><dim> •</dim>");
+  // Re-evaluate cross-file collisions, including cached project entries, on each tick.
+  h.files.set("/agent/mcp.json", "{}");
+  h.files.set("/project/.pi/mcp.json", "{");
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY),
+    "<success>MCP: </success><dim>foo_bar</dim><dim>, </dim><success>other · codemode</success><dim> •</dim>");
+});
+
+test("blank commands remain omitted, including conservative collision ownership", async () => {
+  for (const command of ["", " "]) {
+    assert.deepEqual(parseMcpStatuses(JSON.stringify({ mcpServers: { blank: { command } } })), []);
+  }
+  const h = harness();
+  h.files.set("/agent/mcp.json", JSON.stringify({ mcpServers: {
+    "a-b": { command: " " }, a_b: { command: "server" },
+  } }));
+  await h.emit("session_start");
+  // Intentional conservative difference: Pi accepts the blank entry and reserves a-b instead.
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<success>MCP: </success><success>a_b · codemode</success><dim> •</dim>");
+});
+
+test("last-valid caches stay source-specific when global and project config paths coincide", async () => {
+  const h = harness("tui", "/project/.pi");
+  h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: {
+    docs: { url: "https://example.com/mcp", auth: { provider: "fixture" } },
+  } }));
+  h.setTrusted(true);
+  await h.emit("session_start");
+  const expected = "<success>MCP: </success><success>docs · codemode</success><dim> •</dim>";
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), expected);
+  h.readErrors.add("/project/.pi/mcp.json");
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), expected, "project parsing must not erase the global fallback");
+  h.setTrusted(false);
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), expected, "revoking project trust must not erase the global fallback");
+});
+
+test("invalid project overrides preserve global entries and trust revocation clears cached projection", async () => {
+  const h = harness();
+  h.setTrusted(true);
+  h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: {
+    intellij: { url: "https://example.com/mcp", auth: { provider: "fixture" }, exposure: "direct" },
+  } }));
+  await h.emit("session_start");
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>");
+  h.files.set("/project/.pi/mcp.json", config(true, "direct"));
+  h.tick();
+  assert.ok(h.statuses.get(MCP_STATUS_KEY)?.includes("idea · direct"));
+  h.readErrors.add("/project/.pi/mcp.json");
+  h.setTrusted(false);
+  h.tick();
+  const reads = h.reads.length;
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>");
+  h.tick();
+  assert.equal(h.reads.length, reads + 1, "only the global config is read");
+  h.setTrusted(true);
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>");
 });
 
 test("unchanged polling does not redraw; read errors preserve display; theme changes recolor it", async () => {

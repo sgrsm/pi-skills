@@ -29,7 +29,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 7 | [0007: nested-call file lists in handoffs](0007-handoff-nested-file-operations.md) | Medium / confirmed in-memory | Audit summary | Resolved |
 | 8 | [0008: short-paths state across loader instances](0008-short-paths-loader-state.md) | Medium / reproduced | Audit summary | Resolved |
 | 9 | [0009: wrapped built-in configuration contracts](0009-wrapped-built-in-configuration.md) | Low–medium / reproduced test-first | Additional observation | Resolved |
-| 10 | [0010: MCP footer parsing and exposure drift](0010-mcp-status-config-drift.md) | Low / source-verified | Audit summary | Open |
+| 10 | [0010: MCP footer parsing and exposure drift](0010-mcp-status-config-drift.md) | Low / source-verified | Audit summary | Resolved |
 | 11 | [0011: Codex provider and virtual-model coverage](0011-codex-verbosity-provider-coverage.md) | Low / source-verified | Audit summary | Open |
 | 12 | [0012: native tool expansion and refresh state](0012-tool-rendering-expansion.md) | Low / verify UX contract first | Additional observation | Open |
 | 13 | [0013: footer timer lifecycle, themes, and docs](0013-footer-lifecycle-and-theme-drift.md) | Low / mixed evidence | Additional observation | Open |
@@ -52,6 +52,8 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 0008 was confirmed by a read-only scout (source only), reproduced test-first through the public Pi/jiti loader, and resolved with committed-state events, per-runtime caches and public row-local invalidation. A fresh independent reviewer found no critical defects; its callback-lifetime and coverage findings led to weak row-owned registrations and real host-component regressions, including test-first same-id and reused-factory corrections. Final validation: **17 focused, 26 related and 547 full-gate tests passed**, TypeScript and five valid host links; none failed/cancelled/skipped. A version-checked scratch GC probe collected 24 discarded actual host rows while preserving one live redraw. Both subagents executed no tests, and the reviewer did not re-review the remediated state. 0012 remains Open except for its verified `/short-paths` refresh portion; 0009 stays Open after source recheck; 0017's recommendation was updated without retirement approval. No live terminal/provider/MCP checks or personal configuration changes were made. See 0008 for evidence, review reconciliation and limits.
 
 0009 is Resolved: native file-wrapper selection and effective image options are corrected. See [0009](0009-wrapped-built-in-configuration.md#resolution-and-validation) for confirmation, independent review, validation and limits.
+
+0010 is Resolved: MCP footer normalization and conservative configuration projection are corrected; see [0010](0010-mcp-status-config-drift.md#resolution-and-validation) for evidence and retained limits.
 
 Order reflects actual exposure in the audited configuration, not severity alone. Move 0014 earlier if custom session storage is enabled. Update Status to Resolved, Closed-not-reproduced, or Deferred with evidence in the owning document.
 
