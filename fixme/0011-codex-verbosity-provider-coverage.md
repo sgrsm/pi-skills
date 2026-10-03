@@ -1,16 +1,16 @@
 # 0011: Make Codex verbosity's actual provider coverage explicit
 
-- **Status:** Open
-- **Priority:** Low; current legacy provider works
-- **Evidence:** Source-verified; successor/virtual dispatch not live-tested
+- **Status:** Resolved — conservative local coverage fix; host API follow-up Open in [TDR-0006](../tdr/0006-provider-request-physical-model-identity.md)
+- **Priority:** Low; direct legacy provider works
+- **Evidence:** Test-first local regressions; host API limitation source-verified; successor/virtual dispatch not live-tested
 - **Area:** `agent/extensions/codex-verbosity`
 - **Instructions:** [Package workflow and validation](README.md)
 
 ## Problem and evidence
 
-`index.ts:61` applies verbosity only when `ctx.model.provider === "openai-codex"`. The audited default provider is exactly that, so the current path works.
+At the audit baseline, the request hook in `agent/extensions/codex-verbosity/index.ts` filtered only by `ctx.model.provider === "openai-codex"`. The audited default provider was exactly that, so the direct legacy path worked.
 
-Pi now offers ChatGPT sign-in through `openai`/Responses as well. The extension does nothing on that path, yet `/codex-verbosity` reports the setting as saved without explaining it is inactive for the selected provider.
+Pi also offers ChatGPT sign-in through `openai`/Responses. The extension did nothing on that path, yet `/codex-verbosity` confirmed the setting without explaining that it was inactive for the selected provider.
 
 Virtual models make provider-name inference unsafe: `HOST/docs/virtual-models.md` says `ctx.model` describes selection, not physical dispatch. A virtual selection under openai-codex can route elsewhere; a router under another provider can dispatch to Codex. `before_provider_request` in 1.0.0 exposes payload, not a verified physical-model identity.
 
@@ -43,4 +43,25 @@ Supporting the successor provider or routed physical requests is a follow-up onl
 
 ## Validation
 
-Add `codex-verbosity/index.test.ts`; `node --test codex-verbosity/index.test.ts`; `npm run verify` with approved scratch. No login, token access, or paid model request is necessary.
+Run `node --test codex-verbosity/index.test.ts` and `npm run verify` from `agent/extensions/`, with approved canonical scratch for the full gate. No login, token access, or paid model request is necessary.
+
+## Resolution and validation
+
+The user approved the conservative local correction and a separately documented host enhancement. The follow-up is [TDR-0006](../tdr/0006-provider-request-physical-model-identity.md), not an extension README implementation report or authorization to patch Pi.
+
+Implemented:
+
+- The hook requires both selected provider `openai-codex` and API `openai-codex-responses`. Missing/unknown APIs, unrelated providers, `openai`/Responses and virtual selections are skipped. The current internal `pi-virtual` marker refines command wording only; support does not depend on that marker remaining unchanged.
+- Save and query notifications distinguish the preference from selected-model coverage, including successor, virtual and missing-selection explanations. No per-request warnings or status item were added.
+- Payload replacement preserves other text fields, including structured-output format settings. Non-record payloads and malformed existing text values are untouched.
+- `registerCodexVerbosityExtension()` injects config reads/writes for tests and owns the mutable preference per instance. Importing the module no longer reads personal configuration. The default factory retains the existing config path, JSON shape, normalization and `low` fallback.
+- A failed save reports an error and preserves the running preference; memory is updated only after a successful write. Existing non-atomic file writes were not redesigned, so this is not a promise to roll back a partial disk write.
+- The user guide explains how to select the legacy provider, saved-versus-applied feedback, unsupported coverage, reload behavior and troubleshooting. Host source/design/acceptance details live in TDR-0006.
+
+Test-first reproduction: after introducing only the injectable registration seam and instance-local state, the focused suite had **7 passing and 7 failing tests**. Failures reproduced provider/API and virtual filtering, malformed-payload handling, missing coverage feedback, and save-error behavior. After correction, all **14 focused tests passed**.
+
+Validation on Pi **1.0.0**, Node **v22.19.0**: focused tests, TypeScript and all five host dependency links passed; `npm run verify` passed **594 tests**, with none failed/cancelled/skipped, using approved canonical session scratch for both scratch environment variables.
+
+An independent read-only reviewer found no blocking code defects. Its tracking warning led to closing this record and linking TDR-0006 in the index. Its optional observations led to clearer internal-marker wording, the sibling-event API precedent, legacy-picker guidance and a current-command getter in the test harness. The reviewer executed no tests; validation was parent-run.
+
+Limits: tests use in-memory config dependencies and synthetic selected models/payloads; they never invoke the real config writer. No live provider request, login, token access, end-to-end virtual routing, installed-host patch, dependency change or personal-configuration change was used. Physical request identity and successor/routed provider support remain outside this local correction.

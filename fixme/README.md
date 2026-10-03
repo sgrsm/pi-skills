@@ -30,7 +30,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 8 | [0008: short-paths state across loader instances](0008-short-paths-loader-state.md) | Medium / reproduced | Audit summary | Resolved |
 | 9 | [0009: wrapped built-in configuration contracts](0009-wrapped-built-in-configuration.md) | Low–medium / reproduced test-first | Additional observation | Resolved |
 | 10 | [0010: MCP footer parsing and exposure drift](0010-mcp-status-config-drift.md) | Low / source-verified | Audit summary | Resolved |
-| 11 | [0011: Codex provider and virtual-model coverage](0011-codex-verbosity-provider-coverage.md) | Low / source-verified | Audit summary | Open |
+| 11 | [0011: Codex provider and virtual-model coverage](0011-codex-verbosity-provider-coverage.md) | Low / test-first local regressions | Audit summary | Resolved — local coverage fix; host API enhancement in TDR-0006 |
 | 12 | [0012: native tool expansion and refresh state](0012-tool-rendering-expansion.md) | Low / verify UX contract first | Additional observation | Open |
 | 13 | [0013: footer timer lifecycle, themes, and docs](0013-footer-lifecycle-and-theme-drift.md) | Low / mixed evidence | Additional observation | Open |
 | 14 | [0014: custom session-directory cleanup scope](0014-trash-history-custom-session-directory.md) | Medium if configured / source-verified, latent | Additional observation | Open |
@@ -38,6 +38,7 @@ The ten findings in the audit summary are covered below. Additional lower-priori
 | 16 | [0016: tool annotations and permission boundaries](0016-tool-annotations-and-permission-scope.md) | Low / metadata and documentation gap | Additional observation | Open |
 | Host follow-up | [TDR-0004: SDK/CLI resume tool restoration](../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) | Medium / reproduced without local extensions | 0005 resume validation | Open — confirmed host defect |
 | Local debt follow-up | [TDR-0005: orchestration failure accounting](../tdr/0005-subagent-orchestration-failure-accounting.md) | Medium / parallel cancellation reproduced; exceptions verify first | 0006 review | Open |
+| Host API follow-up | [TDR-0006: physical provider-request identity](../tdr/0006-provider-request-physical-model-identity.md) | Low / source-verified API limitation | Codex coverage | Open — enhancement deferred |
 
 0003 was reconfirmed on Pi 1.0.0. Its custom-overlay approach exposed unsafe stacked/pre-install completion in the host; the user chose to defer the runtime fix pending a host correction. Only characterization coverage/docs were retained; the original defect remains. See the finding for final validation (**342 tests**, TypeScript) and the actual-host scratch probe.
 
