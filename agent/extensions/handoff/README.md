@@ -18,11 +18,13 @@ Handoff files are named like this by default:
 
 ## Relevant Files and record limits
 
-File candidates come from the current branch's session context: direct tool calls, Pi's recorded nested calls, and file tags in compaction/branch summaries. Unselected branches are not scanned; a branch summary deliberately included in the current context can still carry their summarized file references. Paths are normalized, deduplicated, and sorted. Recorded calls are **attempts**, including failed or unfinished edits/writes—not proof that a file changed.
+The file list uses the current branch's context, including recorded direct/nested tool calls and file references carried by earlier summaries. Recorded calls are **attempts**: a listed edit or write may have failed or never finished, so check the file before relying on it.
 
-Model-based summaries receive these candidates as hints and select only materially relevant files. If the model omits the Relevant Files section, the extension adds it from the candidates. Fallback summaries use the same candidates, prioritizing modified paths and listing at most 12 files.
+Model-based summaries select relevant files from these hints. When a file list must be added automatically, it prioritizes modified paths and includes at most 12 files.
 
-Pi's nested records are bounded: at most 256 calls per top-level tool result, with arguments omitted above 8 KiB per call or 32 KiB total. Dropped calls, omitted arguments, or unfinished calls make the record incomplete. Handoffs show **“File lists may be incomplete”** when this loss is known, including in model-written Relevant Files sections. This notice is conservative: loss from a non-file tool can trigger it too. Missing/malformed arguments are ignored, not reconstructed from script or error text. Earlier summaries may already have lost detail; this is not an exhaustive filesystem audit.
+Handoffs show **“File lists may be incomplete”** when Pi's nested records are known to be missing calls or arguments, malformed, or unfinished. This warning can also reflect missing non-file activity. Older summaries may already have lost detail, and the absence of a warning does not make the list an exhaustive filesystem audit.
+
+For extraction rules, record bounds and validation, see [handoff maintenance](maintenance.md#file-candidates-and-record-limits).
 
 ## When to use it
 

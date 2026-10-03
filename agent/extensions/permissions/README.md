@@ -50,7 +50,7 @@ Paths inside the current working directory are not guarded by the ordinary promp
 
 The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir instead of /tmp: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
 
-The hint is an additive structured prompt section, replaced for the current session rather than appended repeatedly. It does not suppress later MCP or extension guidance. When another extension deliberately forces a complete prompt, this guidance is not injected into that provider prompt; the actual scratch permission checks are unchanged.
+If another extension forces a complete system prompt, Pi may not see the scratch hint; the scratch permission checks themselves are unchanged. Prompt-contribution details are in [maintenance](../maintenance.md#structured-prompt-contributions).
 
 ### Git mutations on existing non-agent branches
 
@@ -100,13 +100,13 @@ Session grant scopes are narrow:
 
 Auto-approval for the Pi temp workspace does not create a visible session grant and does not count in the footer.
 
-Approval dialogs and clarify questions share one session-local FIFO. Only one of these interactions opens at a time, including its custom-instructions exchange. An earlier session approval can eliminate a queued duplicate prompt only when the existing grant covers its exact operation and scope. Read-only/noninteractive calls are not queued; no-UI blocks and catastrophic hard denials do not wait for a dialog.
+Approval dialogs and clarify questions share one session-local queue (first in, first out). Only one of these interactions is open at a time, including its custom-instructions exchange. An earlier session approval skips a queued duplicate prompt only when it covers the exact operation and scope. Read-only calls are not queued; no-UI blocks and catastrophic hard denials never wait for a dialog.
 
 Cancelling a queued or displayed request, aborting the turn, or shutting down/reloading the session blocks unapproved work. Late replies do not create grants or revive cancelled requests.
 
 In TUI mode, detailed requests appear as persistent warning notifications above a compact selector, keeping choices visible in fullscreen. Details are capped at 8,000 characters. If the full request exceeds that cap, approval is unavailable: only Deny or Custom instructions are offered, with a visible truncation notice. Ask Pi to split the action into smaller requests rather than approving undisplayed scopes. RPC selectors include the bounded details directly, so approval does not depend on a client displaying notifications.
 
-Custom instructions use a prefilled multiline editor inside Pi's TUI. Its external-editor shortcut (normally Ctrl+G) is disabled because Pi's external-editor process cannot be cancelled safely; edit inside Pi instead. In RPC mode, custom instructions use cancellable text input rather than a multiline editor; any supplied starter text is a placeholder, not editable prefill.
+Custom instructions use a prefilled multiline editor inside Pi's TUI. Its external-editor shortcut (normally Ctrl+G) is disabled because that process cannot be cancelled safely; edit inside Pi instead. In RPC mode, custom instructions use cancellable text input rather than a multiline editor; starter text is a placeholder, not editable prefill.
 
 In non-interactive/no-UI mode, guarded actions are blocked instead of prompting.
 

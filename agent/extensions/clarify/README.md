@@ -40,9 +40,9 @@ Behavior:
 
 Argument completion is available for `on` and `off`.
 
-Saved off mode keeps clarify unavailable, even if a tool selection names it. Startup and `/reload` no longer discard pending restored MCP tools when applying that mode. Eligible clarify remains model-only and follows the existing global mode defaults; restrictive CLI allowlists and exclusions still take precedence. An explicit `/clarify off` remains an intentional tool-loadout change.
+Saved off mode keeps clarify unavailable at startup and `/reload`, even if a tool selection names it. When on, clarify stays model-only, and restrictive CLI tool allowlists/exclusions still win. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
-**Separate Pi 1.0 resume limitation:** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. This startup correction does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Tool
 
@@ -80,7 +80,7 @@ Possible results:
 - custom answer: `User provided custom instructions: ...`
 - cancellation: `User cancelled the clarification.`
 
-Clarify calls run sequentially and share a session-local dialog queue with permission approvals. A question and its custom-answer editor stay together; a second question or approval waits until that exchange finishes. Cancellation while queued or displayed, turn abort, and session shutdown/reload all return the existing cancelled result. Late replies are ignored.
+Clarify calls run sequentially and share a session-local dialog queue with permission approvals. A question and its custom-answer editor stay together; a second question or approval waits until that exchange finishes. Cancelling while queued or displayed, aborting the turn, and session shutdown/reload all return the cancelled result. Late replies are ignored.
 
 In TUI mode, custom answers use a prefilled multiline editor inside Pi. Its external-editor shortcut (normally Ctrl+G) is disabled so an uncancellable external process cannot restart the terminal after abort; edit inside Pi instead. In RPC mode, custom answers use cancellable text input rather than a multiline editor. `customPrompt` is shown as a placeholder there, not editable prefill. RPC selector details are capped at 8,000 characters.
 
@@ -115,9 +115,9 @@ Interactive selector in TUI mode:
 - in regular mode, long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or wheel; keyboard scrolling is recommended
 - choosing `Custom instructions` opens the cancellable in-Pi editor
 
-**Known Pi 1.0 fullscreen limitation:** despite the on-screen help, question-scrolling keys and wheel input go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
+**Known Pi 1.0 fullscreen limitation (open):** despite the on-screen help, question-scrolling keys and wheel input go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question, or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
 
-The selector writes mouse-mode enable/disable sequences in both modes; in fullscreen these conflict with host-owned tracking. Captured writes and source inspection confirm the conflict, but its terminal-specific effect has not been live-tested. [Work package 0003](../../../fixme/0003-clarify-fullscreen-input.md) is confirmed but deferred; no runtime workaround was retained.
+The selector also turns terminal mouse reporting on and off in both modes; in fullscreen this conflicts with Pi's own mouse handling. The conflict is confirmed from captured output and source, but its effect in specific terminals has not been tested live. A fix remains deferred pending a Pi host correction; maintainer details are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md).
 
 Tool display states:
 
@@ -127,15 +127,8 @@ Tool display states:
 - cancelled: warning `Cancelled`
 - error: error text
 
-## Extension hooks
+## Prompt guidance
 
-The extension listens for:
-
-- `session_start` - loads saved state, applies tool availability without replacing pending restoration, and refreshes footer status
-- `session_shutdown` - cancels displayed and queued interactions, including on reload
-- `tool_call` - blocks `clarify` calls while disabled
-- `before_agent_start` - adds clarification guidance to the agent prompt, or tells the agent to ask in plain text when UI is unavailable
-
-Clarification guidance is an additive structured prompt section. It updates rather than accumulating across turns, switches to the plain-text note without UI, and is omitted while clarify is disabled or inactive. Other extensions' later guidance (including MCP) remains available. When another extension deliberately forces a complete prompt, this guidance is not injected into that provider prompt.
+While clarify is enabled and active, Pi's prompt includes clarification guidance, or a plain-text-instead note when no UI exists. It is omitted when clarify is disabled or inactive. If another extension forces a complete system prompt, the guidance may not reach the model. Hook wiring, prompt-section rules and tests are in [clarify maintenance](./maintenance.md) and [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
 There are no user-facing CLI flags for this extension.

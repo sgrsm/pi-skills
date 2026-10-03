@@ -38,69 +38,39 @@ Protects TUI-only UI gating.
 
 ### `trash-confirmation.test.ts`
 
-Protects safe, visible Trash approval against the host selector and fullscreen layout contracts.
-
-- Uses public `ExtensionSelectorComponent` and pi-tui APIs with a fake terminal; the fixed-dock layout is a manual copy of Pi 1.0's `chat-viewport` contract, including a three-line footer.
-- Includes a legacy full-report control that reproduces clipped choices, proving the fixture exercises fullscreen clipping.
-- Checks both choices and navigation help at 80×24, 40×24, and 30×24 with a large detailed preview and long paths.
-- Checks that initial Enter selects Cancel, Escape invokes cancellation exactly once without selection, and approval requires navigating to the affirmative option.
+Checks visible, cancel-first Trash approval at representative narrow fullscreen sizes: initial Enter or Escape cancels, and approval requires deliberate navigation. Uses public selector and pi-tui APIs with a fake terminal.
 
 ### `clarify-input.test.ts`
 
-Characterizes existing fullscreen input and dialog-lifecycle defects, rather than treating them as intentional behavior. See the durable [fullscreen dialog host-blocker record](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md).
-
-- Uses public `TuiAltScreen`/`TuiMainScreen` with fake terminal input and buffers, a simplified fixed-dock composition, and a faithful local model of `custom()` installation/completion.
-- Reproduces fullscreen page/home/end/wheel interception, bottom-help clipping, and clarify's mouse-mode writes; regular-mode keyboard selection/scrolling and raw-SGR wheel handling are controls. Fullscreen captures also confirm host tracking was enabled before clarify's interaction writes.
-- The overlay wheel control covers the host's raw-SGR fallback, not normalized mouse support in the unchanged selector.
-- A **test-only** custom-overlay adapter demonstrates restored input routing, then reproduces the cancellation blocker: stacked transcript search is popped instead of the owned dialog, and cancellation before installation can pop an unrelated overlay.
-- No private host imports are committed. The host-blocker record describes the supplementary version-checked completion probe and how to reconstruct it.
-
-Revisit these characterization expectations when changing clarify's fullscreen behavior or updating Pi. The local custom-dialog model will not automatically detect an identity-safe completion change in Pi: compare it with the actual host `showExtensionCustom()` close path and reconstruct the optional probe after a version change. Passing the characterizations records existing defects; it does not demonstrate their resolution.
+**Characterizes** existing fullscreen clarify input and dialog-lifecycle defects; it is not a guarantee. The [host-blocker record](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md) tracks the open blocker. Passing records the defects, not their resolution.
 
 ### `dialog-concurrency.test.ts`
 
-Protects shared scheduling across permissions and clarify. Fake dialogs check that each selector/custom-instructions exchange owns the FIFO until it completes. The public Pi loader exercises separately loaded module/API instances in both registration orders, then shutdown/invalidation and fresh instances on the same event bus. Clarify state is supplied by a scratch test wrapper, never personal settings.
-
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), because the loader fixture creates disposable files.
+Protects shared scheduling across permissions and clarify, including separately loaded extensions in both registration orders and reload on the same event bus.
 
 ### `structured-prompt.test.ts`
 
-Protects additive structured-prompt contributions across clarify, permissions, and subagent.
-
-- Uses the public Pi loader and `ExtensionRunner`, an in-memory `SessionManager`, fake UI/theme, and synthetic late MCP/extension contributors. The last handler reads `event.systemPrompt` through the actual host renderer, not a copied prompt builder.
-- Checks that additive handlers leave `forceSystemPrompt` unset; stable owned sections preserve guidance, unrelated sections, and late contributions without duplicates.
-- Covers repeated/reused options, no-UI mode, inactive tools and saved off modes, manual/ask/auto policies, child-only escalation, session/write approvals, inherited read-only/broad approval, depth caps, new session ids on the same runtime, fresh-loader reload with the same session id, and deliberate whole-prompt overrides before/after local handlers.
-- Uses approved scratch for isolated agent configuration and loader fixtures; restores test-process environment and shuts down and invalidates runtimes. No real session files, MCP connections, or model requests are used. Private host imports are not committed.
-
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). These tests do not measure provider cache behavior or use live MCP connections.
+Protects additive structured prompt contributions from clarify, permissions, and subagent through the public loader and real prompt renderer. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
 ### `tool-activation.test.ts`
 
-Protects optional-tool availability and preservation of restored tools with the public loader, SDK selection, `AgentSession`, and in-memory sessions.
-
-- Late synthetic direct, deferred, and codemode tools register inactive, so their eventual activation proves restoration rather than default activation. No live MCP server or provider request is used.
-- Covers every combination of saved clarify/search/delegation off modes, top-level/child relay, and independently varied registration order in public-constructor transcript restoration and actual reload/fresh runtimes. Also covers public `/tree` restoration with delegation off or depth-capped.
-- Covers manual/ask/auto policies, fresh and reloaded depth caps, saved-state changes, explicit persisted toggles, active/callable sets for available and withdrawn tools, model-only nested-call rejection, direct child escalation, unrelated session choices, `defaultTools`, `+codemode`, allowlists/exclusions (including late restoration), and no-tools options.
-- The codemode placeholder checks selection only, not the real sandbox or loadout renderer. The public constructor restoration case deliberately omits `initialActiveToolNames`; it does not claim to fix the SDK’s separate resume-selection behavior.
-
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). All configuration writes target disposable fixtures, and environment/runtime state is restored or invalidated afterward.
+Protects optional-tool availability and preservation of restored tools across startup, reload, `/tree`, and SDK selection. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
 ### `sdk-resume.test.ts`
 
-Exercises SDK/CLI resume integration for the local tool-activation fix and retains **characterizations of the separate open [TDR-0004 host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md)**. Passing these tests does not mean host restoration works.
-
-- Reopens real disposable JSONL transcripts through `SessionManager.open()` and creates sessions through the public SDK. A no-local-extension baseline reproduces omission of selected late declarations; all 16 local off-mode/relay combinations retain the same baseline and correct local availability.
-- Runs the actual package-declared CLI binary with `--session` in offline RPC mode, comparing baseline and local-all-off startup. No prompt or provider request is sent. Children have isolated agent configuration/fake HOME, an allowlisted environment without inherited provider keys, bounded output/timeouts, and orderly stdin shutdown.
-- Synthetic direct/deferred/codemode tools register inactive so default activation cannot mask missing restoration. Registered names/exposures and indirect callability are explicitly checked. A positive `/tree` control proves the same persisted fixture is restorable through that seam, not that SDK/CLI creation works. The direct control does not imply ordinary auto-active direct MCP tools all fail.
-- Version-checked for Pi 1.0.0; after an upgrade, re-evaluate the characterizations against TDR-0004's positive restoration criteria instead of preserving the defect as intended behavior or silently skipping it.
-
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), setting both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root. No personal session files, credentials, host patches, or enabled MCP servers are used.
+Checks SDK/CLI resume against the local tool-availability fix and **characterizes** the separate open [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md): resumed SDK/CLI sessions omit selected late tool declarations even without local extensions. Passing does not mean host restoration works.
 
 ### `short-paths-loader.test.ts`
 
-Checks that `/short-paths` updates wrapped summaries across independently loaded extensions while preserving row expansion and cleaning up on reload.
+Checks that `/short-paths` updates wrapped summaries across independently loaded extensions while preserving row expansion and cleaning up on reload. See [short-paths loader coverage](short-paths-loader.md).
 
-Run with the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). See the durable [test coverage and limitations](short-paths-loader.md) for maintainer details.
+## Maintainer coverage notes
+
+[Host-contract coverage and limitations](host-contract-coverage.md) records what the larger tests cover and do not cover, the guarantee/characterization distinction, and what to re-check after a Pi upgrade.
+
+## Scratch setup
+
+The loader, SDK, CLI, and file-creating tests need the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Set both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root before running them.
 
 ## When to add tests here
 

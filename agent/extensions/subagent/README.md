@@ -108,11 +108,11 @@ Parent project trust applies to a child cwd only when its existing real path is 
 
 Delegated children can call `escalate_to_parent` when they need a user decision. Top-level sessions cannot use this tool. When an agent declares a non-empty `tools:` allowlist, the extension automatically adds `escalate_to_parent` to the child invocation so the advertised escalation path remains callable.
 
-Top-level escalation stays unavailable even if explicitly named in a tool selection. Applying child-relay availability, saved off mode, or a delegation depth cap during startup and `/reload` preserves pending restored MCP tools. Eligible delegation and escalation remain model-only. Existing global mode defaults and restrictive child/CLI allowlists are unchanged; mode commands cannot bypass those allowlists. An explicit `/subagents off` remains an intentional tool-loadout change.
+Top-level sessions never get `escalate_to_parent`, even if a tool selection names it. Saved off mode and a delegation depth cap likewise keep `subagent` unavailable at startup and `/reload`. Available tools stay model-only, and restrictive child/CLI tool allowlists still apply; mode commands cannot bypass them. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
 The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
 
-**Separate Pi 1.0 resume limitation:** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. This startup correction does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Settings
 
@@ -157,7 +157,7 @@ The parent session's current model/thinking, agent frontmatter, and all tool-cal
 
 Depth and task limits always apply. Unknown agents are blocked. Project-local agents require their existing explicit-request or approval/confirmation flow even in auto mode. Inherited read-only approval applies only to known user agents whose declared tools all have enforceable read-only contracts; auto mode does not broaden that nested approval to write-capable children. `bash` and unknown custom tools are treated as potentially write-capable; `git_inspect` is an enforced read-only tool. In ask mode, `Allow for current session` first approves ordinary eligible requests; a write-capable request needs its own current-session approval before future non-explicit writers can run. In auto mode, write permission is inherent for eligible known user-scoped calls, so no separate write approval is offered. Session approval does not permanently disable project-agent confirmation. Without UI, requests that require confirmation are blocked.
 
-Delegation guidance is an additive structured prompt section, updated once per submitted prompt while `subagent` or child `escalate_to_parent` is active. It is omitted when neither tool is active and does not suppress later MCP or extension guidance. When another extension deliberately forces a complete prompt, this guidance is not injected into that provider prompt. Mode, approval, trust, depth, and tool-allowlist rules are unchanged.
+Delegation guidance is added to Pi's prompt only while `subagent` or child `escalate_to_parent` is active. If another extension forces a complete system prompt, the guidance may not reach the model; mode, approval, trust, depth and allowlist enforcement are unaffected. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
 ## Output and cancellation
 
@@ -165,9 +165,9 @@ The TUI footer shows the policy mode and compact running/queued counts. In ask m
 
 Large child outputs use Pi's standard truncation limits. The complete output is saved to a temporary file and linked from the truncation marker.
 
-Single and chain child failures remain error results and retain the collected child diagnostics and reported token/cost usage. A chain stops at the failed step; earlier completed steps and their usage are kept. Cancelling between steps keeps completed work without starting another child. `Ctrl+O` shows retained diagnostics and usage; errors without valid child details use a plain-text fallback.
+Single and chain child failures are error results that keep the child's diagnostics and reported token/cost usage. A chain stops at the failed step and keeps earlier completed steps and their usage. Cancelling between chain steps keeps completed work and starts no further child. `Ctrl+O` shows retained diagnostics and usage; errors without valid child details fall back to plain text.
 
-Usage reported by completed single/chain children is aggregated once into the parent session, including child failures and cancellations. Accounting is still best effort: tokens/cost not reported before a child exits or is cancelled cannot be recovered. Parallel calls keep their per-child failure summary and usage on normal completion; cancelling a parallel call still returns an abort-only error without collected usage/details. Parent-input requests remain escalation outcomes rather than child-failure errors. Remaining orchestration-accounting debt is tracked in [TDR-0005](../../../tdr/0005-subagent-orchestration-failure-accounting.md).
+**Accounting limits (open):** usage reported by completed single/chain children is counted once in the parent session, including child failures and cancellations, but accounting is best effort: tokens/cost a child never reported cannot be recovered. A parallel call that finishes normally keeps per-child failure summaries and usage, but **cancelling a parallel call returns an abort-only error with no collected results or usage**. Other orchestration-accounting debt (for example unexpected exceptions after usage was collected) is tracked in [TDR-0005](../../../tdr/0005-subagent-orchestration-failure-accounting.md). Parent-input requests are escalation outcomes, not child failures. Implementation notes: [subagent maintenance](./maintenance.md#failure-results-and-usage-accounting).
 
 Top-level children run in POSIX process groups so cancelling them also cleans up nested work. Cancellation is bounded and reports when process cleanup cannot be confirmed.
 
@@ -181,4 +181,4 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 - **Child cleanup unconfirmed:** inspect the returned diagnostic; the child or an inherited pipe may still be active.
 - **Output truncated:** open the temporary file shown in the result marker.
 
-For local validation, prepare [approved test scratch](../permissions/README.md#safe-test-scratch-setup), set both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to it, then run `npm run test:subagent` or `npm run verify` from `agent/extensions/`.
+Maintainers: see [subagent maintenance](./maintenance.md) for architecture notes and validation commands.

@@ -42,11 +42,44 @@ When adding another consumer:
 
 Future enrollment candidates are **subagent approval/escalation, handoff dialogs, and Trash confirmation**. They are not currently coordinated by this queue. Migrate all dialog entry points in a flow; partial enrollment can still replace an owned interaction. Until then, scheduling guarantees apply only to permissions and clarify, not to all extension dialogs.
 
-See the [shared helper overview](./shared/README.md#dialog-helpers), the [permissions guide](./permissions/README.md#prompt-choices), the [clarify guide](./clarify/README.md#tool), and [cross-extension regression coverage](./pi-compatibility/README.md#dialog-concurrencytestts). Focused tests are in `shared/dialogQueue.test.ts`, `shared/dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`.
+See the [shared helper overview](./shared/README.md#dialog-helpers), the [permissions guide](./permissions/README.md#prompt-choices), the [clarify guide](./clarify/README.md#tool), and [cross-extension regression coverage](./pi-compatibility/host-contract-coverage.md#dialog-concurrencytestts). Focused tests are in `shared/dialogQueue.test.ts`, `shared/dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`.
+
+## Structured prompt contributions
+
+Pi composes the system prompt from named sections. `before_agent_start` exposes them as `event.systemPromptOptions.sections` (tag-name keys); Pi records section changes in the transcript as a delta. Returning `systemPrompt` or setting `forceSystemPrompt` instead makes the provider receive that complete replacement for the run, rather than the merged sections. The transcript still records the structured sections (see Pi's extension docs on events, and the session-format docs on system messages).
+
+Local extensions contribute additively, each through one stable section key that it owns:
+
+| Section | Owner | Content |
+| --- | --- | --- |
+| `clarify_policy` | `clarify/index.ts` | Clarification policy, or a plain-text-fallback note when there is no UI |
+| `permissions_scratch` | `permissions/index.ts` | Session scratch-directory guidance |
+| `subagent_policy` | `subagent/index.ts` | Delegation mode, limits, and approval/escalation guidance |
+
+When adding or changing a contribution:
+
+- Set or delete only your own section on `sections`; do not return `systemPrompt`, set `forceSystemPrompt`, or edit another extension's section. Pi runs handlers in registration order, so later handlers still see the rendered prompt.
+- Assign the full text each run from current state instead of appending, so reused options, reload, and repeated turns cannot duplicate guidance.
+- Delete the section when its tool is unavailable or inactive (clarify disabled/inactive, neither `subagent` nor `escalate_to_parent` active). Do not leave stale guidance for a tool the model cannot call.
+- Keep tool-specific lines explicit about the tool they describe, as for `promptSnippet`/`promptGuidelines`.
+- A deliberate whole-prompt override by another extension is that extension's choice; local sections stay structured and are not copied into it.
+
+Regression coverage is in [`pi-compatibility/structured-prompt.test.ts`](./pi-compatibility/host-contract-coverage.md#structured-prompttestts). It renders through the actual host with synthetic late contributors; it does not measure provider cache behavior.
 
 ## Tool availability at startup
 
-Do not reconcile optional-tool availability with subtractive `setActiveTools()` calls during `session_start`: Pi drops unrelated pending restored tools when a loadout removes an active tool. Use `shared/toolAvailability.ts` for hidden withdrawal of unavailable tools while retaining eligible exposure/defaults and host allowlist filtering. Keep intentional user loadout changes in command handlers. See [0005](../../fixme/0005-tool-activation-and-mcp-restoration.md) and `pi-compatibility/tool-activation.test.ts` for the public-host regression contract.
+Optional tools (`clarify`, `web_search`, `subagent`, `escalate_to_parent`) are withdrawn with `shared/toolAvailability.ts`, not with `setActiveTools()` during `session_start`. Pi 1.0's `setActiveToolsByName()` drops unrelated *pending* restored tools (restored declarations whose tools are not registered yet, such as late MCP tools) whenever a loadout removes an active tool. A subtractive reconcile at startup or reload would therefore discard them.
+
+Contract:
+
+- `registerToolAvailability()` re-registers the tool with `exposure: "hidden"` and `defaultActive: false` when unavailable (Pi's documented way to withdraw a tool). Available tools keep their own exposure (`model-only` for the workflow tools) and activation default.
+- Host CLI allowlists/exclusions still filter registration on every refresh; local code does not bypass them.
+- Intentional user loadout changes (`/clarify`, `/web-search`, `/subagents` toggles) stay in command handlers and may replace a restored loadout.
+- Availability follows saved modes, policy, depth caps, and child relay on fresh start and reload. `clarify`, `subagent`, and `escalate_to_parent` stay model-only, so nested `ctx.executeTool()` calls are rejected.
+
+Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
+
+Known limitation: this protects pending names that the host established. On Pi 1.0.0, SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [`sdk-resume.test.ts`](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-characterization-plus-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 
 ## Extension verification
 

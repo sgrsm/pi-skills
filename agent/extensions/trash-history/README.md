@@ -51,7 +51,7 @@ It never moves directories. Every preview, confirmation, completion report, and 
 
 The preview shows the scope, cutoff, and eligible session count and size. By default, it also shows the count and size of **stale named sessions protected by the default policy**. With `--include-named`, it instead shows the count and size of named sessions included. A named session that is active, unsafe, malformed, or too recent is not counted in either named-session total.
 
-The separate confirmation shows only a compact summary: scope, eligible count and size, whether named sessions are protected or included, whether an archive will be created first, and a reminder to consult the preview. Project paths, per-session details, cutoff, and skip counts stay in the preview so both choices and navigation help remain visible in fullscreen, including narrow terminals.
+The separate confirmation summarizes the scope, eligible count and size, named-session policy, and whether an archive will be created first. Consult the preview for project paths, per-session details, cutoff and skip counts; keeping them out of the selector makes the choices easier to see in fullscreen.
 
 - **Cancel** is the initial selection; pressing Enter immediately or Escape cancels without creating an archive or moving files.
 - Choose **Move to Trash** explicitly to approve a normal run.

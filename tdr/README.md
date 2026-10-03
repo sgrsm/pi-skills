@@ -10,10 +10,6 @@ This directory tracks known technical debt that is intentionally not being addre
 | [TDR-0004](./0004-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Open — host correction required | Medium |
 | [TDR-0005](./0005-subagent-orchestration-failure-accounting.md) | Retain subagent results and usage on orchestration cancellation and exceptions | Open — parallel cancellation confirmed; exceptions verify first | Medium |
 
-TDR-0001 and TDR-0002 were created from the Pi 0.87.0 extension compatibility audit. Neither item was a Pi 0.87.0 upgrade blocker; the extension typecheck and all 268 tests passed against that version.
+The owning records explain the evidence, scope and acceptance criteria for each item. Read the relevant record before changing behavior or status; follow its safety boundaries when reproducing an issue.
 
-TDR-0003 records confirmed Pi 1.0.0 clarify input/mouse defects and the host overlay-completion blocker that led to deferring the runtime fix. It contains standalone evidence, reproduction steps, safety boundaries, and acceptance criteria; no temporary audit/work-package files are required to resume it.
-
-TDR-0004 records the confirmed Pi 1.0.0 SDK/CLI resume-loadout defect reproduced without local extensions. The separate local startup fix is complete, but end-to-end resumed-tool restoration remains broken. The record includes durable tests, standalone reproduction, safety boundaries, validation/review history and host-fix acceptance criteria; it does not depend on temporary work-package documents or scratch logs.
-
-TDR-0005 separates the resolved completed-child single/chain correction from remaining local orchestration-accounting debt. Parallel cancellation loss is covered by a passing known-debt characterization; unexpected exception paths and optional nested UI observations are explicitly source-only. Reproduction, safety boundaries and future acceptance criteria are standalone, without temporary findings or scratch-log prerequisites.
+On Pi 1.0.0, the fullscreen clarify fix remains deferred and SDK/CLI resumed-tool restoration remains broken independently of the local startup correction. Subagent parallel-cancellation accounting loss is confirmed; unexpected-exception paths and optional nested UI observations still require reproduction. Characterization tests document these open limitations, not their resolution.

@@ -4,17 +4,17 @@
 
 ## Dialog helpers
 
-`dialogQueue.ts` and `dialogUi.ts` coordinate permission approvals and clarify questions within a session. They keep selector/custom-answer exchanges together, cancel waiting or displayed work on abort/shutdown/reload, and leave independent sessions separate. They are used by the owning extensions automatically; there is nothing to enable or configure here.
+`dialogQueue.ts` and `dialogUi.ts` coordinate permission approvals and clarify questions within a session. They keep each selector/custom-answer exchange together, cancel waiting or displayed work on abort/shutdown/reload, and leave independent sessions separate. The owning extensions use them automatically; there is nothing to enable or configure here.
 
-TUI permission selectors stay compact with persistent request details above them. RPC selectors carry their own bounded details. Permission requests too large to display completely offer only Deny or Custom instructions, never approval of hidden scopes. Custom answers use an in-Pi multiline editor in TUI (external-editor launch disabled) and cancellable input in RPC. See the [permissions](../permissions/README.md#prompt-choices) and [clarify](../clarify/README.md#tool) guides for user-visible behavior and limitations.
+Prompt layout, hidden-scope limits, and custom-answer input differ by mode and are described in the [permissions](../permissions/README.md#prompt-choices) and [clarify](../clarify/README.md#tool) guides.
 
-Focused coverage lives in `dialogQueue.test.ts`, `dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`. For integration rules and remaining enrollment candidates, see [Shared interactive dialogs](../maintenance.md#shared-interactive-dialogs).
+Tests: `dialogQueue.test.ts`, `dialogUi.test.ts`, the owning extension tests, and [`pi-compatibility/dialog-concurrency.test.ts`](../pi-compatibility/host-contract-coverage.md#dialog-concurrencytestts). For rules when adding a consumer and the dialogs not yet enrolled, see [Shared interactive dialogs](../maintenance.md#shared-interactive-dialogs).
 
 ## Tool availability
 
-`toolAvailability.ts` lets clarify, web search, and subagent withdraw unavailable tools using Pi’s documented `hidden` re-registration. Eligible tools retain their original exposure and activation defaults; unavailable tools register inactive. This avoids replacing unrelated pending tool restoration during startup/reload, while host allowlists and exclusions still filter registration. Explicit user deactivation remains in the owning command handlers.
+`toolAvailability.ts` lets clarify, web search, and subagent withdraw unavailable tools by re-registering them with Pi's documented `hidden` exposure. Eligible tools keep their original exposure and activation defaults; unavailable tools register inactive. This avoids replacing unrelated pending tool restoration at startup/reload, and host allowlists and exclusions still filter registration. Explicit user deactivation stays in the owning command handlers.
 
-Public-host regression coverage lives in `pi-compatibility/tool-activation.test.ts`; see [0005](../../../fixme/0005-tool-activation-and-mcp-restoration.md) for the contract and validation limits.
+For the contract and regression coverage, see [Tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
 ## `footerStatus.ts`
 

@@ -17,8 +17,10 @@ Applies to work in this local `.pi` config repo.
 
 - New extensions/skills must include a directory-local `README.md`; update it when behavior, usage, requirements, commands/tools, examples, or troubleshooting changes.
 - Skill READMEs: quickstart cheat sheets with when to use, useful inputs, example prompts, expected output, and links to deeper files. Avoid copying `SKILL.md` except brief summaries that save navigation.
-- Extension READMEs: lean, task-oriented, human-friendly guides covering purpose, requirements, quickstart, common commands/configuration/workflows, user-visible behavior, examples, and troubleshooting.
-- Include technical details only when they affect what users do, configure, expect, or troubleshoot; keep internal wiring, lifecycles, test invariants, policy permutations, and process mechanics in code/tests or maintainer docs.
+- **Extension READMEs are user guides:** explain what the extension does, how to enable/configure/use it, what users should expect, examples, troubleshooting, practical limitations, and safety warnings.
+- **Do not use extension READMEs as implementation or validation reports.** Put internal architecture, lifecycle/event wiring, implementation contracts, test matrices, developer reproduction procedures, and maintenance workflows in durable directory-local maintainer documents. Prefer existing appropriate documents and link to them briefly.
+- Include a technical detail in an extension README only when it directly helps users use, configure, understand a limitation, or troubleshoot the extension. Describe the user-visible consequence rather than the internal mechanism where possible.
+- Do not add temporary audit/work-package references, session or review narratives, passing-test counts, or ephemeral scratch-artifact paths to READMEs or durable maintainer documents. Preserve unresolved-defect warnings; never present characterization coverage as a guarantee.
 - Follow nearby READMEs for style.
 
 ## Testing and Validation
