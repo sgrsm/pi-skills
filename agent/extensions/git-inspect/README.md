@@ -45,9 +45,11 @@ Tool-call rows show the selected operation and its relevant revision, range, or 
 
 With `/hide-tool off`, collapsed results show the first five screen lines, accounting for line wrapping, plus an expansion hint when more text is available. Expand with Pi's tool-output shortcut (Ctrl+O by default) to see all available result text. The hint follows your configured shortcut. Small results remain complete in either view; partial output and error diagnostics follow the same preview/expansion behavior.
 
-If an output-limit notice falls outside the preview, a compact **Output truncated** or **Error output truncated** warning remains visible. Expand for the original notice and its limits or reason. Expansion reveals only the already available result; it cannot recover output discarded by the existing limits.
+If an output-limit notice falls outside the preview, a compact **Output truncated** or **Error output truncated** warning is shown (it may be abbreviated at very narrow terminal widths). Expand for the original notice and its limits or reason. Expansion reveals only the already available result; it cannot recover output discarded by the existing limits.
 
 When `/hide-tool on` is active, `git_inspect` hides all result output, including errors, while leaving the call row visible. Expansion does not override hiding; use `/hide-tool off` to read diagnostics. Hiding and expansion do not affect the Git command, result data, or information returned to the agent.
+
+Maintainers: see the [rendering maintenance notes](maintenance.md).
 
 ## Safety behavior
 

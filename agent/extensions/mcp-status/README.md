@@ -42,4 +42,4 @@ Manual edits to `mcp.json` also update the indicator, but Pi needs `/reload` to 
 - **Stale status while editing:** invalid JSON or read errors retain the last valid display until the file can be read again. Check JSON syntax and file permissions.
 - **Green but tools unavailable:** inspect the server in `/mcp`; enabling is separate from a successful connection.
 
-Focused validation: from `agent/extensions`, run `node --test mcp-status/index.test.ts shared/footerStatus.test.ts response-timer/index.test.ts` and `npm run typecheck`.
+Maintainers: see [maintenance notes](./maintenance.md) for fallback invariants and validation.

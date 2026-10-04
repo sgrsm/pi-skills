@@ -23,6 +23,12 @@ The managed statuses therefore follow a **refresh-on-next-write** contract:
 
 Preserve these refresh triggers and the built-in footer. Do not add idle polling, private theme listeners, or a custom footer merely to recolor stored statuses. Keep timer start/duration and `agent_settled` semantics independent from presentation changes.
 
+### Verify-first lifecycle observations
+
+The response timer starts in `before_agent_start`; investigate whether a reachable host setup failure after that point can bypass `agent_settled` and leave its interval running. Timer and MCP interval callbacks capture extension contexts, but normal shutdown/reload stops those intervals: establish a reachable callback after context invalidation despite that cleanup before proposing guards or generation tracking.
+
+Both observations remain unconfirmed and deprioritized. Synthetic throwing or saved post-shutdown callbacks alone are not host reproductions. Reopen lifecycle work only with a reachable host reproduction and a separately scoped remedy that preserves timer start/duration and settlement semantics; cosmetic refresh changes do not resolve these observations.
+
 ### Focused validation
 
 From `agent/extensions/`:

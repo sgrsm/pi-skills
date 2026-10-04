@@ -10,6 +10,7 @@ This directory tracks known technical debt that is intentionally not being addre
 | [TDR-0004](./0004-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Open — host correction required | Medium |
 | [TDR-0005](./0005-subagent-orchestration-failure-accounting.md) | Retain subagent results and usage on orchestration cancellation and exceptions | Open — parallel cancellation confirmed; exceptions verify first | Medium |
 | [TDR-0006](./0006-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Open — host API enhancement deferred | Low |
+| [TDR-0007](./0007-trash-history-all-projects-storage-policy.md) | Decide the Trash-history all-projects storage policy | Open — policy decision pending | Medium |
 
 The owning records explain the evidence, scope and acceptance criteria for each item. Read the relevant record before changing behavior or status; follow its safety boundaries when reproducing an issue.
 

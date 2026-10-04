@@ -18,7 +18,25 @@ Maintainer notes for [`subagent`](./README.md). User-facing commands, settings a
 
 A child's `--tools` allowlist constrains callable tools, including late MCP registrations; it does **not** suppress enabled MCP-server initialization. When built-in MCP is loaded, Pi starts enabled servers on `session_start` independently of that allowlist. User/trusted-project configuration and extension registrations determine which servers apply. This is a startup/resource concern, not evidence of an allowlist bypass.
 
-Startup cost, first-prompt latency and MCP cleanup behavior in delegated children remain unmeasured. Concurrency may amplify resource use, but no measured impact or process leak is established. **Revisit before routine delegated MCP use:** measure startup, latency and shutdown/abort cleanup in isolation with disposable mock servers, without real credentials or personal configuration. Runtime remediation remains **Deferred** pending that evidence and a separately selected safe child-local control. Existing tool-selection and child-lifecycle tests are not MCP startup/cleanup measurements.
+Startup cost, first-prompt latency and MCP cleanup behavior in delegated children remain unmeasured. Concurrency may amplify resource use, but no measured impact or process leak is established. Existing tool-selection and child-lifecycle tests are not MCP startup/cleanup measurements.
+
+**Measurement before routine delegated MCP use remains needed.** Use an isolated, disposable counting mock in approved scratch, with no real credentials, personal configuration or external service, and bounded timeouts. Record:
+
+- host version, MCP exposure mode and delegated concurrency;
+- mock server starts or connections;
+- first-prompt delay;
+- bounded abort/shutdown observations and which cleanup paths were exercised.
+
+Verify separately that the child's callable registry honors its allowlist; allowlist enforcement and startup are independent properties. Measure codemode, deferred and direct exposure separately, since startup timing and first-prompt waits differ. An in-process fake transport can count connection attempts but cannot establish child stdio-process cleanup; cleanup and control verification require the actual child launcher.
+
+**Conditional remedy.** Only material measured impact warrants selecting a separate, supported child-local control. Any control must:
+
+- keep approved MCP loadouts working for children that need them;
+- preserve project-trust behavior and owned-process cleanup;
+- not use `--tools`/`--no-tools` as a startup opt-out, or disable all extensions and thereby the safety extensions;
+- not alter shared MCP configuration, use real credentials, rely on private or invented flags, or patch the installed host.
+
+If impact is material and no safe control exists, record the measured evidence and a revisit trigger as debt rather than inventing a workaround. No TDR is warranted until measurement supports one. Runtime remediation remains **Deferred**.
 
 ## Structured prompt section
 

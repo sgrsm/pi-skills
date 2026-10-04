@@ -44,6 +44,12 @@ Future enrollment candidates are **subagent approval/escalation, handoff dialogs
 
 See the [shared helper overview](./shared/README.md#dialog-helpers), the [permissions guide](./permissions/README.md#prompt-choices), the [clarify guide](./clarify/README.md#tool), and [cross-extension regression coverage](./pi-compatibility/host-contract-coverage.md#dialog-concurrencytestts). Focused tests are in `shared/dialogQueue.test.ts`, `shared/dialogUi.test.ts`, the owning extension tests, and `pi-compatibility/dialog-concurrency.test.ts`.
 
+### Conditional custom/MCP approval policy
+
+The [permissions trust boundary](./permissions/README.md#scope-trust-boundary-and-limitations) covers supported `bash`/`write`/`edit` calls, not arbitrary custom/MCP operations. A generic approval layer requires a separate, explicitly authorized policy decision before implementation: settle settings/defaults, missing-hint behavior, trust boundaries, no-UI fail-closed handling, and coordination of the complete approval flow with the shared dialog queue.
+
+Annotations may inform that policy but are unverified declarations, not proof of safety or authorization; they must not bypass Priority 0 or existing concrete path guards. This is a conditional design constraint, not an approved feature or a requirement to expand current enforcement.
+
 ## Structured prompt contributions
 
 Pi composes the system prompt from named sections. `before_agent_start` exposes them as `event.systemPromptOptions.sections` (tag-name keys); Pi records section changes in the transcript as a delta. Returning `systemPrompt` or setting `forceSystemPrompt` instead makes the provider receive that complete replacement for the run, rather than the merged sections. The transcript still records the structured sections (see Pi's extension docs on events, and the session-format docs on system messages).
@@ -80,6 +86,19 @@ Contract:
 Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
 Known limitation: this protects pending names that the host established. On Pi 1.0.0, SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [`sdk-resume.test.ts`](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-characterization-plus-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
+
+## Extension retirement
+
+The Pi **1.0.0** assessment found no complete shipped-and-enabled built-in replacement for the 12 local runtime extensions assessed at that version. Partial native overlap, extension examples, and possible third-party MCP integrations are not equivalent replacements. Re-check the current host documentation, examples, enabled configuration, and owning extension guides after upgrades; this version-bound conclusion is neither a permanent keep requirement nor approval to remove anything. The old custom MCP bridge and IDEA connector were already retired and are not remaining compatibility backlog.
+
+If simplification is requested, the preference-based candidates are `handoff`, `trash-history`, `hide-tool-output`, `short-paths`, and `mcp-status`. Removing them trades away workflow features; it is not cleanup of obsolete compatibility shims.
+
+Before proposing retirement:
+
+- Identify the exact functionality and policy lost, and verify that the replacement is actually shipped and enabled, not merely an example or potential integration.
+- Inspect load order, tools/commands, state files, and consumers. Preserve permissions' ownership of Bash and its hide-tool-output integration.
+- Preserve handoff documents, sessions, and archives; disabling an extension does not authorize deleting its data.
+- Obtain explicit approval for the changed workflow and disable reversibly before deleting code. Recheck the remaining integrations and update user guidance for any approved change.
 
 ## Extension verification
 

@@ -41,7 +41,7 @@ With `--all-projects`, it resolves the conventional global Pi session root as `j
 1. `.jsonl` files immediately in that global root, and
 2. `.jsonl` files immediately in each direct project-directory child.
 
-Neither scope descends further. `--all-projects` continues to use the conventional root, not a reliably detected effective configured root. The current-project safeguard does **not** provide comprehensive custom-root discovery or traversal; the broader all-projects storage policy remains unresolved. Do not use `--all-projects` expecting it to cover every custom directory.
+Neither scope descends further. `--all-projects` continues to use the conventional root, not a reliably detected effective configured root. The current-project safeguard does **not** provide comprehensive custom-root discovery or traversal; the broader all-projects storage policy remains unresolved ([TDR-0007](../../../tdr/0007-trash-history-all-projects-storage-policy.md)). Do not use `--all-projects` expecting it to cover every custom directory.
 
 A file is eligible only if its first JSONL entry is a Pi session header: `type: "session"` with the documented session identity fields (`id`, `timestamp`, and `cwd`; legacy headers may omit `version`). Arbitrary JSONL, empty-object JSONL, session-info-only files, and malformed headers are skipped as malformed.
 
