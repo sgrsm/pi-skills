@@ -3,7 +3,7 @@ import { link, lstat, mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile }
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import trashHistoryExtension, {
   archiveFileName,
   formatScanReport,
@@ -39,7 +39,7 @@ async function fixture(run: (root: string) => Promise<void>): Promise<void> {
   }
 }
 
-async function session(path: string, options: { name?: string; mtime?: number; malformed?: boolean; cwd?: string; id?: string; padding?: number } = {}): Promise<void> {
+async function session(path: string, options: { name?: string; mtime?: number; malformed?: boolean; cwd?: unknown; id?: string; padding?: number } = {}): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const lines = options.malformed
     ? ["{not json"]
@@ -49,7 +49,7 @@ async function session(path: string, options: { name?: string; mtime?: number; m
           version: 3,
           id: options.id ?? "session-id",
           timestamp: "2026-02-26T00:00:00.000Z",
-          cwd: options.cwd ?? "/workspace",
+          cwd: Object.hasOwn(options, "cwd") ? options.cwd : "/workspace",
         }),
         ...(options.name === undefined ? [] : [JSON.stringify({ type: "session_info", name: options.name })]),
         ...(options.padding === undefined ? [] : [JSON.stringify({ type: "message", padding: "x".repeat(options.padding) })]),
@@ -93,7 +93,7 @@ test("archive filenames use the command datetime and archived-session mtime rang
   await fixture(async (root) => {
     await session(join(root, "older.jsonl"), { mtime: Date.parse("2026-02-20T12:00:00.000Z") });
     await session(join(root, "newer.jsonl"), { mtime: Date.parse("2026-02-26T18:00:00.000Z") });
-    const scan = await scanTrashHistory({ scope: "current-project", sessionRoot: root, cutoffMs: NOW - 86_400_000, includeNamed: false });
+    const scan = await scanTrashHistory({ scope: "current-project", currentProjectCwd: "/workspace", sessionRoot: root, cutoffMs: NOW - 86_400_000, includeNamed: false });
 
     assert.equal(archiveFileName(scan.candidates, NOW), "2026-03-01T00-00Z-sessions-2026-02-20_2026-02-26.zip");
   });
@@ -199,7 +199,7 @@ test("details output is bounded and contains only date, size, and shortened cwd"
         mtime: NOW - 3 * 86_400_000,
       });
     }
-    const harness = createHarness(root);
+    const harness = createHarness(root, undefined, undefined, true, {}, undefined, { cwd: () => "/Users/tester/work/details" });
     await harness.command("1 --dry-run --details");
 
     const details = harness.messages.join("\n").split("Session details (largest 30):")[1]!;
@@ -296,11 +296,12 @@ test("Cancel, Escape, and unexpected selector responses never authorize archive 
 
 test("default command scope scans only the current project's direct session files and identifies that scope", async () => {
   await fixture(async (root) => {
-    const currentProject = join(root, "current-project");
+    const currentProject = join(root, "sessions", "--workspace--");
     const currentFile = join(currentProject, "current.jsonl");
     const otherProjectFile = join(currentProject, "other-project", "other.jsonl");
     await session(currentFile, { mtime: NOW - 3 * 86_400_000 });
     await session(otherProjectFile, { mtime: NOW - 3 * 86_400_000 });
+    await session(join(currentProject, "misfiled.jsonl"), { cwd: "/another-project", mtime: NOW - 3 * 86_400_000 });
 
     const harness = createHarness(currentProject);
     await harness.command("1 --dry-run");
@@ -309,8 +310,198 @@ test("default command scope scans only the current project's direct session file
     assert.match(report, /Scope: current-project/);
     assert.match(report, /Eligible by project:/);
     assert.match(report, /Eligible: 1/);
-    assert.doesNotMatch(report, /current\.jsonl|other\.jsonl/);
+    assert.match(report, /projectMismatch=1/);
+    assert.doesNotMatch(report, /current\.jsonl|other\.jsonl|misfiled\.jsonl/);
     assert.equal((harness.audits[0] as { scope: string }).scope, "current-project");
+  });
+});
+
+test("current-project shared storage filters header cwd before cutoff and named-session accounting", async () => {
+  await fixture(async (root) => {
+    const oldTime = NOW - 3 * 86_400_000;
+    const own = join(root, "own.jsonl");
+    const active = join(root, "active.jsonl");
+    const named = join(root, "named.jsonl");
+    await session(own, { mtime: oldTime });
+    await session(active, { mtime: oldTime, name: "Active" });
+    await symlink(active, join(root, "active-alias"));
+    await session(named, { mtime: oldTime, name: "Keep" });
+    await session(join(root, "recent.jsonl"), { mtime: NOW });
+    await session(join(root, "foreign.jsonl"), { mtime: oldTime, cwd: "/another-project" });
+    await session(join(root, "foreign-named.jsonl"), { mtime: oldTime, cwd: "/another-project", name: "Foreign" });
+    await session(join(root, "foreign-recent.jsonl"), { mtime: NOW, cwd: "/another-project" });
+
+    for (const includeNamed of [false, true]) {
+      const scan = await scanTrashHistory({
+        scope: "current-project", currentProjectCwd: "/workspace", sessionRoot: root,
+        activeSessionFile: join(root, "active-alias"), cutoffMs: NOW - 86_400_000, includeNamed,
+      });
+      assert.deepEqual(scan.candidates.map(({ path }) => path).sort(), (await Promise.all(
+        (includeNamed ? [own, named] : [own]).map((path) => realpath(path)),
+      )).sort());
+      assert.equal(scan.skipped.projectMismatch, 3);
+      assert.equal(scan.skipped.active, 1);
+      assert.equal(scan.skipped.tooRecent, 1);
+      assert.equal(scan.protectedNamed.count, includeNamed ? 0 : 1);
+      assert.equal(scan.includedNamed.count, includeNamed ? 1 : 0);
+      assert.match(formatScanReport(scan, NOW - 86_400_000, "Preview"), /projectMismatch=3/);
+    }
+  });
+});
+
+test("current-project skips malformed and ambiguous header cwd instead of inferring identity from storage", async () => {
+  await fixture(async (root) => {
+    const malformed = [undefined, null, 42, {}, []];
+    const ambiguous = [
+      "", " ", "workspace", "./workspace", "~/workspace", "file:///workspace", "C:\\workspace",
+      "//workspace", "///workspace", "/workspace/../workspace", "/workspace/child/..",
+      "/workspace\u0000", "/workspace\n", "/workspace\u007f", "/workspace\u0085", "/workspace\\", " /workspace", "/workspace ",
+    ];
+    await session(join(root, "own.jsonl"), { mtime: NOW - 3 * 86_400_000 });
+    for (const [index, cwd] of [...malformed, ...ambiguous].entries()) {
+      await session(join(root, `invalid-${index}.jsonl`), { cwd, name: "Do not count", mtime: NOW - 3 * 86_400_000 });
+    }
+    const scan = await scanTrashHistory({
+      scope: "current-project", currentProjectCwd: "/workspace", sessionRoot: root,
+      cutoffMs: NOW - 86_400_000, includeNamed: false,
+    });
+    assert.equal(scan.candidates.length, 1);
+    assert.equal(scan.skipped.malformed, malformed.length);
+    assert.equal(scan.skipped.projectIdentity, ambiguous.length);
+    assert.deepEqual(scan.protectedNamed, { count: 0, bytes: 0 });
+    const report = formatScanReport(scan, NOW - 86_400_000, "Preview");
+    assert.match(report, new RegExp(`projectIdentity=${ambiguous.length}`));
+    assert.doesNotMatch(report, /invalid-\d|Do not count/);
+  });
+});
+
+test("current-project normalizes harmless absolute spellings but not case, unicode, or filesystem aliases", async () => {
+  await fixture(async (root) => {
+    const project = join(root, "Café");
+    const alias = join(root, "alias");
+    await mkdir(project);
+    await symlink(project, alias);
+    const equivalent = [project, `${project}/`, `${root}//Café/./`];
+    const foreign = [alias, join(root, "CAFÉ"), join(root, "Cafe\u0301"), `${project}-other`, `${project}/child`];
+    for (const [index, cwd] of [...equivalent, ...foreign].entries()) {
+      await session(join(root, `session-${index}.jsonl`), { cwd, mtime: NOW - 3 * 86_400_000 });
+    }
+    const scan = await scanTrashHistory({
+      scope: "current-project", currentProjectCwd: `${project}/./`, sessionRoot: root,
+      cutoffMs: NOW - 86_400_000, includeNamed: true,
+    });
+    assert.equal(scan.candidates.length, equivalent.length);
+    assert.equal(scan.skipped.projectMismatch, foreign.length);
+  });
+});
+
+test("current-project fails closed when the running cwd identity is unavailable or ambiguous", async () => {
+  await fixture(async (root) => {
+    await session(join(root, "own.jsonl"), { mtime: NOW - 3 * 86_400_000 });
+    for (const cwd of [undefined, null, 42, "", "workspace", "//workspace", "/workspace/..", "/workspace\u0000"]) {
+      const scan = await scanTrashHistory({
+        scope: "current-project", currentProjectCwd: cwd, sessionRoot: root,
+        cutoffMs: NOW - 86_400_000, includeNamed: true,
+      });
+      assert.equal(scan.fatal, "projectIdentityUnavailable");
+      assert.deepEqual(scan.candidates, []);
+      const harness = createHarness(root, undefined, undefined, true, {}, undefined, { cwd: () => cwd });
+      await harness.command("1 --archive");
+      assert.equal(harness.sessionRootCalls, 0);
+      assert.equal(harness.selectCalls, 0);
+      assert.deepEqual(harness.execCalls, []);
+      assert.match(harness.messages.join("\n"), /project identity/i);
+    }
+    const stale = createHarness(root, undefined, undefined, true, {}, undefined, {
+      cwd: () => { throw new Error("stale context"); },
+    });
+    await stale.command("1 --archive");
+    assert.equal(stale.sessionRootCalls, 0);
+    assert.equal(stale.selectCalls, 0);
+    assert.deepEqual(stale.execCalls, []);
+    assert.match(stale.messages.join("\n"), /project identity/i);
+  });
+});
+
+test("an opened or resumed session's shared parent is not a project boundary", async () => {
+  await fixture(async (root) => {
+    const active = join(root, "active.jsonl");
+    await session(active, { cwd: "/workspace/resumed", mtime: NOW });
+    await session(join(root, "same-project.jsonl"), { cwd: "/workspace/resumed", mtime: NOW - 3 * 86_400_000 });
+    await session(join(root, "foreign-project.jsonl"), { cwd: "/workspace/launcher", mtime: NOW - 3 * 86_400_000 });
+    const manager = SessionManager.open(active);
+    assert.equal(manager.getCwd(), "/workspace/resumed");
+    assert.equal(manager.getSessionDir(), await realpath(root));
+    const harness = createHarness(root, undefined, undefined, true, {}, undefined, {
+      cwd: () => manager.getCwd(), sessionManager: manager,
+    });
+    await harness.command("1 --dry-run");
+    assert.match(harness.messages.join("\n"), /Eligible: 1/);
+    assert.match(harness.messages.join("\n"), /projectMismatch=1/);
+    assert.equal((harness.audits[0] as { skipped: { active: number } }).skipped.active, 1);
+    assert.deepEqual(harness.execCalls, []);
+  });
+});
+
+test("revalidation independently enforces current-project header identity on unchanged snapshots", async () => {
+  await fixture(async (root) => {
+    for (const [name, cwd] of [["foreign", "/another-project"], ["ambiguous", "workspace"]]) {
+      await session(join(root, `${name}.jsonl`), { cwd, mtime: NOW - 3 * 86_400_000 });
+    }
+    const scan = await scanTrashHistory({ scope: "all-projects", sessionRoot: root, cutoffMs: NOW - 86_400_000, includeNamed: true });
+    assert.equal(scan.candidates.length, 2);
+    for (const candidate of scan.candidates) {
+      const result = await revalidateCandidate(candidate, {
+        scope: "current-project", currentProjectCwd: "/workspace", sessionRoot: root,
+        cutoffMs: NOW - 86_400_000, includeNamed: true,
+      });
+      assert.deepEqual(result, { ok: false, reason: candidate.cwd === "workspace" ? "projectIdentity" : "projectMismatch" });
+    }
+  });
+});
+
+test("action-time project identity changes or loss exclude candidates before Trash and archive selection", async () => {
+  await fixture(async (root) => {
+    const own = join(root, "own.jsonl");
+    await session(own, { mtime: NOW - 3 * 86_400_000 });
+    for (const flags of ["", "--archive"]) {
+      for (const [readActionCwd, reason] of [
+        [() => "/another-project", "projectMismatch"],
+        [() => undefined, "projectIdentity"],
+        [() => { throw new Error("stale context"); }, "projectIdentity"],
+      ] as const) {
+        let actionTime = false;
+        const archiveDirectory = join(root, "archives");
+        const harness = createHarness(root, undefined, undefined, true, { archiveDirectory: () => archiveDirectory },
+          (options) => { actionTime = true; return options[1]; }, { cwd: () => actionTime ? readActionCwd() : "/workspace" });
+        await harness.command(`1 ${flags}`);
+        assert.equal(harness.selectCalls, 1);
+        assert.deepEqual(harness.execCalls, []);
+        assert.match(harness.messages.join("\n"), new RegExp(`Action-time skipped: ${reason}=1`));
+        await lstat(own);
+        await assert.rejects(lstat(archiveDirectory), { code: "ENOENT" });
+      }
+    }
+  });
+});
+
+test("changed header cwd after confirmation cannot enter Trash or archive selection", async () => {
+  await fixture(async (root) => {
+    const own = join(root, "own.jsonl");
+    for (const flags of ["", "--archive"]) {
+      await session(own, { mtime: NOW - 3 * 86_400_000 });
+      const harness = createHarness(root, undefined, undefined, true, { archiveDirectory: () => join(root, "archives") },
+        async (options) => {
+          await session(own, { cwd: "/another-project", mtime: NOW - 3 * 86_400_000 });
+          return options[1];
+        });
+      await harness.command(`1 ${flags}`);
+      assert.equal(harness.selectCalls, 1);
+      assert.deepEqual(harness.execCalls, []);
+      assert.match(harness.messages.join("\n"), /Action-time skipped: changed=1/);
+      await lstat(own);
+      await assert.rejects(lstat(join(root, "archives")), { code: "ENOENT" });
+    }
   });
 });
 
@@ -319,12 +510,12 @@ test("--all-projects scans direct project directories beneath the injected globa
     const globalSessionsRoot = join(root, "sessions");
     const projectA = join(globalSessionsRoot, "project-a");
     const projectB = join(globalSessionsRoot, "project-b");
-    await session(join(projectA, "a.jsonl"), { mtime: NOW - 3 * 86_400_000 });
-    await session(join(projectB, "b.jsonl"), { mtime: NOW - 3 * 86_400_000 });
+    await session(join(projectA, "a.jsonl"), { cwd: "/another-project", mtime: NOW - 3 * 86_400_000 });
+    await session(join(projectB, "b.jsonl"), { cwd: "relative/project", mtime: NOW - 3 * 86_400_000 });
 
     const harness = createHarness(projectA, undefined, undefined, true, {
       globalSessionRoot: () => globalSessionsRoot,
-    });
+    }, undefined, { cwd: () => assert.fail("All-projects must not require or read the current-project identity") });
     await harness.command("1 --all-projects --dry-run");
 
     const report = harness.messages.join("\n");
@@ -332,7 +523,10 @@ test("--all-projects scans direct project directories beneath the injected globa
     assert.match(report, /Eligible: 2/);
     assert.match(report, /Eligible by project:/);
     assert.doesNotMatch(report, /project-a\/a\.jsonl|project-b\/b\.jsonl/);
-    assert.equal((harness.audits[0] as { scope: string }).scope, "all-projects");
+    const audit = harness.audits[0] as { scope: string; skipped: Record<string, number> };
+    assert.equal(audit.scope, "all-projects");
+    assert.equal(audit.skipped.projectIdentity, 0);
+    assert.equal(audit.skipped.projectMismatch, 0);
   });
 });
 
@@ -462,6 +656,7 @@ test("revalidation fails closed when a scanned file changes", async () => {
     await writeFile(file, `${JSON.stringify({ type: "session" })}\n${JSON.stringify({ type: "message" })}\n`);
     await utimes(file, NOW / 1_000, NOW / 1_000);
     const result = await revalidateCandidate(candidate, {
+      scope: "all-projects",
       sessionRoot: root,
       cutoffMs: NOW - 86_400_000,
       includeNamed: true,
@@ -591,6 +786,67 @@ test("--archive creates and verifies one dated ZIP before any Trash call", async
   });
 });
 
+test("current-project archive contains only matching shared-directory sessions and still protects active/named sessions", async () => {
+  await fixture(async (root) => {
+    const own = join(root, "own.jsonl");
+    const named = join(root, "named.jsonl");
+    const active = join(root, "active.jsonl");
+    const foreign = join(root, "foreign.jsonl");
+    const ambiguous = join(root, "ambiguous.jsonl");
+    await session(own, { mtime: NOW - 3 * 86_400_000 });
+    await session(named, { name: "Keep", mtime: NOW - 3 * 86_400_000 });
+    await session(active, { name: "Active", mtime: NOW - 3 * 86_400_000 });
+    await session(foreign, { name: "Foreign", cwd: "/another-project", mtime: NOW - 3 * 86_400_000 });
+    await session(ambiguous, { cwd: "", mtime: NOW - 3 * 86_400_000 });
+    const harness = createHarness(root, active, async (command, args) => {
+      if (command === "/usr/bin/env") {
+        assert.deepEqual(args.slice(5), ["--", "own.jsonl"]);
+        await writeFile(args[4]!, "archive placeholder");
+      } else if (command === "/usr/bin/unzip" && args[0] === "-Z") {
+        return { code: 0, stdout: "number of entries: 1", stderr: "", killed: false };
+      } else if (command === "/usr/bin/trash") {
+        assert.equal(args[0], await realpath(own));
+        await rm(args[0]!);
+      } else {
+        assert.equal(command, "/usr/bin/unzip");
+      }
+      return { code: 0, stdout: "", stderr: "", killed: false };
+    }, true, { archiveDirectory: () => join(root, "archives") });
+    await harness.command("1 --archive");
+    assert.deepEqual(harness.execCalls.map(([command]) => command), ["/usr/bin/env", "/usr/bin/unzip", "/usr/bin/unzip", "/usr/bin/trash"]);
+    for (const path of [active, named, foreign, ambiguous]) await lstat(path);
+    const audit = harness.audits[0] as { eligible: number; moved: number; skipped: Record<string, number> };
+    assert.equal(audit.eligible, 1);
+    assert.equal(audit.moved, 1);
+    assert.equal(audit.skipped.active, 1);
+    assert.equal(audit.skipped.named, 1);
+    assert.equal(audit.skipped.projectMismatch, 1);
+    assert.equal(audit.skipped.projectIdentity, 1);
+  });
+});
+
+test("current-project identity is revalidated again between a verified archive and Trash", async () => {
+  await fixture(async (root) => {
+    const own = join(root, "own.jsonl");
+    await session(own, { mtime: NOW - 3 * 86_400_000 });
+    let cwd = "/workspace";
+    const harness = createHarness(root, undefined, async (command, args) => {
+      assert.notEqual(command, "/usr/bin/trash", "Project switch must block the post-archive Trash call");
+      if (command === "/usr/bin/env") await writeFile(args[4]!, "archive placeholder");
+      if (command === "/usr/bin/unzip" && args[0] === "-Z") {
+        cwd = "/another-project";
+        return { code: 0, stdout: "number of entries: 1", stderr: "", killed: false };
+      }
+      return { code: 0, stdout: "", stderr: "", killed: false };
+    }, true, { archiveDirectory: () => join(root, "archives") }, undefined, { cwd: () => cwd });
+    await harness.command("1 --archive");
+    assert.deepEqual(harness.execCalls.map(([command]) => command), ["/usr/bin/env", "/usr/bin/unzip", "/usr/bin/unzip"]);
+    assert.match(harness.messages.join("\n"), /Action-time skipped: projectMismatch=1/);
+    assert.equal((harness.audits[0] as { archive: { status: string } }).archive.status, "complete");
+    await lstat(own);
+  });
+});
+
 test("--archive aborts the entire Trash batch when ZIP creation fails or is incomplete", async () => {
   await fixture(async (root) => {
     const old = join(root, "old.jsonl");
@@ -683,6 +939,8 @@ test("normal runs append an audit entry even when no session is eligible", async
         nonRegular: 0,
         hardLink: 0,
         malformed: 0,
+        projectIdentity: 0,
+        projectMismatch: 0,
         unreadable: 0,
         unsafe: 0,
         changed: 0,
@@ -804,7 +1062,8 @@ function createHarness(
   execImplementation?: ExecImplementation,
   hasUI = true,
   dependencies: Partial<TrashHistoryDependencies> = {},
-  selectImplementation: (options: string[]) => string | undefined = (options) => options[1],
+  selectImplementation: (options: string[]) => string | undefined | Promise<string | undefined> = (options) => options[1],
+  context: { cwd?: () => unknown; sessionManager?: Pick<SessionManager, "getSessionDir" | "getSessionFile"> } = {},
 ) {
   let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
   const messages: string[] = [];
@@ -838,12 +1097,15 @@ function createHarness(
       assert.ok(commandHandler);
       await commandHandler(args, {
         hasUI,
+        get cwd() { return context.cwd ? context.cwd() : "/workspace"; },
         sessionManager: {
           getSessionDir: () => {
             sessionRootCalls += 1;
-            return root;
+            return context.sessionManager ? context.sessionManager.getSessionDir() : root;
           },
-          getSessionFile: () => typeof activeSessionFile === "function" ? activeSessionFile() : activeSessionFile,
+          getSessionFile: () => context.sessionManager
+            ? context.sessionManager.getSessionFile()
+            : typeof activeSessionFile === "function" ? activeSessionFile() : activeSessionFile,
         },
         ui: {
           notify(message: string) { messages.push(message); },

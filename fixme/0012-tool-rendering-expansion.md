@@ -1,8 +1,8 @@
 # 0012: Respect native expansion for visible Git inspection results
 
-- **Status:** Open — narrowed to Git's visible collapsed/expanded rendering
+- **Status:** Implemented — narrowed Git rendering fixed; focused validation complete; integration gate pending
 - **Priority:** Low; rendering improvement, not an execution failure
-- **Evidence:** Git expansion gap source-verified; hiding is intentional; hide-toggle refresh is an accepted limitation
+- **Evidence:** Preview gap reproduced test-first and fixed with synthetic renderer/public-host regressions on Pi 1.0.0; hiding remains intentional; hide-toggle refresh remains an accepted limitation
 - **Areas:** `git-inspect`; `hide-tool-output` and `short-paths` for compatibility only
 - **Instructions:** [Package workflow and validation](README.md)
 
@@ -10,7 +10,7 @@
 
 | Subfinding | Disposition | Remaining action |
 |---|---|---|
-| Visible Git results ignore expanded state | Actionable, low priority | Add a bounded collapsed preview and full expanded view within existing output limits. |
+| Visible Git results ignore expanded state | Implemented | Five-visual-line collapsed preview and complete available expanded text; focused checks pass, full integration gate pending. |
 | Expanding a hidden result does not reveal it | Intentional; dismissed as a defect | Preserve the explicit hiding contract. |
 | `/hide-tool` refresh can reset individual expansion choices | Accepted, documented limitation | No refresh redesign in this package. Revisit if fullscreen per-row expansion makes the reset disruptive. |
 | `/short-paths` refresh resets expansion | Resolved by 0008 | Preserve its row-local invalidation behavior. |
@@ -19,11 +19,11 @@ The inspected local setup has hiding enabled and uses regular TUI mode, so the v
 
 The [hide-tool-output guide](../agent/extensions/hide-tool-output/README.md#troubleshooting) already explains both expansion limitations. The [short-paths maintenance notes](../agent/extensions/short-paths/maintenance.md) record the refresh boundary. No new TDR is needed for these accepted behaviors. Pi's public row invalidation API exists, but replacing the hide-toggle refresh across all participating renderers is separate optional work, not a blocker for the Git preview.
 
-This disposition is based on source/docs review, not a new live-terminal reproduction or test run. Earlier re-checks below retain their historical scope; remaining acceptance criteria are the narrowed criteria in this section and below.
+The initial narrowing was based on source/docs review. The implementation and executed validation are recorded below; neither is a live-terminal check. Earlier re-checks retain their historical scope. Intentional hiding and accepted refresh behavior are not newly implemented fixes.
 
 ## Observation and evidence
 
-`renderGitInspectionResult` (`git-inspect/index.ts:526-551`) renders the entire available output (up to 2,000 lines) when output is not hidden. Its registered `renderResult` at `:614` does not use `_options`, including expanded state. This defeats a compact fullscreen default.
+At the audit baseline, `renderGitInspectionResult` (`git-inspect/index.ts:526-551`) rendered the entire available output (up to 2,000 lines) when output was not hidden. Its registered `renderResult` at `:614` did not use `_options`, including expanded state. This defeated a compact fullscreen default; the implementation below addresses this rendering gap.
 
 The wrapped `renderResult()` in `hide-tool-output/index.ts` intentionally returns an empty result component while hiding is enabled. Native expansion therefore cannot reveal a hidden result. This is not automatically a bug: the extension promises a persistent hiding preference.
 
@@ -52,9 +52,40 @@ Mixed per-block expansion and hide-toggle refresh reproduction are optional foll
 - Existing output-limit notices remain discoverable.
 - No execution/schema/model-result changes or cross-tool refresh redesign are introduced.
 
-## Validation
+## Implementation and validation
 
-`node --test git-inspect/index.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts`; focused collapsed/expanded renderer regressions; `npm run verify` with approved scratch. Refresh redesign tests are not required unless that separate scope is reopened.
+The change is limited to `agent/extensions/git-inspect/` and this finding:
+
+- Visible collapsed results show the first **five visual lines**, plus at most one bounded expansion-hint line and one bounded truncation-warning line. Long wrapped lines cannot grow the collapsed result beyond that budget.
+- Expanded results render all available text blocks without adding another output cap or altering content/details. Pi's public `truncateToVisualLines`, native expansion hint, and TUI width utilities handle wrapping and ANSI/Unicode widths; no private host imports or UI traversal were added.
+- Existing success/process-cap notices and text-only error truncation notices remain discoverable outside the preview. Expansion retains the original notice with its complete limit/reason text. Small, fully visible notices are not duplicated.
+- The result slot consistently reuses and clears its `Container`, preventing stale output, hints, or warnings across partial/final/error/empty/hidden transitions. Explicit hiding is checked before output rendering, including for expanded errors.
+- Execution, parameter schemas, argument preparation, model-facing results, process capture limits, and line/byte limits are unchanged. `/hide-tool` refresh and `/short-paths` invalidation were not changed.
+
+### Executed checks
+
+From `agent/extensions/`, with the approved private, canonical session scratch root and caller-created `.step1-test-root-ready` sentinel. `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` both pointed to that root; `PI_CODING_AGENT_DIR` pointed to a synthetic scratch agent directory. No personal settings or real user data served as fixtures.
+
+```bash
+node --test git-inspect/index.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts git-inspect/rendering.test.ts
+npm run typecheck
+```
+
+- **Test-first:** the new nine-test renderer suite initially had **7 failures and 2 passes**, exposing ignored expansion, unbounded wrapped lines, missing collapsed warnings, and the public host row's unbounded preview. The planned consistent-`Container` reuse regression also failed because the old renderer switched component types; that switch alone is not claimed as a host defect. The passing controls characterized pre-existing small-result and explicit-hiding behavior.
+- **Final focused run:** **23 tests passed; 0 failed, cancelled, or skipped**. The new tests cover collapsed/expanded output through the existing 2,000-line bound; a nearly 50 KB single line; ANSI, tabs, wide Unicode/emoji/combining marks; resize/invalidation; text-block filtering; partial/errors without details; success/process-cap/error notices; component reuse; and hidden expanded errors.
+- **Public host regression:** the actual exported `ToolExecutionComponent` receives expanded/partial/error context and reuses its result slot correctly with synthetic content. This is an in-process host-component check, not an end-to-end terminal reproduction.
+- **Typechecking:** final `npm run typecheck` passed, including all five existing host-link checks. A scoped Git Inspect check also passed using the repository compiler options (`tsc --ignoreConfig --noEmit --target ES2024 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --strict --skipLibCheck --types node git-inspect/index.ts git-inspect/index.test.ts git-inspect/rendering.test.ts`). An earlier repository check encountered concurrent in-progress `trash-history/index.test.ts` errors; the final rerun passed without edits to that area.
+- A read-only scout inspected the installed rendering contracts and public seam; the parent verified the public exports and implemented/tested the change. The scout ran no tests.
+
+### Retained limitations and pending integration
+
+- Hiding, including hidden errors, is **intentional and preserved**, not fixed by making expansion bypass it.
+- `/hide-tool` can still reset individual expansion choices: **accepted, unchanged**. `/short-paths` row-local invalidation remains the separate resolved 0008 behavior.
+- Expansion cannot recover text discarded by the existing model/process output limits. Very narrow widths may abbreviate the hint or warning; full available text and notices remain accessible by expansion when hiding is off.
+- **`npm run verify` was deliberately not run:** the user reserved the full verification gate for integration. Re-run it with approved scratch after combining concurrent work before marking integration complete. No live-terminal, provider, MCP, personal configuration, or `/reload` validation was performed.
+- `fixme/README.md` was not edited under the explicit write boundary; its index status may still say Open until integration updates it.
+
+Refresh redesign tests are not required unless that separate accepted scope is reopened.
 
 Related: [0008: loader state synchronization](0008-short-paths-loader-state.md).
 

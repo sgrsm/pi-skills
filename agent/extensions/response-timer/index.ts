@@ -7,7 +7,7 @@ export const RESPONSE_TIMER_STATUS_KEY = FOOTER_STATUS_KEYS.responseTimer;
 type TimerHandle = unknown;
 
 type ResponseTimerTheme = {
-  fg(color: "accent" | "syntaxComment" | "dim", text: string): string;
+  fg(color: "accent" | "success" | "dim", text: string): string;
   bold(text: string): string;
 };
 
@@ -48,7 +48,7 @@ export function formatElapsedTime(elapsedMs: number): string {
 }
 
 export function formatResponseTimerText(elapsedMs: number, running: boolean, theme: ResponseTimerTheme): string {
-  const symbol = running ? theme.fg("accent", "⏱") : theme.bold(theme.fg("syntaxComment", "✓"));
+  const symbol = running ? theme.fg("accent", "⏱") : theme.bold(theme.fg("success", "✓"));
   return `${symbol}${theme.fg("dim", ` ${formatElapsedTime(elapsedMs)}`)}`;
 }
 

@@ -26,11 +26,16 @@ Current managed display order:
 2. `clarify`
 3. `web-search`
 4. `subagents`
-5. `response-timer`
+5. `mcp`
+6. `response-timer`
 
 The numeric prefixes in `FOOTER_STATUS_KEYS` (`0-`, `1-`, etc.) are intentional. Pi displays footer statuses sorted by key, so the prefixes encode the managed order while the suffixes keep the keys readable.
 
 Use `FOOTER_STATUS_ORDER` for logical iteration, `FooterStatusName` for the managed status names, and `FOOTER_STATUS_KEYS` when writing a status with `ctx.ui.setStatus(...)`.
+
+## Theme changes
+
+An idle indicator can retain its previous theme's colors until its producer next writes the status. MCP already refreshes once per second; the response timer updates periodically only while running. See the [footer status color refresh contract](./maintenance.md#footer-status-color-refresh) for details.
 
 ## Legacy key cleanup
 
@@ -44,6 +49,7 @@ Consumers should call `clearLegacyFooterStatus(ctx, name)` before setting the cu
 - `clarify/index.ts` (`clarify`)
 - `web-search/index.ts` (`web-search`)
 - `subagent/index.ts` (`subagents`)
+- `mcp-status/index.ts` (`mcp`)
 - `response-timer/index.ts` (`responseTimer`)
 
 The focused test coverage for ordering and legacy cleanup lives in `shared/footerStatus.test.ts`.

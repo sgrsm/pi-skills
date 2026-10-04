@@ -2,13 +2,17 @@ import { spawn } from "node:child_process";
 import { Buffer } from "node:buffer";
 import { isAbsolute, win32 } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Container, Text } from "@earendil-works/pi-tui";
+import { Container, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	formatSize,
+	keyHint,
 	truncateHead,
+	truncateToVisualLines,
 	type ExtensionAPI,
+	type Theme,
+	type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { isHideToolOutputEnabled } from "../hide-tool-output/state.ts";
@@ -523,14 +527,58 @@ function renderGitInspectionCall(args: unknown, theme: any, context: any): Text 
 	return component;
 }
 
-function renderGitInspectionResult(result: any, theme: any, context: any, hideOutput: boolean): Container | Text {
-	if (hideOutput) {
-		const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
-		component.clear();
-		return component;
+const GIT_PREVIEW_LINES = 5;
+
+/** Cache visual-line clipping by width; logical-line clipping cannot bound wrapped output. */
+class GitInspectionPreview implements Component {
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+	private readonly text: string;
+	private readonly theme: Theme;
+	private readonly truncationLabel?: string;
+	private readonly hasTextNotice: boolean;
+
+	constructor(text: string, theme: Theme, truncationLabel?: string, hasTextNotice = false) {
+		this.text = text;
+		this.theme = theme;
+		this.truncationLabel = truncationLabel;
+		this.hasTextNotice = hasTextNotice;
 	}
 
-	const output = Array.isArray(result.content)
+	render(width: number): string[] {
+		if (this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines;
+		const { visualLines, skippedCount } = truncateToVisualLines(this.text, GIT_PREVIEW_LINES, width, 0, "start");
+		const lines = [...visualLines];
+		if (skippedCount > 0) {
+			lines.push(truncateToWidth(
+				this.theme.fg("muted", `... (${skippedCount} more lines, `) +
+				keyHint("app.tools.expand", "to expand") + this.theme.fg("muted", ")"),
+				width, "...",
+			));
+		}
+		// A tail notice can fall outside the preview. Keep a bounded warning visible;
+		// expansion still shows the original notice and its complete limit/reason text.
+		if (this.truncationLabel && (skippedCount > 0 || !this.hasTextNotice)) {
+			lines.push(truncateToWidth(this.theme.fg("warning", `[${this.truncationLabel}; expand for limits]`), width, "..."));
+		}
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
+	}
+
+	invalidate(): void {
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+}
+
+function renderGitInspectionResult(result: any, options: ToolRenderResultOptions, theme: Theme, context: any, hideOutput: boolean): Container {
+	const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
+	component.clear();
+	// Explicit hiding wins over expansion, streaming, and errors.
+	if (hideOutput) return component;
+
+	const output = Array.isArray(result?.content)
 		? result.content
 			.map((item: unknown) => {
 				if (typeof item !== "object" || item === null || (item as { type?: unknown }).type !== "text") return "";
@@ -539,14 +587,17 @@ function renderGitInspectionResult(result: any, theme: any, context: any, hideOu
 			.filter(Boolean)
 			.join("\n")
 		: "";
-	if (!output.trim()) {
-		const component = context.lastComponent instanceof Container ? context.lastComponent : new Container();
-		component.clear();
-		return component;
-	}
+	if (!output.trim()) return component;
 
-	const component = context.lastComponent instanceof Text ? context.lastComponent : new Text("", 0, 0);
-	component.setText(theme.fg("toolOutput", output));
+	const styledOutput = theme.fg("toolOutput", output);
+	if (options.expanded) {
+		component.addChild(new Text(styledOutput, 0, 0));
+	} else {
+		// Errors may have no details; recognize the notices already emitted in text.
+		const notice = output.trimEnd().match(/(?:^|\n)\[(Output truncated|Error output truncated):[^\n]*\]$/);
+		const truncationLabel = notice?.[1] ?? (result.details?.truncated === true ? "Output truncated" : undefined);
+		component.addChild(new GitInspectionPreview(styledOutput, theme, truncationLabel, Boolean(notice)));
+	}
 	return component;
 }
 
@@ -611,8 +662,8 @@ export default function gitInspectExtension(pi: ExtensionAPI, options: GitInspec
 		renderCall(args, theme, context) {
 			return renderGitInspectionCall(args, theme, context);
 		},
-		renderResult(result, _options, theme, context) {
-			return renderGitInspectionResult(result, theme, context, hideToolOutputEnabled());
+		renderResult(result, options, theme, context) {
+			return renderGitInspectionResult(result, options, theme, context, hideToolOutputEnabled());
 		},
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const validated = validateGitInspectionInput(params as GitInspectionInput);

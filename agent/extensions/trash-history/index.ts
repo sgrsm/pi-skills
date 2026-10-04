@@ -3,7 +3,7 @@ import { access, chmod, link, lstat, mkdir, readdir, readFile, realpath, stat, u
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, posix, relative } from "node:path";
 
 const DAY_MS = 86_400_000;
 const MAX_DATE_MS = 8_640_000_000_000_000;
@@ -35,6 +35,10 @@ const COMMAND_HELP = [
 
 export type TrashHistoryScope = "current-project" | "all-projects";
 
+type SelectionScope =
+  | { scope: "current-project"; currentProjectCwd: unknown }
+  | { scope: "all-projects" };
+
 export type TrashHistoryArguments = {
   days: number;
   dryRun: boolean;
@@ -54,6 +58,8 @@ export type SkipReason =
   | "nonRegular"
   | "hardLink"
   | "malformed"
+  | "projectIdentity"
+  | "projectMismatch"
   | "unreadable"
   | "unsafe"
   | "changed"
@@ -88,7 +94,7 @@ export type ScanResult = {
   includedNamed: { count: number; bytes: number };
   skipped: Record<SkipReason, number>;
   preview: string[];
-  fatal?: "rootUnavailable";
+  fatal?: "rootUnavailable" | "projectIdentityUnavailable";
 };
 
 export type ActionOutcome = { count: number; bytes: number };
@@ -125,6 +131,8 @@ function emptySkipCounts(): Record<SkipReason, number> {
     nonRegular: 0,
     hardLink: 0,
     malformed: 0,
+    projectIdentity: 0,
+    projectMismatch: 0,
     unreadable: 0,
     unsafe: 0,
     changed: 0,
@@ -236,6 +244,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Compare only unambiguous absolute POSIX cwd identities. Collapse repeated internal
+ * separators, `.` and trailing separators, but never resolve `..` (symlink-sensitive),
+ * leading `//`, aliases, case or Unicode. No filesystem lookup or guessed base is used.
+ */
+function normalizeProjectCwd(cwd: unknown): string | undefined {
+  if (typeof cwd !== "string" || !cwd.startsWith("/") || cwd.startsWith("//")
+    || cwd.trim() !== cwd || /[\u0000-\u001f\u007f-\u009f\\]/u.test(cwd)
+    || cwd.split("/").includes("..")) return undefined;
+  const normalized = posix.normalize(cwd);
+  return normalized === "/" ? normalized : normalized.replace(/\/+$/, "");
+}
+
 /** Accepts legacy headers without `version` and current headers with all documented identity fields. */
 function isPiSessionHeader(entry: Record<string, unknown>): boolean {
   return entry.type === "session"
@@ -310,6 +331,7 @@ async function inspectCandidate(options: {
   cutoffMs: number;
   includeNamed: boolean;
   activeSessionFile?: string;
+  projectCwd?: string;
 }): Promise<InspectCandidateResult> {
   let file;
   try {
@@ -334,6 +356,11 @@ async function inspectCandidate(options: {
 
   const metadata = await readSessionMetadata(options.path);
   if (!metadata.ok) return metadata;
+  if (options.projectCwd !== undefined) {
+    const candidateCwd = normalizeProjectCwd(metadata.cwd);
+    if (candidateCwd === undefined) return { ok: false, reason: "projectIdentity" };
+    if (candidateCwd !== options.projectCwd) return { ok: false, reason: "projectMismatch" };
+  }
   if (!(file.mtimeMs < options.cutoffMs)) return { ok: false, reason: "tooRecent" };
   if (metadata.named && !options.includeNamed) return { ok: false, reason: "named", protectedNamedBytes: identity.size };
 
@@ -358,8 +385,7 @@ function recordSkip(report: ScanResult, reason: SkipReason, path: string): void 
  * directly in the session root. All-projects scans additionally examine JSONL files
  * directly in each root child directory; neither mode recurses further.
  */
-export async function scanTrashHistory(options: {
-  scope: TrashHistoryScope;
+export async function scanTrashHistory(options: SelectionScope & {
   sessionRoot: string;
   activeSessionFile?: string;
   cutoffMs: number;
@@ -376,6 +402,12 @@ export async function scanTrashHistory(options: {
     skipped: emptySkipCounts(),
     preview: [],
   };
+
+  const projectCwd = options.scope === "current-project" ? normalizeProjectCwd(options.currentProjectCwd) : undefined;
+  if (options.scope === "current-project" && projectCwd === undefined) {
+    report.fatal = "projectIdentityUnavailable";
+    return report;
+  }
 
   let root: string;
   try {
@@ -397,7 +429,7 @@ export async function scanTrashHistory(options: {
   }
 
   async function consider(path: string): Promise<void> {
-    const result = await inspectCandidate({ ...options, root, path });
+    const result = await inspectCandidate({ ...options, root, path, projectCwd });
     if (!result.ok) {
       recordSkip(report, result.reason, path);
       if (result.reason === "named") {
@@ -464,8 +496,11 @@ export async function scanTrashHistory(options: {
  */
 export async function revalidateCandidate(
   snapshot: TrashHistoryCandidate,
-  options: { sessionRoot: string; activeSessionFile?: string; cutoffMs: number; includeNamed: boolean },
+  options: SelectionScope & { sessionRoot: string; activeSessionFile?: string; cutoffMs: number; includeNamed: boolean },
 ): Promise<RevalidationResult> {
+  const projectCwd = options.scope === "current-project" ? normalizeProjectCwd(options.currentProjectCwd) : undefined;
+  if (options.scope === "current-project" && projectCwd === undefined) return { ok: false, reason: "projectIdentity" };
+
   let root: string;
   try {
     root = await realpath(options.sessionRoot);
@@ -480,7 +515,7 @@ export async function revalidateCandidate(
   } catch {
     return { ok: false, reason: "unsafe" };
   }
-  const result = await inspectCandidate({ ...options, root, path: snapshot.path });
+  const result = await inspectCandidate({ ...options, root, path: snapshot.path, projectCwd });
   if (!result.ok) return result;
   if (result.candidate.canonicalPath !== snapshot.canonicalPath || !sameIdentity(result.candidate.identity, snapshot.identity)) {
     return { ok: false, reason: "changed" };
@@ -816,7 +851,20 @@ export function registerTrashHistoryExtension(pi: ExtensionAPI, dependencies: Tr
       }
 
       const scope: TrashHistoryScope = request.allProjects ? "all-projects" : "current-project";
-      const sessionManager = ctx.sessionManager as { getSessionDir?: () => string; getSessionFile?: () => string | undefined } | undefined;
+      const sessionManager = ctx.sessionManager;
+      const readSelectionScope = (): SelectionScope => {
+        if (scope === "all-projects") return { scope };
+        try {
+          return { scope, currentProjectCwd: ctx.cwd };
+        } catch {
+          return { scope, currentProjectCwd: undefined };
+        }
+      };
+      const selectionScope = readSelectionScope();
+      if (selectionScope.scope === "current-project" && normalizeProjectCwd(selectionScope.currentProjectCwd) === undefined) {
+        output(ctx, "Could not safely determine the current project identity; no files were scanned or changed.", "error");
+        return;
+      }
       let sessionRoot: string | undefined;
       try {
         sessionRoot = scope === "all-projects"
@@ -841,9 +889,11 @@ export function registerTrashHistoryExtension(pi: ExtensionAPI, dependencies: Tr
         output(ctx, "Could not safely identify the active session; no files were changed.", "error");
         return;
       }
-      const scan = await scanTrashHistory({ scope, sessionRoot, activeSessionFile: initialActiveSessionFile.value, cutoffMs, includeNamed: request.includeNamed });
+      const scan = await scanTrashHistory({ ...selectionScope, sessionRoot, activeSessionFile: initialActiveSessionFile.value, cutoffMs, includeNamed: request.includeNamed });
       if (scan.fatal) {
-        output(ctx, `Could not safely read Pi's ${scope} session root; no files were changed.`, "error");
+        output(ctx, scan.fatal === "projectIdentityUnavailable"
+          ? "Could not safely determine the current project identity; no files were scanned or changed."
+          : `Could not safely read Pi's ${scope} session root; no files were changed.`, "error");
         return;
       }
       const audit = (data: Record<string, unknown>): void => appendAudit(pi, {
@@ -964,6 +1014,7 @@ export function registerTrashHistoryExtension(pi: ExtensionAPI, dependencies: Tr
             continue;
           }
           const revalidated = await revalidateCandidate(snapshot, {
+            ...readSelectionScope(),
             sessionRoot: scan.sessionRoot,
             activeSessionFile: activeSessionFile.value,
             cutoffMs,
@@ -1003,6 +1054,7 @@ export function registerTrashHistoryExtension(pi: ExtensionAPI, dependencies: Tr
           continue;
         }
         const revalidated = await revalidateCandidate(snapshot, {
+          ...readSelectionScope(),
           sessionRoot: scan.sessionRoot,
           activeSessionFile: activeSessionFile.value,
           cutoffMs,

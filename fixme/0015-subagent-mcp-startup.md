@@ -1,20 +1,20 @@
 # 0015: Avoid unnecessary MCP startup in restricted child sessions
 
-- **Status:** Deferred — runtime work; maintenance note actionable, impact measurement pending
+- **Status:** Deferred — runtime work; maintenance note complete, impact measurement pending
 - **Priority:** Low; latent while all applicable MCP servers are disabled
-- **Evidence:** Enabled-server startup independent of tool allowlists is source-supported; cost and cleanup behavior unmeasured
+- **Evidence:** Enabled-server startup independent of tool allowlists is source-supported; startup cost, latency and cleanup behavior unmeasured
 - **Area:** `agent/extensions/subagent`
 - **Instructions:** [Package workflow and validation](README.md)
 
 ## Current disposition and implementation scope
 
-Do not dismiss the startup redundancy, but do not implement a predetermined workaround yet. The inspected configuration has its only MCP server disabled, so it currently incurs no enabled-server startup cost. Enabled configuration in another trusted child project could change applicability.
+Do not dismiss the startup redundancy, but do not implement a predetermined workaround yet. The statically inspected local MCP configuration has one server, disabled, so the configured-server startup concern is currently latent. Enabled configuration in another trusted child project or extension-registered servers could change applicability.
 
-The immediate action is a short limitation in [subagent maintenance](../agent/extensions/subagent/maintenance.md): child tool allowlists constrain callable tools, not MCP initialization. Add a user-facing README warning when routine MCP use makes that distinction relevant.
+The immediate documentation scope is complete in [subagent maintenance](../agent/extensions/subagent/maintenance.md#child-mcp-startup-limitation): child tool allowlists constrain callable tools, not enabled MCP-server initialization. No prominent user README warning is needed for current usage; add one when routine MCP use makes that distinction relevant.
 
 **Revisit trigger:** before enabling MCP for routine delegated work, measure startup, first-prompt delay, and cleanup using a disposable counting mock. Concurrency can amplify process/connection cost, but no measured cost or process leak is established by this review. Direct-exposure startup may also delay restricted children even when their tools are unavailable.
 
-The installed CLI has no straightforward dedicated child-only MCP-disable flag in the current launcher. The documented replaceable-built-in mechanism can suppress built-in MCP, but a command-collision replacement is not a purpose-built opt-out and needs compatibility/safety evaluation. Prefer a host-supported child-local switch if available; do not commit to a replacement or enumerated extension loadout before measuring impact.
+The installed CLI documents tool selection separately from extension loading; `--no-tools` is not a server opt-out. Its MCP/settings docs describe built-in exclusion and replacement controls, but this review does not establish a safe child-local startup opt-out for the current launcher. Prefer a host-supported child-local switch if available; do not select or implement a suppression workaround before isolated measurement.
 
 No new TDR is needed now. If measurement establishes material impact and remediation is intentionally deferred, record the measured limitation and revisit condition as debt. This remains separate from transient-project-trust debt in TDR-0002.
 
@@ -22,13 +22,13 @@ This disposition is source/docs review only, not a mock-server measurement or ne
 
 ## Observation
 
-Each child is a separate Pi process and normally loads built-in extensions, including MCP. Child arguments include `--tools` but no MCP startup opt-out (`subagent/index.ts:1917-1930`), and the child inherits the process environment (`:2011-2019`). MCP connects enabled servers on `session_start` without consulting the tool allowlist (`HOST/dist/extensions/mcp/index.js:840-873`). A restrictive allowlist prevents calls to excluded tools, but does not gate enabled-server startup in the inspected host.
+Each child is a separate Pi process and normally loads built-in extensions, including MCP. For a declared non-empty child allowlist, `buildSubagentChildProcessArgs()` adds `--tools` but no MCP startup opt-out (`subagent/index.ts:1915-1930`); `runSingleAgent()` inherits the process environment (`:2012-2018`). The CLI passes tool selection through to the SDK (`HOST/dist/main.js:432-434`, `dist/core/sdk.js:145-148`), and `AgentSession._refreshToolRegistry()` filters registered tools through `_isAllowedTool()` (`dist/core/agent-session.js:1099-1101, :2772-2829`), including late MCP tools. Separately, built-in MCP starts enabled configured and extension-registered servers on `session_start` without consulting that allowlist (`dist/extensions/mcp/index.js:840-873`). Callable-tool filtering does not gate enabled-server startup.
 
 Once an MCP server is enabled, concurrent delegation (audited user `subagents.maxConcurrency` 12; code default 5, hard cap 32 in `subagent/settingsState.ts:48, :53`) could create unnecessary subprocesses/connections for read-only children that cannot use those tools. This is a resource/lifecycle concern, not evidence of an allowlist bypass.
 
-Inspect `subagent/index.ts` child argument/environment construction, `HOST/docs/cli.md`, `docs/mcp.md`, and `dist/extensions/mcp/index.js`.
+Source boundary checked against installed Pi **1.0.0** and its `HOST/docs/cli.md`, `docs/mcp.md`, `docs/settings.md`, `docs/extensions.md`, and `docs/sdk.md`. Direct-exposure first-prompt waiting is also independent of the allowlist (`dist/extensions/mcp/index.js:882-908`); its latency impact remains unmeasured.
 
-## Next action: measure before choosing a fix
+## Deferred measurement: before choosing a fix
 
 A counting fake transport through the public MCP extension factory can establish connection attempts without external capabilities. Use a disposable local mock stdio server when actual child-process startup and cleanup need measurement. Keep all configuration and markers in isolated approved scratch; do not copy real credentials.
 
@@ -48,7 +48,7 @@ If no suitably safe public child-only control is available, retain the measured 
 
 ### Documentation and measurement
 
-- Maintenance documentation distinguishes tool reachability from MCP startup and states the revisit trigger.
+- **Complete:** [maintenance documentation](../agent/extensions/subagent/maintenance.md#child-mcp-startup-limitation) distinguishes tool reachability from MCP startup, states the revisit trigger, and leaves startup cost, latency and cleanup behavior unmeasured.
 - Measurements identify host version, exposure, concurrency, mock starts/connections, latency, and the actual cleanup paths exercised.
 - Restricted-child allowlist enforcement is checked independently of startup.
 - No external server, personal MCP configuration, or real credentials are used as fixtures.
@@ -65,6 +65,12 @@ If no suitably safe public child-only control is available, retain the measured 
 ## Validation
 
 Docs-only maintenance changes need consistency/link review. For measurement, run the focused isolated MCP startup/lifecycle checks and report what was actually observed. For any runtime change: `npm run test:subagent`; focused mocked MCP lifecycle regressions; `npm run verify` with approved scratch.
+
+## Documentation completion
+
+The maintenance-only scope is complete. Documentation consistency, relative links and the new section anchor were checked against the source/docs boundary above. No Pi/server startup, mock-server experiment or executable suite was run. No child arguments/environment, settings/MCP configuration, dependencies or host links were changed; no TDR was created.
+
+Startup cost, first-prompt latency and MCP cleanup behavior remain unmeasured. **Runtime remediation remains Deferred** pending isolated measurement before routine delegated MCP use; documentation completion is not runtime resolution or evidence of measured impact.
 
 ## Historical re-checks
 

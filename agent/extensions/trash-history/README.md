@@ -25,7 +25,7 @@ Examples:
 
 - `--archive` requires a verified ZIP before any Trash action. It writes one archive to `~/.pi/archives/` named `<current-datetime>-sessions-<from-date>_<to-date>.zip`, for example `2026-03-01T00-00Z-sessions-2025-03-02_2026-02-26.zip`. The datetime is UTC through minutes; the from/to dates are the UTC last-modified date range of the sessions actually archived. It preserves paths relative to the selected Pi session root, avoiding basename collisions when sessions from many projects are archived together.
 - `--include-named` includes sessions with a nonempty name in their latest `session_info` entry. Named sessions are skipped by default.
-- `--all-projects` includes sessions from every Pi project. Without it, the command scans only the current project's session storage; `/trash-history 60` therefore retains its project-local behavior.
+- `--all-projects` scans the conventional global Pi session store described below; it does not discover custom storage roots. Without it, only sessions whose validated header cwd matches the running project are eligible, even in shared storage.
 - `--dry-run` scans and reports what would be eligible. It does not ask for confirmation and never invokes Trash.
 - `--details` appends at most 30 eligible-session rows, ordered by size. Each row is only `date · size · cwd`; if more rows exist, the report says how many were omitted.
 - `--dry-run --archive` only reports the planned archive name. It neither creates the archive directory nor writes a ZIP.
@@ -34,22 +34,30 @@ Examples:
 
 ## What it scans
 
-By default, the extension obtains the current project's actual runtime session directory from `ctx.sessionManager.getSessionDir()`; it does not construct a home-directory path. In this current-project scope, it scans only `.jsonl` files immediately in that directory and does not descend into child directories.
+By default, the extension obtains the runtime session directory from `ctx.sessionManager.getSessionDir()`; it does not construct a home-directory path. In this current-project scope, it scans only `.jsonl` files immediately in that directory and does not descend into child directories. A containing directory is **not** a project boundary: candidates must also have a validated session-header cwd matching Pi's running project (`ctx.cwd`). This applies both to shared custom directories and to the shared parent of a session opened or resumed from a file.
 
 With `--all-projects`, it resolves the conventional global Pi session root as `join(getAgentDir(), "sessions")`. In this all-projects scope, it scans only:
 
 1. `.jsonl` files immediately in that global root, and
 2. `.jsonl` files immediately in each direct project-directory child.
 
-Neither scope descends further.
+Neither scope descends further. `--all-projects` continues to use the conventional root, not a reliably detected effective configured root. The current-project safeguard does **not** provide comprehensive custom-root discovery or traversal; the broader all-projects storage policy remains unresolved. Do not use `--all-projects` expecting it to cover every custom directory.
 
 A file is eligible only if its first JSONL entry is a Pi session header: `type: "session"` with the documented session identity fields (`id`, `timestamp`, and `cwd`; legacy headers may omit `version`). Arbitrary JSONL, empty-object JSONL, session-info-only files, and malformed headers are skipped as malformed.
+
+### Current-project identity
+
+Both the running cwd and the session-header cwd must be unambiguous absolute POSIX paths. Comparison collapses repeated **internal** `/` separators, `.` components, and trailing `/` separators. It does not resolve filesystem/symlink aliases, fold case, normalize Unicode, expand `~`, or guess relative-path bases. Different spellings that might refer to the same filesystem directory can therefore be excluded conservatively.
+
+Missing or non-string header cwd is malformed. Empty or relative values, leading `//`, any `..` component, control characters, backslashes, and leading/trailing whitespace are not usable project identities. These are skipped as `projectIdentity`; valid identities belonging to another project are skipped as `projectMismatch`. No identity is inferred from a session-storage directory name. If Pi's running cwd cannot be validated, the current-project command refuses to scan or act.
+
+Project filtering also applies with `--include-named` and `--archive`. Other-project or ambiguous sessions are not included in the named-session totals. Start with `--dry-run` to see eligible counts and skip reasons without moving anything.
 
 It never moves directories. Every preview, confirmation, completion report, and audit record identifies whether it used `current-project` or `all-projects` scope.
 
 ## Preview and confirmation output
 
-The preview shows the scope, cutoff, and eligible session count and size. By default, it also shows the count and size of **stale named sessions protected by the default policy**. With `--include-named`, it instead shows the count and size of named sessions included. A named session that is active, unsafe, malformed, or too recent is not counted in either named-session total.
+The preview shows the scope, cutoff, and eligible session count and size. By default, it also shows the count and size of **stale named sessions protected by the default policy**. With `--include-named`, it instead shows the count and size of named sessions included. A named session that is active, unsafe, malformed, too recent, or excluded by current-project identity filtering is not counted in either named-session total.
 
 The separate confirmation summarizes the scope, eligible count and size, named-session policy, and whether an archive will be created first. Consult the preview for project paths, per-session details, cutoff and skip counts; keeping them out of the selector makes the choices easier to see in fullscreen.
 
@@ -75,7 +83,7 @@ Reports deliberately do **not** print session storage JSONL filenames, raw paths
 
 Before a file can be selected, the extension canonicalizes the root and candidate and checks containment. It skips symlinks, non-regular files, files with more than one hard link, malformed or unreadable JSONL, and unsafe paths. The active file observed during the scan is excluded, including canonical-path aliases and matching file identity.
 
-The scan creates a snapshot. Immediately before each serial Trash operation, the extension reads the active session again and revalidates regular-file and single-link status, containment, identity/unchanged metadata, cutoff, active-session exclusion, and named-session policy. Observable revalidation failures are skipped and reported.
+The scan creates a snapshot. Immediately before each serial Trash operation, the extension reads the active session again and revalidates regular-file and single-link status, containment, identity/unchanged metadata, cutoff, active-session exclusion, named-session policy, and (in current-project scope) membership against the running cwd. Project membership is checked again when selecting archive sources and before each post-archive Trash action. Observable revalidation failures are skipped and reported.
 
 On macOS, the extension first verifies that `/usr/bin/trash` is executable. It then invokes that fixed executable via Pi's argument-based command API using an absolute validated path. It does not use shell interpolation, Finder scripting, `rm`, `unlink`, or a permanent-delete fallback on session files. A successful command is counted as moved only after the original source path is gone; nonzero exits, thrown errors, timeouts, or a source path still present are failures.
 

@@ -1,8 +1,8 @@
 # 0013: Correct footer theme/documentation drift
 
-- **Status:** Open — definite presentation/docs corrections; lifecycle concerns remain verify-first
+- **Status:** Resolved — presentation/docs scope; lifecycle concerns remain verify-first and deprioritized
 - **Priority:** Low
-- **Evidence:** Color/docs/theme-refresh behavior source-verified; practical setup-error and stale-context failures not reproduced
+- **Evidence:** Semantic color correction verified test-first; docs/theme-refresh contract source-verified and documented; practical setup-error and stale-context failures not reproduced
 - **Areas:** `response-timer`, `shared`; `mcp-status` for existing refresh/lifecycle compatibility
 - **Instructions:** [Package workflow and validation](README.md)
 
@@ -10,19 +10,21 @@
 
 | Subfinding | Disposition | Remaining action |
 |---|---|---|
-| Finished checkmark uses a muted token despite the green promise | Definite, inexpensive correction | Use semantic `success` coloring and remove the fixed-shade promise. |
-| Shared README omits MCP | Definite documentation correction | Add MCP to the managed order and consumer list without changing keys/order. |
-| Idle statuses retain old ANSI colors after a theme change | Accepted host/API limitation to document | Describe refresh-on-next-write; preserve MCP's existing polling, with no new polling or private listeners. |
+| Finished checkmark semantic coloring | Resolved | Uses `success`; README describes semantic coloring without a fixed-shade promise. |
+| Shared README omitted MCP | Resolved | MCP is documented in the managed order and consumer list; runtime keys/order are unchanged. |
+| Idle statuses retain old ANSI colors after a theme change | Accepted host/API limitation, documented | Shared maintenance describes refresh-on-next-write and MCP's existing polling; no new polling or private listeners. |
 | Timer could keep ticking after pre-run setup failure | Verify-first, deprioritized | Reproduce a reachable host failure before changing lifecycle behavior. |
 | Interval callback could access a stale context | Verify-first, deprioritized | Establish a reachable lifecycle failure before adding guards or generation tracking. |
 
 The inspected setup uses a fixed dark theme, so idle recoloring has little current impact. Pi-managed shutdown/reload emits `session_shutdown` before invalidating contexts (`HOST/dist/core/agent-session-runtime.js`; `HOST/dist/core/agent-session.js`, `reload`), and both extensions already stop intervals in their shutdown handlers. A pre-run setup window exists in source, but the review did not demonstrate a practical failure in it. Neither observation is proven impossible or fixed.
 
-Put the shared status-color refresh contract in directory-local maintenance documentation, with a short response-timer troubleshooting note if useful to users. No TDR is needed for cosmetic drift or this accepted theme limitation. The lifecycle observations remain here as qualified follow-ups, not requirements for completing the definite corrections.
+The shared status-color refresh contract is now in [directory-local maintenance](../agent/extensions/shared/maintenance.md#footer-status-color-refresh), linked briefly from the shared README and response-timer troubleshooting note. No TDR is needed for cosmetic drift or this accepted theme limitation. The lifecycle observations remain here as qualified follow-ups, not requirements for completing the definite corrections.
 
-This disposition is source/docs review only; no new lifecycle reproduction or tests were run. Historical re-checks below do not override this narrowed scope.
+The lifecycle disposition remains source/docs review only. The focused validation below does not reproduce a reachable host lifecycle failure. Historical re-checks below do not override this narrowed scope.
 
-## Related observations
+## Original related observations
+
+The following records the pre-correction evidence; the muted token and shared README omissions are now corrected.
 
 1. `response-timer/index.ts:51` uses `syntaxComment` for the finished checkmark. Current dark/light/system themes make that muted, while its README promises darker green.
 2. The timer starts an interval in `before_agent_start` (`:122`). Host setup can fail before entering the run-finally block that emits `agent_settled`; this could leave a ticking status. This path is source-derived, not reproduced end to end.
@@ -57,9 +59,32 @@ If lifecycle work is reopened, first demonstrate a reachable host setup failure 
 - No new polling, private theme APIs, or custom footer replacement is introduced.
 - Completing these corrections does not claim to resolve or guarantee the unreproduced lifecycle paths; retain their qualified disposition.
 
-## Validation
+## Resolution and validation
 
-`node --test response-timer/index.test.ts mcp-status/index.test.ts shared/footerStatus.test.ts`; `npm run verify` with approved scratch for the token change. Docs-only edits need consistency/link review rather than the full executable gate. If lifecycle work is reopened, record the actual host reproduction and any unsupported-seam limits separately.
+Implemented only the definite presentation/documentation scope against installed **Pi 1.0.0**, Node **v22.19.0**:
+
+- `response-timer/index.ts` now uses bold semantic `success` for the stopped checkmark, retaining `accent` for the running symbol and `dim` for the duration. Its narrow theme type follows the token change; no timer startup, duration, settlement, or cleanup logic changed.
+- The response-timer README replaces the darker-green promise with theme-dependent semantic-color wording and explains stopped-versus-running recoloring.
+- The shared README includes MCP between subagents and response timer and lists `mcp-status/index.ts` as a consumer. `shared/footerStatus.ts`, status keys/order, and all MCP runtime code are unchanged.
+- [Shared maintenance](../agent/extensions/shared/maintenance.md#footer-status-color-refresh) owns the refresh-on-next-write contract and distinguishes MCP's existing once-per-second polling from the timer's running-only interval and event-driven idle producers. No new polling, private theme listener, custom footer, exception boundary, or generation tracking was introduced.
+
+Actual validation:
+
+1. **Test-first red:** updated the existing injected marker-theme formatter regression before changing runtime code. `node --test response-timer/index.test.ts` reported **3 passed, 1 failed**, specifically the old `syntaxComment` output versus expected `success`.
+2. **Focused green:** from `agent/extensions/`, `node --test response-timer/index.test.ts mcp-status/index.test.ts shared/footerStatus.test.ts` reported **19 passed** (4 timer, 13 MCP, 2 shared), with **0 failed/cancelled/skipped**. This preserves local coverage of start/reset timing, final completion at `agent_settled`, shutdown interval cleanup, MCP theme recoloring on an existing poll, and footer ordering/legacy cleanup. It is not end-to-end retry, compaction, or queued-work validation.
+3. **Typecheck:** `npm run typecheck` passed, including the read-only check of all **five valid host dependency links** and TypeScript `--noEmit`. No dependency or link repair was performed.
+4. **Documentation consistency:** read-only assertions matched the README's six-status order to `FOOTER_STATUS_ORDER`, verified all six consumer paths, semantic timer wording, relative Markdown link targets, and the shared refresh anchor. Final scoped diff review confirms the token/type-only runtime change.
+5. **Installed contract review:** read the installed extension, theme, and TUI documentation, the status-line example, and relevant declarations/source. `ThemeColor`/`Theme.fg()` accept `success`; TUI docs explicitly explain that a redraw cannot remove old ANSI colors embedded in application state. The public UI's current-theme getter, stored status strings, and key sorting match the documented contract. A read-only scout independently corroborated producer refresh triggers and the MCP omission; it ran no tests or probes.
+
+The caller-approved session scratch root was created privately with the `.step1-test-root-ready` sentinel. Both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` used its canonical real path, keeping logs and temporary artifacts outside HOME/repository/cwd.
+
+### Remaining dispositions and skipped validation
+
+- **Presentation/docs scope is resolved;** immediate idle recoloring remains an accepted limitation, not a new runtime fix.
+- **Setup-error and stale-context concerns remain verify-first and deprioritized.** Normal shutdown/reload cleanup is source-supported and local cleanup tests pass; no reachable host failure was reproduced or ruled out. Reopen lifecycle changes only with a real host reproduction and a separately scoped remedy preserving duration semantics.
+- **Full `npm run verify` / all-tests gate was deliberately not run:** reserved for integration while other sessions are active. The focused suite and typecheck above are the executed checks, not a full-gate claim.
+- No new optional post-shutdown fake-tick test or lifecycle probe was added. The existing MCP fake-tick test is local coverage, not reproduction of a real queued-callback host failure.
+- No live-terminal theme switch, provider call, enabled MCP connection, `/reload`, settings/configuration/dependency/host-link change, commit, or Git branch/index operation was performed. `fixme/README.md` was intentionally left unchanged under the caller's write ownership; unrelated concurrent changes were preserved.
 
 ## Historical re-checks
 

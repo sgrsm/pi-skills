@@ -23,16 +23,16 @@ test("formatElapsedTime uses h/m/s units and hides leading zero values", () => {
   assert.equal(formatElapsedTime(100 * 3_600_000), "100h 00m 00s");
 });
 
-test("formatResponseTimerText uses requested running and stopped symbols without status separators", () => {
+test("formatResponseTimerText uses semantic accent/success symbols and dim duration without status separators", () => {
   const theme = {
-    fg: (color: "accent" | "syntaxComment" | "dim", text: string) => `<${color}>${text}</${color}>`,
+    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
     bold: (text: string) => `<bold>${text}</bold>`,
   };
 
   assert.equal(formatResponseTimerText(5_000, true, theme), "<accent>⏱</accent><dim> 5s</dim>");
   assert.equal(
     formatResponseTimerText(65_000, false, theme),
-    "<bold><syntaxComment>✓</syntaxComment></bold><dim> 1m 05s</dim>",
+    "<bold><success>✓</success></bold><dim> 1m 05s</dim>",
   );
 });
 
@@ -70,7 +70,7 @@ test("response timer publishes live and final durations through the status API",
     hasUI: true,
     ui: {
       theme: {
-        fg(_color: "accent" | "syntaxComment" | "dim", text: string) {
+        fg(_color: "accent" | "success" | "dim", text: string) {
           return text;
         },
         bold(text: string) {
@@ -142,7 +142,7 @@ test("response timer clears a running interval on session shutdown", async () =>
     hasUI: true,
     ui: {
       theme: {
-        fg(_color: "accent" | "syntaxComment" | "dim", text: string) {
+        fg(_color: "accent" | "success" | "dim", text: string) {
           return text;
         },
         bold(text: string) {

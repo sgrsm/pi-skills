@@ -15,7 +15,7 @@ Shows the elapsed time for the current Pi response through Pi's extension status
 The timer uses two symbols:
 
 - `⏱` while a response is running
-- bold darker-green `✓` when the response is stopped/idle
+- bold `✓` in the active theme's semantic `success` color when the response is stopped/idle; the shade depends on the theme
 
 Examples:
 
@@ -48,6 +48,12 @@ The extension listens for:
 - `session_shutdown` - clears the live update interval.
 
 No slash commands, custom tools, flags, or shortcuts are registered.
+
+## Troubleshooting
+
+After a theme change, a stopped timer can retain its previous colors until the next status write, such as when the next response starts. A running timer refreshes once per second; the stopped timer does not poll for theme changes. MCP's separate indicator already refreshes periodically, so it can recolor sooner than an idle timer.
+
+See the [shared footer color refresh contract](../shared/maintenance.md#footer-status-color-refresh) for maintenance details.
 
 ## Validation
 

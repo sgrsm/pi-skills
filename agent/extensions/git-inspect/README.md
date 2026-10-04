@@ -41,7 +41,13 @@ Show the history of src/service/OrderService.java.
 
 ## Display
 
-Tool-call rows show the selected operation and its relevant revision, range, or path arguments. When `/hide-tool on` is active, `git_inspect` hides its result output in the conversation UI while leaving that call row visible. This does not affect the Git command, result data, or information returned to the agent.
+Tool-call rows show the selected operation and its relevant revision, range, or path arguments.
+
+With `/hide-tool off`, collapsed results show the first five screen lines, accounting for line wrapping, plus an expansion hint when more text is available. Expand with Pi's tool-output shortcut (Ctrl+O by default) to see all available result text. The hint follows your configured shortcut. Small results remain complete in either view; partial output and error diagnostics follow the same preview/expansion behavior.
+
+If an output-limit notice falls outside the preview, a compact **Output truncated** or **Error output truncated** warning remains visible. Expand for the original notice and its limits or reason. Expansion reveals only the already available result; it cannot recover output discarded by the existing limits.
+
+When `/hide-tool on` is active, `git_inspect` hides all result output, including errors, while leaving the call row visible. Expansion does not override hiding; use `/hide-tool off` to read diagnostics. Hiding and expansion do not affect the Git command, result data, or information returned to the agent.
 
 ## Safety behavior
 
@@ -58,4 +64,6 @@ This is a least-privilege interface, not a sandbox for hostile repositories. Use
 - **`git_inspect requires a non-bare Git working tree`** — run Pi from a Git checkout rather than a bare repository or unrelated directory.
 - **Git command failed** — verify the requested revision exists and the path is relative to the repository root.
 - **Input rejected** — use the listed operations and simple repository-relative paths. The tool intentionally rejects arbitrary options, range expressions such as `main..HEAD`, path traversal, and pathspec magic.
-- **Output truncated** — narrow the paths, lower `maxCount`, select one commit with `show_commit`, or compare explicit revisions with `range_diff`.
+- **Output truncated** — expand to read the limit notice, then narrow the paths, lower `maxCount`, select one commit with `show_commit`, or compare explicit revisions with `range_diff`.
+- **Expansion shows no output** — check `/hide-tool`; hiding takes precedence, including for errors.
+- **Rows changed expansion after toggling hiding** — `/hide-tool on|off` can reset individual expansion choices. This existing limitation is explained in the [hide-tool-output guide](../hide-tool-output/README.md#troubleshooting).
