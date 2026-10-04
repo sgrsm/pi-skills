@@ -649,6 +649,7 @@ export default function gitInspectExtension(pi: ExtensionAPI, options: GitInspec
 	pi.registerTool({
 		name: GIT_INSPECT_TOOL_NAME,
 		label: "Git Inspect",
+		annotations: { readOnlyHint: true, openWorldHint: false },
 		description: "Inspect the current local Git working tree with fixed read-only status, history, ref, and diff operations. It never executes a shell command or caller-supplied Git arguments. Output is bounded to Pi's standard 2,000-line/50KB limits; Git itself is stopped at a separate bounded capture limit.",
 		promptSnippet: "Use git_inspect to inspect local Git status, fixed diffs, commit history, refs, and commit metadata without a shell",
 		promptGuidelines: [

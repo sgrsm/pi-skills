@@ -1,10 +1,10 @@
 # Permissions extension
 
-Adds interactive guards around selected mutating actions. It is enabled by default for each Pi session and stores ordinary approvals only for the current session. A separate Priority 0 catastrophic-deletion guard is always active and non-grantable.
+Adds interactive guards around selected mutating actions. It is enabled by default for each Pi session and stores ordinary approvals only for the current session. A separate Priority 0 catastrophic-deletion guard is always active and non-grantable on the supported Bash surfaces described below.
 
 ## Priority 0 catastrophic-deletion guard
 
-The extension applies an always-on, non-grantable catastrophic-deletion check to model Bash and TUI `!`/`!!` commands, including a final check before local execution. Recognized hard denials cannot be bypassed with ordinary approvals, session grants, scratch auto-approval, no-UI mode, or `/permissions off`.
+The extension applies an always-on, non-grantable catastrophic-deletion check to its owned `bash` tool (both model-issued and nested calls) and TUI `!`/`!!` commands, including a final check before local Bash execution. Priority 0 covers these supported Bash surfaces, not every tool capable of mutation. Recognized hard denials cannot be bypassed with ordinary approvals, session grants, scratch auto-approval, no-UI mode, or `/permissions off`.
 
 Protected canonical targets are:
 
@@ -18,6 +18,12 @@ The bounded recognizer covers common visible direct deletion, traversal deletion
 The recognizer intentionally does not emulate complete Bash semantics or infer hidden effects inside scripts, interpreters, or executables. Commands without visible deletion evidence are not blocked merely because unusual syntax could theoretically conceal behavior. Denials include stable `P0_*` diagnostics and actionable guidance. This is a practical accident-prevention classifier, not a shell parser or arbitrary-code containment boundary.
 
 ### Scope, trust boundary, and limitations
+
+Permissions classifies supported `bash`, `write`, and `edit` calls; it is not a general approval layer for arbitrary custom or MCP operations, including those invoked through `codemode`. Those operations still pass through Pi's tool-event pipeline, but receiving an event does not mean this extension recognizes or guards the operation's effects. A custom/MCP tool that mutates files, remote data, or other resources without using a supported built-in call is outside this classification.
+
+Nested built-in `bash`, `write`, and `edit` calls made through Pi's nested-tool API, including from `codemode`, traverse the same existing permission guards as direct calls. They retain the ordinary path, Git, and dependency rules where applicable, and nested `bash` retains Priority 0. Using `codemode` neither bypasses these guards nor extends them to arbitrary custom/MCP behavior.
+
+Tool annotations such as `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` are unverified declarations by tool authors or MCP servers, not authorization or containment guarantees. This extension does not use annotations to approve calls, bypass concrete guards, or provide generic custom/MCP approval. A read-only hint is not proof that an operation is safe.
 
 The guard assumes a trusted Pi host, ordinary local process environment, executable lookup, and global/user extensions. It is not designed to contain deliberate evasion, hostile local state, hidden behavior in arbitrary code, malicious extensions, or filesystem races. Users who need hostile-code containment should run Pi in a suitable container, remote environment, or VM.
 

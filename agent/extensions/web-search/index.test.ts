@@ -1,15 +1,62 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import webSearchExtension from "./index.ts";
+import { withTestScratchFixture } from "../permissions/testScratch.ts";
 
 function lineCount(text: string): number {
 	if (!text) return 0;
 	return text.endsWith("\n") ? text.slice(0, -1).split("\n").length : text.split("\n").length;
 }
+
+test("web_search preserves minimal read-only open-world hints through availability re-registration", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const agentDir = join(fixture.root, "agent");
+		await fixture.mkdir(agentDir);
+		const statePath = join(agentDir, "web-search.json");
+		await fixture.writeFile(statePath, JSON.stringify({ enabled: false }));
+		const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const tools: ToolDefinition<any, any, any>[] = [];
+		const handlers = new Map<string, (event: any, ctx: any) => unknown>();
+		let activeTools = ["read", "late_fixture"];
+		try {
+			webSearchExtension({
+				registerCommand() {},
+				registerTool(tool: ToolDefinition<any, any, any>) { tools.push(tool); },
+				on(name: string, handler: (event: any, ctx: any) => unknown) {
+					handlers.set(name, handler);
+					return () => {};
+				},
+				getActiveTools: () => activeTools,
+				setActiveTools(names: string[]) { activeTools = names; },
+			} as Partial<ExtensionAPI> as ExtensionAPI);
+			assert.equal(tools.length, 1);
+			await assert.rejects(tools[0].execute("disabled-search", { query: "fixture" }, undefined, undefined, {} as any), /disabled/);
+
+			for (const enabled of [true, false, true]) {
+				await writeFile(await fixture.assertMutationTarget(statePath), JSON.stringify({ enabled }), { mode: 0o600 });
+				await handlers.get("session_start")!({}, { hasUI: false });
+			}
+			assert.equal(tools.length, 4, "each changed availability should re-register");
+			assert.deepEqual(tools.map((tool) => tool.exposure), ["hidden", "direct", "hidden", "direct"]);
+			assert.deepEqual(tools.map((tool) => tool.defaultActive), [false, true, false, true]);
+			for (const tool of tools) {
+				assert.equal(tool.name, "web_search");
+				assert.deepEqual(tool.annotations, { readOnlyHint: true, openWorldHint: true });
+				assert.equal(tool.execute, tools[0].execute, "availability must preserve execution");
+				assert.equal(tool.parameters, tools[0].parameters, "availability must preserve the schema");
+			}
+			assert.deepEqual(activeTools, ["read", "late_fixture", "web_search"]);
+		} finally {
+			if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		}
+	});
+});
 
 test("web_search runtime bounds visible output while persisting complete formatted output and compact details", async () => {
 	const stateDir = await mkdtemp(`${tmpdir()}/pi-web-search-state-`);

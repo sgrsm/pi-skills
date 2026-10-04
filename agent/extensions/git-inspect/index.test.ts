@@ -29,6 +29,13 @@ function registerGitInspectTool(options?: { hideToolOutputEnabled?: () => boolea
 	return tool;
 }
 
+test("git_inspect declares minimal read-only closed-world hints without changing direct exposure", () => {
+	const tool = registerGitInspectTool();
+	assert.deepEqual(tool.annotations, { readOnlyHint: true, openWorldHint: false });
+	assert.equal(tool.exposure ?? "direct", "direct");
+	assert.equal(tool.defaultActive ?? true, true);
+});
+
 test("git_inspect exposes only operation as required in its TypeBox schema", () => {
 	const tool = registerGitInspectTool();
 	assert.deepEqual(tool.parameters.required, ["operation"]);

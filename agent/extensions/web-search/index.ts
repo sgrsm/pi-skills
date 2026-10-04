@@ -361,6 +361,7 @@ export default function searxngSearchExtension(pi: ExtensionAPI) {
 	const setWebSearchAvailability = registerToolAvailability(pi, {
 		name: WEB_SEARCH_TOOL_NAME,
 		label: "Web Search",
+		annotations: { readOnlyHint: true, openWorldHint: true },
 		description: `Search the web using a self-hosted SearXNG instance and return snippets with source URLs. Visible text is a head preview bounded to ${DEFAULT_MAX_LINES.toLocaleString()} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first); when truncated, the exact full formatted output is saved to a temporary file path reported in the result. Tool details retain compact metadata, counts, and truncation information.`,
 		promptSnippet: "Use web_search to search the live web using SearXNG for current information, external docs, or sources outside the local workspace.",
 		promptGuidelines: [
