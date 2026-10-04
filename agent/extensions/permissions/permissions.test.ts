@@ -9,6 +9,10 @@ import {
 
 const cwd = "/repo/project";
 
+function targetSummary(request: NonNullable<ReturnType<typeof analyzeBashMutation>>) {
+	return request.targets.map(({ operation, path, scopeDir }) => ({ operation, path, scopeDir }));
+}
+
 test("path containment treats nested paths as inside without prefix false positives", () => {
 	assert.equal(isPathInsideOrEqual("/repo/project", "/repo/project"), true);
 	assert.equal(isPathInsideOrEqual("/repo/project/src/file.ts", "/repo/project"), true);
@@ -22,7 +26,7 @@ test("file mutation guard only requests permission outside cwd and scopes to par
 	const request = buildFileMutationRequest("edit", "../shared/config.json", cwd);
 	assert.ok(request);
 	assert.equal(request.toolName, "edit");
-	assert.deepEqual(request.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(request), [
 		{ operation: "edit", path: "/repo/shared/config.json", scopeDir: "/repo/shared" },
 	]);
 });
@@ -58,7 +62,7 @@ test("bash delete outside cwd is detected while delete inside cwd is ignored", (
 	const outside = analyzeBashMutation("rm -rf ../shared", cwd);
 	assert.ok(outside);
 	assert.equal(outside.toolName, "bash");
-	assert.deepEqual(outside.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(outside), [
 		{ operation: "delete", path: "/repo/shared", scopeDir: "/repo/shared" },
 	]);
 });
@@ -68,13 +72,13 @@ test("bash write-like mutations outside cwd are detected but read-only commands 
 
 	const redirected = analyzeBashMutation("echo hello > /tmp/pi-permissions/out.txt", cwd);
 	assert.ok(redirected);
-	assert.deepEqual(redirected.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(redirected), [
 		{ operation: "bash-mutate", path: "/tmp/pi-permissions/out.txt", scopeDir: "/tmp/pi-permissions/out.txt" },
 	]);
 
 	const copied = analyzeBashMutation("cp package.json /tmp/pi-permissions/package.json", cwd);
 	assert.ok(copied);
-	assert.deepEqual(copied.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(copied), [
 		{ operation: "bash-mutate", path: "/tmp/pi-permissions/package.json", scopeDir: "/tmp/pi-permissions/package.json" },
 	]);
 });
@@ -98,7 +102,7 @@ test("bash ignores output suppression to /dev/null via redirection and tee", () 
 test("bash ignores only /dev/null output targets while preserving other tee targets", () => {
 	const request = analyzeBashMutation("printf hi | tee /dev/null /tmp/pi-permissions/out.txt", cwd);
 	assert.ok(request);
-	assert.deepEqual(request.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(request), [
 		{ operation: "bash-mutate", path: "/tmp/pi-permissions/out.txt", scopeDir: "/tmp/pi-permissions/out.txt" },
 	]);
 });
@@ -106,13 +110,13 @@ test("bash ignores only /dev/null output targets while preserving other tee targ
 test("bash still guards destructive or metadata-changing operations against /dev/null", () => {
 	const deleted = analyzeBashMutation("rm /dev/null", cwd);
 	assert.ok(deleted);
-	assert.deepEqual(deleted.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(deleted), [
 		{ operation: "delete", path: "/dev/null", scopeDir: "/dev/null" },
 	]);
 
 	const chmodded = analyzeBashMutation("chmod 666 /dev/null", cwd);
 	assert.ok(chmodded);
-	assert.deepEqual(chmodded.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(chmodded), [
 		{ operation: "bash-mutate", path: "/dev/null", scopeDir: "/dev/null" },
 	]);
 });
@@ -122,7 +126,7 @@ test("bash mutation detection tracks simple cd commands before relative targets"
 
 	const request = analyzeBashMutation("cd ../shared && rm generated.txt", cwd);
 	assert.ok(request);
-	assert.deepEqual(request.targets.map((target) => ({ operation: target.operation, path: target.path, scopeDir: target.scopeDir })), [
+	assert.deepEqual(targetSummary(request), [
 		{ operation: "delete", path: "/repo/shared/generated.txt", scopeDir: "/repo/shared/generated.txt" },
 	]);
 });

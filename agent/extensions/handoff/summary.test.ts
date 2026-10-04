@@ -60,17 +60,6 @@ test("mocked model summary receives the same nested operations as the no-model f
 	assert.notEqual(options[0].sessionId, options[1].sessionId);
 });
 
-test("mocked model selection remains lean while incomplete records are disclosed in the final document", async () => {
-	const summary = await summarizeCurrentSession(context(true, async () => ({ content: [
-		{ type: "text", text: "<body>## Relevant Files\n- nested-edit.ts — check attempted change\n\n## Progress\n- Continue.</body>" },
-	] })), undefined);
-	const output = render(summary);
-	assert.equal(summary.usedFallback, false);
-	assert.match(output, /- nested-edit\.ts — check attempted change/);
-	assert.doesNotMatch(output, /- nested-read\.ts —/);
-	assert.equal(output.split("File lists may be incomplete").length - 1, 1);
-});
-
 test("complete nested records do not add an incompleteness notice to the model prompt or document", async () => {
 	let prompt = "";
 	const ctx = context(true, async (_model, input) => {
@@ -87,7 +76,7 @@ test("complete nested records do not add an incompleteness notice to the model p
 	assert.doesNotMatch(render(summary), /File lists may be incomplete/);
 });
 
-test("model-echoed notice is not duplicated and a suffixed Relevant Files heading is preserved", async () => {
+test("model-written file selection stays lean while echoed notice and suffixed heading are preserved", async () => {
 	const notice = render(await summarizeCurrentSession(context(false), undefined)).split("\n")
 		.find((line) => line.startsWith("> File lists may be incomplete"));
 	assert.ok(notice);
@@ -95,8 +84,13 @@ test("model-echoed notice is not duplicated and a suffixed Relevant Files headin
 	const summary = await summarizeCurrentSession(context(true, async () => ({ content: [
 		{ type: "text", text: `<body>${body}</body>` },
 	] })), undefined);
+	assert.equal(summary.usedFallback, false);
 	const output = render(summary);
 	assert.ok(output.includes(body));
+	for (const unselected of ["direct.ts", "nested-search.ts", "nested-edit.ts", "nested-write.ts"]) {
+		assert.ok(!output.includes(`- ${unselected} —`), `model selection must omit ${unselected}`);
+	}
+	assert.equal(output.split("## Relevant Files").length - 1, 1);
 	assert.equal(output.split("File lists may be incomplete").length - 1, 1);
 	const withoutEcho = buildHandoffDocument({ title: "Test", slug: "test", createdAt: "2026", cwd: "/synthetic",
 		body: body.replace(`${notice}\n\n`, ""), fileOps: summary.fileOps });

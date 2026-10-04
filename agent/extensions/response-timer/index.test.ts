@@ -36,6 +36,20 @@ test("formatResponseTimerText uses semantic accent/success symbols and dim durat
   );
 });
 
+type TimerHandler = (event: unknown, ctx: any) => unknown | Promise<unknown>;
+
+function createTimerPi() {
+  const handlers = new Map<string, TimerHandler[]>();
+  const pi = {
+    on(eventName: string, handler: TimerHandler) {
+      const existing = handlers.get(eventName) ?? [];
+      existing.push(handler);
+      handlers.set(eventName, existing);
+    },
+  } as Partial<ExtensionAPI> as ExtensionAPI;
+  return { pi, handlers };
+}
+
 test("response timer publishes live and final durations through the status API", async () => {
   let now = 1_000;
   let intervalCallback: (() => void) | undefined;
@@ -55,14 +69,7 @@ test("response timer publishes live and final durations through the status API",
     },
   };
 
-  const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown | Promise<unknown>>>();
-  const pi = {
-    on(eventName: string, handler: (event: unknown, ctx: any) => unknown | Promise<unknown>) {
-      const existing = handlers.get(eventName) ?? [];
-      existing.push(handler);
-      handlers.set(eventName, existing);
-    },
-  } as Partial<ExtensionAPI> as ExtensionAPI;
+  const { pi, handlers } = createTimerPi();
 
   const statuses = new Map<string, string | undefined>();
   let footerSet = false;
@@ -130,14 +137,7 @@ test("response timer clears a running interval on session shutdown", async () =>
     },
   };
 
-  const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown | Promise<unknown>>>();
-  const pi = {
-    on(eventName: string, handler: (event: unknown, ctx: any) => unknown | Promise<unknown>) {
-      const existing = handlers.get(eventName) ?? [];
-      existing.push(handler);
-      handlers.set(eventName, existing);
-    },
-  } as Partial<ExtensionAPI> as ExtensionAPI;
+  const { pi, handlers } = createTimerPi();
   const ctx = {
     hasUI: true,
     ui: {

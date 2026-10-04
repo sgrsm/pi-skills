@@ -142,14 +142,6 @@ test("auto mode allows non-explicit known user-scoped write-capable agents witho
 	);
 });
 
-test("auto mode does not offer redundant write-capable session approval", () => {
-	const summary = writeCapableParallelSummary();
-	const decision = evaluateSubagentPolicy("auto", summary, false, "Improve this module", true, "none", false);
-
-	assert.equal(decision.action, "allow");
-	assert.deepEqual(getSubagentApprovalOptions("auto", summary), ["Allow once", "Deny"]);
-});
-
 test("ask mode needs write-capable session approval after ordinary ask-mode approval", () => {
 	const summary = writeCapableParallelSummary();
 
@@ -171,10 +163,9 @@ test("current-session approval is available only in ask mode", () => {
 	assert.deepEqual(getSubagentApprovalOptions("auto", summary), ["Allow once", "Deny"]);
 });
 
-test("auto mode keeps project-local write-capable agents gated without redundant session approval", () => {
+test("auto mode keeps project-local write-capable agents gated", () => {
 	const summary = writeCapableProjectSummary();
 
-	assert.deepEqual(getSubagentApprovalOptions("auto", summary), ["Allow once", "Deny"]);
 	const decision = evaluateSubagentPolicy("auto", summary, false, "Improve this module", true, "none", false);
 	assert.equal(decision.action, "ask");
 	assert.match(decision.reason, /Project-local agents require approval/);

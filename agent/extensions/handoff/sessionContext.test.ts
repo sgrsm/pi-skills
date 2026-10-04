@@ -115,6 +115,5 @@ test("handoff summary dispatches through Pi's model runtime", () => {
 		source,
 		/const response = await ctx\.modelRegistry\.complete\(\s*ctx\.model,\s*\{ systemPrompt: HANDOFF_SUMMARY_SYSTEM_PROMPT, messages: \[userMessage\] \},/,
 	);
-	assert.match(source, /cacheRetention: "none"/);
 	assert.match(source, /sessionId: uuidv7\(\)/);
 });

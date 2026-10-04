@@ -134,25 +134,6 @@ test("structured reports shorten cwd values, group by eligible bytes, and never 
   });
 });
 
-test("project summaries list every eligible project without an aggregate remainder", async () => {
-  await fixture(async (root) => {
-    for (let index = 0; index < 10; index += 1) {
-      await session(join(root, `project-${index}.jsonl`), {
-        cwd: `/Users/tester/work/project-${index}`,
-        mtime: NOW - 3 * 86_400_000,
-      });
-    }
-
-    const scan = await scanTrashHistory({ scope: "all-projects", sessionRoot: root, cutoffMs: NOW - 86_400_000, includeNamed: false });
-    const report = formatScanReport(scan, NOW - 86_400_000, "Preview", { homeDir: "/Users/tester" });
-
-    for (let index = 0; index < 10; index += 1) {
-      assert.match(report, new RegExp(`~/work/project-${index}`));
-    }
-    assert.doesNotMatch(report, /Other eligible projects/);
-  });
-});
-
 test("default policy accounts only stale named sessions as protected with their bytes", async () => {
   await fixture(async (root) => {
     const staleNamed = join(root, "stale-named.jsonl");
@@ -261,6 +242,7 @@ test("large detailed reports and long paths stay in the preview, not the confirm
       assert.deepEqual(harness.selectionOptions, [["Cancel", archive ? "Archive, then Trash" : "Move to Trash"]]);
       const preview = harness.messages[0]!;
       for (let index = 0; index < 10; index += 1) assert.ok(preview.includes(`/project-${index}`));
+      assert.doesNotMatch(preview, /Other eligible projects/);
       assert.equal(preview.includes("Session details (largest 30):"), flags.includes("--details"));
       assert.equal(preview.includes("Archive before Trash:"), archive);
       assert.deepEqual(harness.execCalls, []);
@@ -554,7 +536,6 @@ test("scan is non-recursive, excludes active aliases and named sessions, and rec
     assert.deepEqual(report.candidates.map((candidate) => candidate.path), [await realpath(old)]);
     assert.equal(report.skipped.named, 1);
     assert.equal(report.skipped.active, 1);
-    assert.equal(report.candidates.some((candidate) => candidate.path === nested), false);
   });
 });
 

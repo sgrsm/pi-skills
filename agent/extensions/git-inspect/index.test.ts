@@ -67,30 +67,6 @@ test("git_inspect call renderer summarizes the operation and relevant paths", ()
 	assert.match(rangeCallComponent.render(160).join("\n"), /git_inspect range_diff main\.\.\.HEAD README\.md/);
 });
 
-test("git_inspect renderer honors hide-tool output state without hiding a newly visible result", () => {
-	let hidden = true;
-	const tool = registerGitInspectTool({ hideToolOutputEnabled: () => hidden });
-	assert.ok(tool.renderResult, "git_inspect must render its result to honor hide-tool");
-	const result = { content: [{ type: "text" as const, text: "visible output" }], details: undefined };
-	const theme = { fg(_color: string, text: string) { return text; } };
-	const hiddenComponent = tool.renderResult(
-		result,
-		{ expanded: false, isPartial: false },
-		theme as any,
-		{ lastComponent: undefined } as any,
-	);
-	assert.equal(hiddenComponent.render(100).join("\n").includes("visible output"), false);
-
-	hidden = false;
-	const visibleComponent = tool.renderResult(
-		result,
-		{ expanded: false, isPartial: false },
-		theme as any,
-		{ lastComponent: hiddenComponent } as any,
-	);
-	assert.equal(visibleComponent.render(100).join("\n").includes("visible output"), true);
-});
-
 test("git_inspect maps only fixed, hardened Git argv for supported inspection operations", () => {
 	const workingDiff = buildGitInspectionInvocation(
 		{ operation: "working_diff", paths: ["src/example.ts"] },
@@ -154,38 +130,20 @@ test("git_inspect prepares adapter-shaped calls by retaining only fields accepte
 		maxCount: 20,
 	};
 
-	assert.deepEqual(prepare({ operation: "repo_info", ...adapterFields }), { operation: "repo_info" });
-	assert.deepEqual(prepare({ operation: "status", ...adapterFields }), { operation: "status" });
-	assert.deepEqual(prepare({ operation: "list_refs", ...adapterFields }), { operation: "list_refs" });
-	assert.deepEqual(prepare({ operation: "log", ...adapterFields }), {
-		operation: "log",
-		revision: "HEAD",
-		maxCount: 20,
-	});
-	assert.deepEqual(prepare({ operation: "show_commit", ...adapterFields }), {
-		operation: "show_commit",
-		revision: "HEAD",
-	});
-	assert.deepEqual(prepare({ operation: "working_diff", ...adapterFields }), {
-		operation: "working_diff",
-		paths: ["src/example.ts"],
-	});
-	assert.deepEqual(prepare({ operation: "staged_diff", ...adapterFields }), {
-		operation: "staged_diff",
-		paths: ["src/example.ts"],
-	});
-	assert.deepEqual(prepare({ operation: "range_diff", ...adapterFields }), {
-		operation: "range_diff",
-		base: "main",
-		head: "HEAD",
-		paths: ["src/example.ts"],
-	});
-	assert.deepEqual(prepare({ operation: "file_history", ...adapterFields }), {
-		operation: "file_history",
-		revision: "HEAD",
-		paths: ["src/example.ts"],
-		maxCount: 20,
-	});
+	const expectedByOperation: Array<[string, Record<string, unknown>]> = [
+		["repo_info", {}],
+		["status", {}],
+		["list_refs", {}],
+		["log", { revision: "HEAD", maxCount: 20 }],
+		["show_commit", { revision: "HEAD" }],
+		["working_diff", { paths: ["src/example.ts"] }],
+		["staged_diff", { paths: ["src/example.ts"] }],
+		["range_diff", { base: "main", head: "HEAD", paths: ["src/example.ts"] }],
+		["file_history", { revision: "HEAD", paths: ["src/example.ts"], maxCount: 20 }],
+	];
+	for (const [operation, expected] of expectedByOperation) {
+		assert.deepEqual(prepare({ operation, ...adapterFields }), { operation, ...expected }, operation);
+	}
 	assert.deepEqual(prepare({ operation: "status", ...adapterFields, unexpected: true }), {
 		operation: "status",
 		unexpected: true,

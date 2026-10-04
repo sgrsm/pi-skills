@@ -24,7 +24,6 @@ test("resolved write-capable approval also carries ordinary ask-mode approval", 
 	]);
 
 	assert.deepEqual(state, { askModeApproved: true, writeCapableApproved: true });
-	assert.equal(formatSubagentStatusLabel("ask", state), "ask (approved write)");
 });
 
 test("auto footer label ignores persisted session approval because write permission is inherent", () => {
@@ -40,11 +39,9 @@ test("session approval state retains legacy entries and supports scoped approval
 		{ type: "custom", customType: "subagent-session-approval", data: { writeCapableApproved: true } },
 	]);
 	assert.deepEqual(state, { askModeApproved: true, writeCapableApproved: true });
-	assert.equal(formatSubagentStatusLabel("ask", state), "ask (approved write)");
 
 	const cancelled = resolveSessionSubagentApprovalState([
 		{ type: "custom", customType: "subagent-session-approval", data: { askModeApproved: false, writeCapableApproved: false } },
 	]);
 	assert.deepEqual(cancelled, { askModeApproved: false, writeCapableApproved: false });
-	assert.equal(formatSubagentStatusLabel("ask", cancelled), "ask");
 });

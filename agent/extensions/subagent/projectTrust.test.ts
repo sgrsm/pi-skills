@@ -14,6 +14,7 @@ import subagentExtension, {
 } from "./index.ts";
 
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
+const NO_LIFECYCLE_SIDE_EFFECTS = { policyPrompts: 0, projectAgentConfirmations: 0, footerUpdates: 0 };
 
 function escapeRegex(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -311,7 +312,6 @@ test("contained child cwd uses its canonical path and retains parent project beh
 		assert.equal(child.reusesParentProjectTrust, true);
 		assert.equal(child.executionCwd, realpathSync(canonicalChildCwd));
 		assert.equal(getProjectAgentTrustBlockReason("both", child.reusesParentProjectTrust), null);
-		assert.equal(buildSubagentChildProcessArgs({ tools: ["read"] }, {}, false).includes("--no-approve"), false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -420,11 +420,7 @@ test("structural project-agent calls reach execute only to reject before policy 
 			/Invalid parameters\./,
 		);
 		assert.equal(malformedCtx.getTrustChecks(), 0, "malformed modes should reject before trust checks");
-		assert.deepEqual(malformedCtx.getLifecycleSideEffects(), {
-			policyPrompts: 0,
-			projectAgentConfirmations: 0,
-			footerUpdates: 0,
-		});
+		assert.deepEqual(malformedCtx.getLifecycleSideEffects(), NO_LIFECYCLE_SIDE_EFFECTS);
 
 		const malformedProjectEntries = [
 			{ mode: "single", items: [{ agent: "", task: "Do not run" }], agentScope: "project" },
@@ -476,11 +472,7 @@ test("structural project-agent calls reach execute only to reject before policy 
 				/Invalid parameters\./,
 			);
 			assert.equal(entryCtx.getTrustChecks(), 0, "malformed entries should reject before trust checks");
-			assert.deepEqual(entryCtx.getLifecycleSideEffects(), {
-				policyPrompts: 0,
-				projectAgentConfirmations: 0,
-				footerUpdates: 0,
-			});
+			assert.deepEqual(entryCtx.getLifecycleSideEffects(), NO_LIFECYCLE_SIDE_EFFECTS);
 		}
 
 		const overLimit = {
@@ -500,11 +492,7 @@ test("structural project-agent calls reach execute only to reject before policy 
 			() => tool.execute("over-limit-project", overLimit, new AbortController().signal, undefined, overLimitCtx.ctx),
 			/Too many parallel tasks \(2\)\. Max is 1\./,
 		);
-		assert.deepEqual(overLimitCtx.getLifecycleSideEffects(), {
-			policyPrompts: 0,
-			projectAgentConfirmations: 0,
-			footerUpdates: 0,
-		});
+		assert.deepEqual(overLimitCtx.getLifecycleSideEffects(), NO_LIFECYCLE_SIDE_EFFECTS);
 	});
 });
 

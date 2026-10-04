@@ -136,7 +136,6 @@ test("web_search runtime bounds visible output while persisting complete formatt
 		);
 		const visibleText = (result.content[0] as { type: "text"; text: string }).text;
 		const details = result.details as Record<string, unknown>;
-		const truncation = details.truncation as Record<string, unknown>;
 		fullOutputPath = details.fullOutputPath as string;
 		const serializedDetails = JSON.stringify(details);
 
@@ -162,8 +161,7 @@ test("web_search runtime bounds visible output while persisting complete formatt
 		for (const property of ["answers", "infoboxes", "results", "suggestions"]) {
 			assert.equal(property in details, false, `details must omit raw ${property}`);
 		}
-		assert.equal("content" in truncation, false, "truncation metadata must omit preview content");
-		assert.equal(serializedDetails.includes("\"content\""), false, "serialized details must omit preview content");
+		assert.equal(serializedDetails.includes("\"content\""), false, "details and truncation metadata must omit preview content");
 		for (const rawPayloadMarker of ["ANSWER_SECRET", "INFOBOX_SECRET", "RESULT_SECRET", "SUGGESTION_SECRET"]) {
 			assert.equal(serializedDetails.includes(rawPayloadMarker), false, `details must omit ${rawPayloadMarker}`);
 		}

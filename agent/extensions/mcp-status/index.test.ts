@@ -32,10 +32,8 @@ test("projection defaults enabled/exposure, supports all exposures, and skips ma
   for (const exposure of ["codemode", "deferred", "direct", "hidden"]) {
     assert.equal(parseMcpStatuses(config(true, exposure))[0]?.exposure, exposure);
   }
-  assert.deepEqual(parseMcpStatuses(config(true, "codemode-deferred")), parseMcpStatuses(config(true, "codemode")));
   for (const enabled of [true, false]) {
-    assert.equal(formatMcpStatus(parseMcpStatuses(config(enabled, "codemode-deferred")), theme),
-      formatMcpStatus(parseMcpStatuses(config(enabled, "codemode")), theme));
+    assert.deepEqual(parseMcpStatuses(config(enabled, "codemode-deferred")), parseMcpStatuses(config(enabled, "codemode")));
   }
   assert.throws(() => parseMcpStatuses("{"));
   assert.throws(() => parseMcpStatuses('{"mcpServers":[]}'));
