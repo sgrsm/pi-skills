@@ -85,7 +85,7 @@ Contract:
 
 Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
-Known limitation: this protects pending names that the host established. On Pi 1.0.0, SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [`sdk-resume.test.ts`](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-characterization-plus-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
+Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 
 ## Extension retirement
 
@@ -108,6 +108,6 @@ First prepare an approved test scratch root as described in the permissions exte
 npm run verify
 ```
 
-`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically.
+`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-0003/TDR-0004. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
 
 Run npm dependency commands from `agent/extensions/`, not from `agent/`.

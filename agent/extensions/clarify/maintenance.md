@@ -27,9 +27,9 @@ Maintainer notes for [`clarify`](./README.md). User-facing behavior, commands an
 
 ## Fullscreen input defect
 
-Fullscreen scrolling/help clipping and the mouse-mode ownership conflict are open, and the runtime fix is deferred pending host overlay-completion correction. The full evidence, host blocker, reproduction, safety boundaries and acceptance criteria are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md); do not duplicate them here.
+On the tested Pi 1.0.3, fullscreen Home/End routing works; PageUp/PageDown/wheel routing, help clipping, and the mouse-mode ownership conflict remain open. The runtime fix is still deferred pending host overlay-completion correction. The full evidence, host blocker, reproduction, safety boundaries and acceptance criteria are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md); do not duplicate them here.
 
-Pointers when revisiting: the selector writes `ENABLE_MOUSE_SCROLL` in `showClarifySelector()` on creation and `DISABLE_MOUSE_SCROLL` on disposal, in both TUI modes; scrolling uses raw key/wheel parsing rather than normalized `handleMouse()`; rendering budgets against terminal rows, not the smaller fullscreen dock. `pi-compatibility/clarify-input.test.ts` characterizes these defects, so a passing run is not evidence of resolution. Live-terminal mouse effects have not been verified.
+Pointers when revisiting: the selector writes `ENABLE_MOUSE_SCROLL` in `showClarifySelector()` on creation and `DISABLE_MOUSE_SCROLL` on disposal, in both TUI modes; scrolling uses raw key/wheel parsing rather than normalized `handleMouse()`; rendering budgets against terminal rows, not the smaller fullscreen dock. `pi-compatibility/clarify-input.test.ts` protects working routes and controls; `clarify-input.diagnostic.ts` asserts the outstanding positive requirements and currently fails. Its custom-dialog lifecycle adapter is not an actual host-method invocation; reconstruct the TDR's scratch-only real-host probe after upgrades. Live-terminal mouse effects have not been verified.
 
 ## Startup availability and resume
 
@@ -48,4 +48,4 @@ node --test clarify/index.test.ts pi-compatibility/clarify-input.test.ts pi-comp
 npm run verify
 ```
 
-Tests use injected clarify state (`loadModeState`) and fake dialogs, never personal clarify settings.
+Tests use injected clarify state (`loadModeState`) and fake dialogs, never personal clarify settings. Run `npm run diagnose:pi-host` separately after host upgrades and before closing TDR-0003/TDR-0004; it exits nonzero while the tracked defects persist. A green contract gate does not resolve those defects.

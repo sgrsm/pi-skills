@@ -1,6 +1,6 @@
 # TDR-0004: Restore the transcript tool loadout on SDK/CLI resume
 
-- **Status:** Open — confirmed host defect; correction requires Pi source/upstream work
+- **Status:** Open — reproduced on Pi 1.0.3; correction requires Pi source/upstream work
 - **Priority:** Medium; MCP-specific impact latent while servers are disabled
 - **Created:** 2026-10-03
 - **Area:** Pi host session construction (`sdk` / `AgentSession`), not local extension startup
@@ -8,7 +8,7 @@
 
 ## Summary and decision
 
-On Pi **1.0.0**, creating a resumed session through the public SDK or actual CLI does not restore the active branch's selected inactive tool declarations. Late registration therefore cannot activate them from the transcript. This was reproduced **without the local extensions**, and with local extension controls.
+On Pi **1.0.0**, and independently revalidated on **1.0.3**, creating a resumed session through the public SDK or actual CLI does not restore the active branch's selected inactive tool declarations. Late registration therefore cannot activate them from the transcript. This was reproduced **without the local extensions**, and with local extension controls.
 
 The local clarify, web-search and subagent startup defect was independently fixed: `agent/extensions/shared/toolAvailability.ts` uses public hidden re-registration for unavailable tools instead of subtractive `setActiveTools()` calls that discard unrelated pending restoration. That correction preserves **existing pending names**, but cannot fix a host construction path that never establishes them. The user approved closing that local fix and deferring this separate host-owned correction.
 
@@ -49,6 +49,14 @@ The lost state is the previously selected **model declaration** of inactive, def
 - No actual `tool_search` execution, live MCP connection, provider request, interactive `/resume` picker, CLI `--continue`, real terminal or fork flow was used. The persisted fixture represents the documented selected loadout. RPC `switch_session` was source-inspected through `AgentSessionRuntime.switchSession()`, not independently executed.
 - Explicit restrictive tool selections were not used in the missing-restoration reproduction. Any host fix must protect their precedence; existing local activation tests cover allowlist/exclusion compatibility but are not sufficient host-fix acceptance tests.
 
+## Pi 1.0.3 revalidation
+
+The public SDK and actual package-declared CLI were executed with disposable reopened transcripts, isolated configuration, and offline runtimes. Both host-only and local-all-off runs still produced `read, bash, edit, write` after late registration rather than the recorded `read` plus the selected inactive direct/deferred/codemode tools. Registered names/exposures and indirect callability controls confirmed that registration itself succeeded. The same-file `/tree` positive control restored the selected declarations; all local on/off/relay combinations preserved the host baseline and their intended local availability.
+
+The exact Pi 1.0.0 assertion has been removed from normal tests after behavioral revalidation, not merely bumped to accept a newer version. `resumeFixture.ts` now shares the isolated fixtures. `sdk-resume.test.ts` protects working `/tree`, callability, local-availability and CLI/transcript controls without asserting omission as intended behavior. `sdk-resume.diagnostic.ts` requires positive restoration in SDK/CLI runs with and without local extensions and currently fails; it reports the host version and selected/active loadouts.
+
+No prompt, provider request, live MCP connection, personal session, or installed-host patch was used. This revalidation does not cover interactive `/resume`, CLI `--continue`, runtime switch, or fork. A green normal contract gate is not evidence of successful creation-time restoration.
+
 ## Reproduction and revalidation
 
 ### Durable tests
@@ -65,9 +73,10 @@ node --test pi-compatibility/sdk-resume.test.ts
 node --test pi-compatibility/*.test.ts clarify/index.test.ts web-search/index.test.ts
 npm run test:subagent
 npm run verify
+node --test pi-compatibility/sdk-resume.diagnostic.ts
 ```
 
-These are **known-defect characterizations and local-availability parity checks**, plus one positive `/tree` fixture control. Passing them does **not** demonstrate successful SDK/CLI creation-time restoration. Tests are version-checked for Pi 1.0.0: after an upgrade, re-evaluate their expectations against the positive acceptance criteria below rather than preserving the omission as intended behavior or silently skipping required restoration checks.
+Normal `*.test.ts` checks protect working contracts and local-availability parity, including the positive `/tree` control. Passing them does **not** demonstrate successful SDK/CLI creation-time restoration. Explicit `*.diagnostic.ts` checks assert the required positive restoration behavior and fail nonzero on the tested Pi 1.0.3; they are neither skipped nor marked TODO. `npm run diagnose:pi-host` runs both this record's and TDR-0003's outstanding checks. After upgrades, rerun diagnostics and re-evaluate the actual behavior rather than pinning a version or preserving omission as intended behavior.
 
 ### Reconstruct the SDK reproduction
 
@@ -86,7 +95,7 @@ These are **known-defect characterizations and local-availability parity checks*
    Restored synthetic declarations: none
    ```
 
-7. Repeat with isolated clarify/web-search/subagent saved modes and top-level/child relay environment. The committed tests cover all 16 local on/off × relay combinations, correct local availability, and the same host omission.
+7. Repeat with isolated clarify/web-search/subagent saved modes and top-level/child relay environment. The normal contract tests cover all 16 local on/off × relay combinations and correct local availability relative to the host baseline, whether or not a future host restores declarations. The explicit diagnostics separately require creation-time restoration.
 8. Run the same-file positive control: navigate without summarization to the persisted system entry through public `navigateTree()`, then register the same late tools. The declared loadout restores through that seam. This establishes that the transcript/registration fixture is valid; it does not make SDK creation correct.
 9. Emit shutdown and dispose every session in cleanup. Restore test-process environment before removing fixture files. No live MCP or provider call is needed.
 
@@ -119,7 +128,7 @@ In an authorized Pi source checkout, distinguish intentional current-invocation 
 - Explicit restrictive selections, exclusions, no-tools/no-builtins options and documented `defaultTools` precedence remain intact. Restoration cannot resurrect prohibited or unselected tools.
 - Indirect callable exposure remains unchanged; activation defaults cannot accidentally pass a restoration regression.
 - Resume, fork, tree and reload are distinguished and tested through relevant public seams. Required creation-time restoration is not replaced with a tree-only positive control.
-- Convert the current omission characterizations into positive restoration regressions when a verified fixed host is available. Record the host version, actual SDK/CLI results, focused/full gates and any skipped checks before closing this record.
+- Promote the positive restoration diagnostics into normal contract regressions when a verified fixed host is available. Record the host version, actual SDK/CLI results, focused/full gates and any skipped checks before closing this record.
 - Documentation reflects actual behavior, and an independent review challenges host selection, restoration and safety boundaries. No provider calls or personal-state fixtures are used for validation.
 
 ## Validation history and remaining uncertainty
@@ -132,4 +141,4 @@ The fresh read-only reviewer approved the host/local scope split with no blockin
 
 The documentation migration to this TDR received a fresh read-only durability review. It confirmed that the evidence, reproduction, limits, safety boundaries and acceptance criteria were retained without requiring temporary documents or scratch artifacts. Its minor wording/scratch-contract findings were addressed. Migration validation reran the **20-test resume suite** and `npm run verify` with **476 passing tests**, valid host links and TypeScript; no failures/cancellations/skips. Only documentation and test labels changed, not runtime behavior. No commit, installed-host patch or personal-configuration change was made during the migration.
 
-Historical scratch scripts/logs were supplementary evidence only. The durable tests and reconstruction steps above retain the actionable information; neither deleted work-package records nor expired scratch artifacts are prerequisites. SDK/CLI creation-time restored declarations remain unresolved, and the interactive/continue/switch/fork/live-MCP/provider paths listed under limits were not independently runtime-verified.
+Historical scratch scripts/logs were supplementary evidence only. The durable tests and reconstruction steps above retain the actionable information; neither deleted work-package records nor expired scratch artifacts are prerequisites. SDK/CLI creation-time restored declarations remain unresolved on the tested Pi 1.0.3, and the interactive/continue/switch/fork/live-MCP/provider paths listed under limits were not independently runtime-verified.

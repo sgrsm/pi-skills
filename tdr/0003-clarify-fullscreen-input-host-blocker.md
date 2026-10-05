@@ -1,6 +1,6 @@
 # TDR-0003: Restore safe fullscreen clarify input
 
-- **Status:** Open — runtime fix deferred pending a host correction
+- **Status:** Open — Pi 1.0.3 improves Home/End; host lifecycle blocker remains
 - **Priority:** Medium
 - **Created:** 2026-10-03
 - **Area:** `agent/extensions/clarify`; Pi custom-dialog integration
@@ -8,7 +8,7 @@
 
 ## Summary and decision
 
-Clarify's fullscreen selector loses question-scrolling input to the transcript and manipulates mouse modes owned by Pi. Long dialogs can also have their bottom help clipped. These are confirmed defects, not intentional behavior or evidence of resolution.
+Clarify's fullscreen selector still loses PageUp/PageDown/wheel input to the transcript on the tested Pi 1.0.3 and manipulates mouse modes owned by Pi. Home/End now scroll the question in the tested cases, but long dialogs can still have their bottom help clipped. The remaining defects are not intentional behavior or evidence of resolution.
 
 A focused custom overlay repaired input routing in isolation, but Pi 1.0.0's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer the runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. All attempted runtime/helper changes were withdrawn; only characterization tests and documentation were retained.
 
@@ -49,6 +49,20 @@ Public TUI tests with a faithful local custom-dialog adapter reproduced both cas
 
 Two independent read-only reviewers identified the lifecycle hazard; parent probes verified it. An attempted three-line description cap was also reproduced as a regression and removed with the withdrawn patch. A follow-up disposition review found no blocker to deferral. Reviewer assessments were source/log inspections, not independently executed tests.
 
+## Pi 1.0.3 revalidation
+
+Public fullscreen renderer tests confirm that Home/End now move the question without scrolling the transcript. PageUp/PageDown/wheel still move only the transcript. Captured extension writes still enable and disable mouse reporting in both TUI modes, and the simplified 80×24 dock still clips navigation help. Regular-mode interaction and focused-overlay routing remain positive controls; no runtime selector changes were made.
+
+Source inspection of Pi 1.0.3 still shows `showExtensionCustom()` calling topmost `hideOverlay()`. A scratch-only, version-checked invocation of the actual method on synthetic public `TuiAltScreen` state confirmed:
+
+- Normal mounted completion removes the owned overlay, restores editor focus, and disposes once.
+- Completion with transcript search stacked above removes search while leaving the disposed owned overlay mounted.
+- Completion synchronously inside the factory, or after factory return but before installation, removes an unrelated overlay even though the owned one never installs. The raw host control does not dispose the never-installed component.
+
+These are executed actual-method probes, not conclusions drawn from the adapter or the higher version number. They use fake terminal input and isolated synthetic state, not a live session. Live-terminal mouse effects, complete resize/layout acceptance, and the larger remediation remain unverified or deferred.
+
+Working routes and controls belong in `clarify-input.test.ts`. Outstanding positive requirements belong in `clarify-input.diagnostic.ts`; `npm run diagnose:pi-host` exits nonzero while they remain broken. The shared `clarifyUiFixture.ts` adapter still models the observed close path and cannot independently detect a future host correction.
+
 ## Reproduction and revalidation
 
 ### Durable tests
@@ -61,11 +75,12 @@ export TMPDIR="$PI_PERMISSIONS_TEST_SCRATCH_ROOT"
 cd agent/extensions
 node --test clarify/index.test.ts pi-compatibility/clarify-input.test.ts pi-compatibility/ui-mode-guards.test.ts shared/dialogUi.test.ts pi-compatibility/dialog-concurrency.test.ts
 npm run verify
+node --test pi-compatibility/clarify-input.diagnostic.ts
 ```
 
-`pi-compatibility/clarify-input.test.ts` captures the actual clarify component through its registered tool with injected enabled state; it never uses personal clarify configuration as a fixture. Public `TuiAltScreen`/`TuiMainScreen` APIs and fake terminal callbacks exercise input routing. A test-only adapter models custom-dialog installation and completion.
+The contract tests and explicit diagnostics capture the actual clarify component through its registered tool with injected enabled state; they never use personal clarify configuration. `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures and a test-only custom-dialog installation/completion adapter.
 
-These are **known-defect characterizations**, not passing acceptance tests. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support in the unchanged extension. The adapter hard-codes the observed completion contract and will **not automatically detect** an identity-safe change in the host method. Revisit its expectations when changing Pi or implementing the fix.
+Contract tests protect working behavior. Diagnostics assert the remaining **positive acceptance requirements** and intentionally fail on the tested Pi 1.0.3; they do not assert that defects should persist and are not silently skipped or marked TODO. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support in the unchanged extension. The adapter hard-codes the observed completion contract and will **not automatically detect** an identity-safe change in the actual host method. Reconstruct the actual-method probe below after upgrades; promote verified corrections into the normal suite.
 
 ### Reconstruct the actual-host lifecycle probe
 
@@ -99,7 +114,7 @@ Revisit after a host correction demonstrates identity-safe custom-overlay comple
 - Actual available bounds are respected across small/narrow terminals, height-only and width resize, long questions, many choices, selected-description previews, and repeated interactions. Do not arbitrarily hide description detail that fits.
 - Option selection and custom-answer editing still work; RPC uses supported basic dialogs, and JSON/print/TUI guards remain unchanged.
 - Cancellation while queued/displayed, during factory installation, with transcript search or another overlay stacked above/below, and on shutdown/reload leaves no unresolved request, disposed-but-mounted component, stolen unrelated overlay, duplicate disposal, or stale focus.
-- Existing permission/clarify queue and safety regressions remain green. Focused tests, typechecking, and the full gate pass with approved scratch, and a focused independent review challenges the host/lifecycle integration.
+- Existing permission/clarify queue and safety regressions remain green. Focused contract tests, the positive host diagnostics, typechecking, and the full gate pass with approved scratch, and a focused independent review challenges the host/lifecycle integration.
 - Documentation matches actual behavior. Live-terminal checks are performed where practical; skipped checks and reproduction limits are explicitly recorded rather than treated as proof of resolution.
 
 ## Validation history and remaining uncertainty
@@ -108,4 +123,4 @@ In the deferred investigation's final retained state, the focused command above 
 
 The initial test-first acceptance run had 9 failures and 16 passing controls. A provisional implementation later passed 42 focused tests and a 338-test gate, but two additional reviewer-driven regressions exposed the description-cap and stacked-overlay problems. The runtime patch was withdrawn, illustrating why the earlier green gate was insufficient.
 
-Fullscreen scrolling, mouse ownership, and layout remain unresolved. Small-terminal/resize/repeated-interaction acceptance was not fully revalidated for the unchanged selector, and terminal-specific mouse degradation was not live-tested. Historical scratch artifacts are not prerequisites: the tests and reconstruction steps above retain the actionable evidence.
+Fullscreen PageUp/PageDown/wheel scrolling, mouse ownership, and layout remain unresolved on the tested Pi 1.0.3; Home/End improvement alone does not close this record. Small-terminal/resize/repeated-interaction acceptance was not fully revalidated for the unchanged selector, and terminal-specific mouse degradation was not live-tested. Historical scratch artifacts are not prerequisites: the tests and reconstruction steps above retain the actionable evidence.

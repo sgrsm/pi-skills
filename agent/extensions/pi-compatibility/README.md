@@ -6,7 +6,8 @@ Developer/internal compatibility checks for local Pi extensions. This directory 
 
 - Keeps small regression tests for extension behavior that depends on Pi host API details.
 - Protects cross-extension invariants that are easy to break during extension work but are not a single extension feature by themselves.
-- Runs as part of the `agent/extensions` test suite because the files end in `.test.ts`.
+- Runs contract regressions as part of the `agent/extensions` test suite (`*.test.ts`).
+- Keeps positive acceptance checks for unresolved host debt in explicit diagnostics (`*.diagnostic.ts`), outside the normal success gate. Diagnostics execute real checks and fail nonzero while the required behavior is broken; they are not skipped or marked TODO.
 
 ## Current checks
 
@@ -42,7 +43,7 @@ Checks visible, cancel-first Trash approval at representative narrow fullscreen 
 
 ### `clarify-input.test.ts`
 
-**Characterizes** existing fullscreen clarify input and dialog-lifecycle defects; it is not a guarantee. The [host-blocker record](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md) tracks the open blocker. Passing records the defects, not their resolution.
+Protects working fullscreen Home/End routing, focused-overlay routing controls, and regular-mode interaction. On the tested Pi 1.0.3, PageUp/PageDown/wheel routing, mouse ownership, help clipping, and overlay completion remain open under [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks are in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction.
 
 ### `dialog-concurrency.test.ts`
 
@@ -58,7 +59,7 @@ Protects optional-tool availability and preservation of restored tools across st
 
 ### `sdk-resume.test.ts`
 
-Checks SDK/CLI resume against the local tool-availability fix and **characterizes** the separate open [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md): resumed SDK/CLI sessions omit selected late tool declarations even without local extensions. Passing does not mean host restoration works.
+Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration remains broken on the tested Pi 1.0.3 under [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md); `sdk-resume.diagnostic.ts` checks the required positive restoration behavior. Passing the contract controls does not mean resume restoration works.
 
 ### `short-paths-loader.test.ts`
 
@@ -106,11 +107,19 @@ Run from `agent/extensions`:
 node --test pi-compatibility/*.test.ts
 ```
 
-Run the full extension test suite:
+Run the full extension contract test suite:
 
 ```bash
 npm test
 ```
+
+Run outstanding host acceptance checks explicitly, particularly after a Pi upgrade or before closing the owning TDRs:
+
+```bash
+npm run diagnose:pi-host
+```
+
+This command intentionally exits nonzero on the tested Pi 1.0.3 because TDR-0003 and TDR-0004 remain unresolved. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
 
 Optional validation before broader extension work:
 

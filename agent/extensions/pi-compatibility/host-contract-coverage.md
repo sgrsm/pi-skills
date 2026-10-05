@@ -8,7 +8,7 @@ Related integration rules are in [extension maintenance](../maintenance.md): [sh
 
 - Prefer public Pi exports (`discoverAndLoadExtensions`, `ExtensionRunner`, `AgentSession`, `createAgentSession`, `SessionManager`, `ExtensionSelectorComponent`, pi-tui screens) over copied host logic. Do not commit private host imports or absolute installed-host paths.
 - Tests that load extensions or create files need the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Set both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root; several tests assert that they match. Fixtures use isolated agent configuration and in-memory or disposable sessions, restore environment variables, and shut down and invalidate runtimes. They never use personal settings, session files, credentials, live providers, or live MCP servers.
-- **Guarantees** are behavior the local extensions must keep. **Characterizations** record an existing host or local defect and pass while it persists. A passing characterization is not evidence that the defect is fixed or intended; revisit it whenever the related code or Pi changes.
+- **Contract regressions** protect working behavior and local safety invariants in `*.test.ts`. **Outstanding host acceptance checks** live in `*.diagnostic.ts` and run explicitly through `npm run diagnose:pi-host`; they assert desired behavior and fail nonzero while tracked debt remains. They are neither skipped nor TODOs. A green contract gate is not evidence that host debt is fixed. Revalidate diagnostics and any copied host adapters on upgrades, and promote verified fixes into the normal suite.
 
 ## `trash-confirmation.test.ts`
 
@@ -19,17 +19,17 @@ Protects safe, visible Trash approval at fullscreen sizes.
 - Both choices and the navigation help must remain visible at 80×24, 40×24, and 30×24, with a large preview and long paths.
 - Initial Enter selects Cancel, Escape cancels exactly once without a selection, and approval requires navigating to the affirmative choice.
 
-## `clarify-input.test.ts` (characterization)
+## `clarify-input.test.ts` and `clarify-input.diagnostic.ts`
 
-Records existing fullscreen input and dialog-lifecycle defects; see the [host-blocker record](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Clarify's fullscreen blocker remains **open**: there is no local runtime fix and no host patch.
+Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). On the tested Pi 1.0.3, fullscreen Home/End routing works, but the remaining input/layout/mouse defects and host overlay-completion blocker are still **open**. No local runtime fix or installed-host patch is included.
 
-- Uses public `TuiAltScreen`/`TuiMainScreen` with fake terminal input and buffers, a simplified fixed-dock composition, and a local model of `custom()` installation and completion.
-- Reproduces fullscreen PageUp/PageDown/Home/End/wheel interception by the transcript, bottom-help clipping, and clarify's mouse-mode writes. Regular-mode keyboard selection/scrolling and raw-SGR wheel handling are controls. Fullscreen captures also confirm that host tracking was enabled before clarify's own writes.
-- The overlay wheel control covers the host's raw-SGR fallback only, not normalized mouse support in the unchanged selector.
-- A **test-only** custom-overlay adapter shows that focused overlay routing restores input. It then reproduces the cancellation blockers: a stacked transcript search is popped instead of the owned dialog, and cancellation before installation can pop an unrelated overlay.
-- The record describes the supplementary version-checked probe of the host close path and how to reconstruct it.
+- `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures, the simplified fixed-dock composition, and the test-only `custom()` adapter.
+- Normal contract tests require Home/End to scroll the question without moving the transcript; they also protect regular-mode interaction and focused-overlay input controls.
+- Diagnostics require PageUp/PageDown/wheel to scroll the question, help to remain visible, and the extension to leave mouse modes alone. These positive requirements fail on Pi 1.0.3; no test asserts that the bugs should persist.
+- Adapter lifecycle diagnostics require owned-dialog removal without stealing stacked search or an unrelated overlay on pre-install cancellation. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support.
+- A separate scratch-only, version-checked invocation of the actual Pi 1.0.3 `showExtensionCustom()` method confirmed the stacked-search and pre-install failures, including completion inside the factory; normal mounted completion was a positive control. The TDR retains reconstruction steps, not private committed imports.
 
-The local custom-dialog model cannot detect an identity-safe completion change in Pi. After a Pi upgrade or any clarify fullscreen change, compare it with the host `showExtensionCustom()` close path and reconstruct the optional probe.
+The adapter hard-codes completion behavior and cannot independently detect an identity-safe host correction. After an upgrade, inspect the actual close path and reconstruct the real-method probe before changing adapter expectations or declaring the lifecycle fixed. No live-terminal validation is claimed.
 
 ## `dialog-concurrency.test.ts`
 
@@ -67,12 +67,17 @@ Protects [built-in replacement configuration](../short-paths/maintenance.md#buil
 - Scratch PNG/text reads cover false/true/default settings, hiding, project overrides, immediate changes/reload, cwd, offsets/limits, cancellation, model context and complete result parity. Direct definitions prevent host post-result normalization from masking resize drift.
 - Codemode is selection-only; SDK options exercise shared CLI selection, not a wrapper-enabled CLI subprocess. No live terminal/provider/MCP or positive SDK/CLI resume-restoration claim.
 
-## `sdk-resume.test.ts` (characterization plus controls)
+## `sdk-resume.test.ts` (contract controls)
 
-Exercises SDK/CLI resume with the local startup fix, and records the separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). On the tested Pi 1.0.0, SDK and CLI session creation omit the selected late tool declarations even without local extensions. This stays broken independently of the local fix; no host patch or local workaround exists.
+Protects working controls without asserting omission as desired behavior. The separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) was reproduced on Pi 1.0.3 with public SDK construction and the actual CLI, both with and without local extensions. No host patch or local workaround exists.
 
-- A no-local-extension baseline reproduces the omission after reopening a real disposable JSONL transcript with `SessionManager.open()`. Every local off-mode/relay combination keeps the same baseline and has correct local availability.
-- The real package-declared CLI binary runs with `--session` in offline RPC mode, comparing baseline and local-all-off startup. Children get isolated agent configuration and HOME, an allowlisted environment without inherited provider keys, bounded output and timeouts, and orderly stdin shutdown. No prompt or provider request is sent.
-- Synthetic direct/deferred/codemode tools register inactive, so default activation cannot mask missing restoration. Registered names/exposures and indirect callability are checked. A positive `/tree` control shows that the same persisted fixture is restorable through that path; it does not show that SDK/CLI creation works. The direct case does not imply that ordinary auto-active direct MCP tools all fail.
-- The test asserts the Pi version. After an upgrade, re-evaluate the expectations against the record's positive restoration criteria instead of preserving the omission or skipping the check.
-- Parity of local off modes with the baseline cannot prove pending-name preservation where the host never seeded names; `tool-activation.test.ts` covers that separately.
+- `resumeFixture.ts` shares isolated offline fixtures between contract tests and diagnostics. It reopens a real disposable JSONL transcript with `SessionManager.open()` and validates transcript identity and registered late-tool names/exposures.
+- Normal tests protect positive `/tree` restoration, indirect callability, every local off-mode/relay combination's availability and parity with the host baseline, and actual CLI transcript/parity controls. Parity expectations use each baseline phase rather than freezing its omitted loadout.
+- The CLI runs `--session` in offline RPC mode with isolated configuration/HOME, an allowlisted credential-free environment, bounded output/timeouts, and orderly stdin shutdown. No prompt/provider request or live MCP connection is used.
+- Synthetic direct/deferred/codemode tools register inactive, so activation defaults cannot mask restoration. The direct case does not imply that ordinary auto-active direct MCP tools all fail.
+- There is no exact host-version gate in these tests. Diagnostics report the version and test behavior instead.
+- Local parity cannot prove pending-name preservation when the host never seeds those names; `tool-activation.test.ts` covers the separate positive local preservation contract.
+
+## `sdk-resume.diagnostic.ts`
+
+Requires the selected transcript declarations to restore through late registration in ordinary SDK construction and actual CLI `--session`, each with and without local extensions. These positive acceptance checks fail on the tested Pi 1.0.3 and print selected versus active loadouts. They are excluded from normal contract discovery only by the explicit `.diagnostic.ts` convention, not skips or weakened assertions. Run `npm run diagnose:pi-host` after upgrades; a verified fix should be promoted into the normal suite. TDR closure additionally requires the selection-precedence and safety checks listed in the owning record.

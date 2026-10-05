@@ -115,7 +115,7 @@ Interactive selector in TUI mode:
 - in regular mode, long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or wheel; keyboard scrolling is recommended
 - choosing `Custom instructions` opens the cancellable in-Pi editor
 
-**Known Pi 1.0 fullscreen limitation (open):** despite the on-screen help, question-scrolling keys and wheel input go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question, or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
+**Known Pi 1.0.3 fullscreen limitation (open):** Home/End scroll the question in the tested cases, but despite the on-screen help, PageUp/PageDown and wheel input still go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question, or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
 
 The selector also turns terminal mouse reporting on and off in both modes; in fullscreen this conflicts with Pi's own mouse handling. The conflict is confirmed from captured output and source, but its effect in specific terminals has not been tested live. A fix remains deferred pending a Pi host correction; maintainer details are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md).
 
