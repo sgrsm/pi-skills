@@ -121,9 +121,16 @@ export default function (pi: ExtensionAPI, options: PermissionsExtensionOptions 
 		pendingBranchCreations.clear();
 	});
 
-	pi.on("before_agent_start", (event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		const workspace = tempWorkspace ?? createTempWorkspaceForContext(ctx, options.systemTempDir);
 		tempWorkspace = workspace;
+		// Remove any previous hint first: failed initialization must not advertise
+		// an unusable or replaced workspace. Pi reports the handler error.
+		delete event.systemPromptOptions.sections.permissions_scratch;
+		const signal = dialogs.scopeSignal(ctx.signal);
+		signal.throwIfAborted();
+		await workspace.ensureCreated();
+		signal.throwIfAborted();
 		event.systemPromptOptions.sections.permissions_scratch = formatTempWorkspacePrompt(workspace);
 	});
 
@@ -386,17 +393,22 @@ function readSessionId(ctx: SessionTempContext): string | undefined {
 }
 
 async function tryAutoApproveTempWorkspaceRequest(request: PermissionRequest, workspace: PiTempWorkspace): Promise<boolean> {
-	if (!request.targets.every((target) => isPathInsideWorkspaceChild(target.path, workspace))) return false;
+	const targetsInside = async () => (await Promise.all(request.targets.map((target) =>
+		isPathInsideWorkspaceChild(target.filesystemPath ?? target.path, workspace),
+	))).every(Boolean);
 	try {
+		if (!(await targetsInside())) return false;
 		await workspace.ensureCreated();
-		return true;
+		// Recheck after directory creation/validation rather than caching a path
+		// resolution that may have preceded a filesystem change.
+		return await targetsInside();
 	} catch {
 		return false;
 	}
 }
 
 function formatTempWorkspacePrompt(workspace: PiTempWorkspace): string {
-	return `Use scratch temp dir instead of /tmp: ${workspace.sessionDir}`;
+	return `Session scratch (already created): ${workspace.sessionDir}\nWrite files or create subdirectories below it instead of /tmp. Pi manages the root; do not mkdir, chmod, rename, or delete it. Use explicit destination filenames.`;
 }
 
 function cancelledPermission(): ToolCallBlock {

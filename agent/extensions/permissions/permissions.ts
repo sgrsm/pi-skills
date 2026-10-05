@@ -1,11 +1,13 @@
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, normalize, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from "node:path";
 
 export type FilePermissionOperation = "write" | "edit" | "delete" | "bash-mutate";
 
 export interface PermissionTarget {
 	operation: FilePermissionOperation;
 	path: string;
+	/** Unnormalized absolute path when lexical resolution erased traversal/components. */
+	filesystemPath?: string;
 	scopeDir: string;
 	reason: string;
 }
@@ -92,7 +94,7 @@ export function isPathInsideOrEqual(candidatePath: string, rootPath: string): bo
 	const candidate = normalizePath(candidatePath);
 	const root = normalizePath(rootPath);
 	const rel = relative(root, candidate);
-	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 export function buildFileMutationRequest(
@@ -110,6 +112,7 @@ export function buildFileMutationRequest(
 			{
 				operation,
 				path: targetPath,
+				...filesystemPathMetadata(rawPath, cwd, targetPath),
 				scopeDir: normalizePath(dirname(targetPath)),
 				reason: `${operation} target`,
 			},
@@ -238,6 +241,16 @@ function resolvesToNullDevice(rawPath: string | undefined, cwd: string): boolean
 }
 
 function resolvePathArgument(rawPath: string | undefined, cwd: string): string | undefined {
+	const value = filesystemPathArgument(rawPath, cwd);
+	return value ? normalizePath(resolve(value)) : undefined;
+}
+
+function filesystemPathMetadata(rawPath: string, cwd: string, normalizedPath: string): Pick<PermissionTarget, "filesystemPath"> {
+	const path = filesystemPathArgument(rawPath, cwd);
+	return path && path !== normalizedPath ? { filesystemPath: path } : {};
+}
+
+function filesystemPathArgument(rawPath: string | undefined, cwd: string): string | undefined {
 	if (!rawPath) return undefined;
 	let value = stripLeadingAt(rawPath.trim());
 	if (!value || value === "-") return undefined;
@@ -246,22 +259,22 @@ function resolvePathArgument(rawPath: string | undefined, cwd: string): string |
 	if (value === "~") {
 		value = homedir();
 	} else if (value.startsWith("~/")) {
-		value = resolve(homedir(), value.slice(2));
+		value = `${homedir()}/${value.slice(2)}`;
 	} else if (value === "$HOME" || value === "${HOME}") {
 		value = homedir();
 	} else if (value.startsWith("$HOME/")) {
-		value = resolve(homedir(), value.slice("$HOME/".length));
+		value = `${homedir()}/${value.slice("$HOME/".length)}`;
 	} else if (value.startsWith("${HOME}/")) {
-		value = resolve(homedir(), value.slice("${HOME}/".length));
+		value = `${homedir()}/${value.slice("${HOME}/".length)}`;
 	} else if (value === "$PWD" || value === "${PWD}") {
 		value = cwd;
 	} else if (value.startsWith("$PWD/")) {
-		value = resolve(cwd, value.slice("$PWD/".length));
+		value = `${cwd}/${value.slice("$PWD/".length)}`;
 	} else if (value.startsWith("${PWD}/")) {
-		value = resolve(cwd, value.slice("${PWD}/".length));
+		value = `${cwd}/${value.slice("${PWD}/".length)}`;
 	}
 
-	return normalizePath(isAbsolute(value) ? resolve(value) : resolve(cwd, value));
+	return isAbsolute(value) ? value : `${cwd}/${value}`;
 }
 
 function looksLikePathArgument(rawArg: string, includePlainRelative = false): boolean {
@@ -302,7 +315,7 @@ function targetsFromArgs(
 		const path = resolvePathArgument(arg, resolveCwd);
 		if (!path || isPathInsideOrEqual(path, guardCwd)) continue;
 		const scopeDir = scopeKind === "parent" ? normalizePath(dirname(path)) : path;
-		targets.push({ operation, path, scopeDir, reason });
+		targets.push({ operation, path, ...filesystemPathMetadata(arg, resolveCwd, path), scopeDir, reason });
 	}
 	return targets;
 }
@@ -353,7 +366,7 @@ function dedupeTargets(targets: PermissionTarget[]): PermissionTarget[] {
 	const seen = new Set<string>();
 	const unique: PermissionTarget[] = [];
 	for (const target of targets) {
-		const key = `${target.operation}\0${target.path}\0${target.scopeDir}`;
+		const key = `${target.operation}\0${target.path}\0${target.scopeDir}\0${target.filesystemPath ?? target.path}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		unique.push(target);
@@ -383,7 +396,7 @@ function getCopyDestinations(args: string[]): string[] {
 
 function resolveCdTarget(args: string[], currentCwd: string): string | undefined {
 	const target = getNonOptionArgs(args)[0] ?? "~";
-	return resolvePathArgument(target, currentCwd);
+	return filesystemPathArgument(target, currentCwd);
 }
 
 function hasInPlaceOption(args: string[]): boolean {

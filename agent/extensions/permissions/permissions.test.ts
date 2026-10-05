@@ -16,6 +16,7 @@ function targetSummary(request: NonNullable<ReturnType<typeof analyzeBashMutatio
 test("path containment treats nested paths as inside without prefix false positives", () => {
 	assert.equal(isPathInsideOrEqual("/repo/project", "/repo/project"), true);
 	assert.equal(isPathInsideOrEqual("/repo/project/src/file.ts", "/repo/project"), true);
+	assert.equal(isPathInsideOrEqual("/repo/project/..cache/file.ts", "/repo/project"), true);
 	assert.equal(isPathInsideOrEqual("/repo/project-other/file.ts", "/repo/project"), false);
 	assert.equal(isPathInsideOrEqual("/repo/project/../other/file.ts", "/repo/project"), false);
 });
@@ -29,6 +30,15 @@ test("file mutation guard only requests permission outside cwd and scopes to par
 	assert.deepEqual(targetSummary(request), [
 		{ operation: "edit", path: "/repo/shared/config.json", scopeDir: "/repo/shared" },
 	]);
+});
+
+test("bash preserves unnormalized filesystem targets for scratch checks without deduplicating traversal", () => {
+	const request = analyzeBashMutation("touch /tmp/scratch/out.txt /tmp/scratch/link/../out.txt", cwd);
+	assert.ok(request);
+	assert.equal(request.targets.length, 2);
+	assert.equal(request.targets[0].path, "/tmp/scratch/out.txt");
+	assert.equal(request.targets[1].path, "/tmp/scratch/out.txt");
+	assert.equal(request.targets[1].filesystemPath, "/tmp/scratch/link/../out.txt");
 });
 
 test("session grants apply only to matching operation and requested directory subtree", () => {

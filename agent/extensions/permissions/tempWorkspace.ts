@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir } from "node:fs/promises";
+import { chmod, lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, normalize, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 
 export interface PiTempWorkspace {
 	baseDir: string;
@@ -30,8 +30,24 @@ export function createPiTempWorkspace(sessionId: string | undefined, options: Pi
 	};
 }
 
-export function isPathInsideWorkspaceChild(pathValue: string, workspace: Pick<PiTempWorkspace, "sessionDir">): boolean {
-	return isPathStrictlyInside(pathValue, workspace.sessionDir);
+export async function isPathInsideWorkspaceChild(pathValue: string, workspace: Pick<PiTempWorkspace, "sessionDir">): Promise<boolean> {
+	// Do not erase traversal before resolving symlinks. Parent traversal is
+	// deliberately ineligible for scratch auto-approval, unlike names such as ..cache.
+	const components = pathValue.split(process.platform === "win32" ? /[\\/]/ : /\//);
+	if (!isAbsolute(pathValue) || components.includes("..")) return false;
+	try {
+		const [candidate, root, parent] = await Promise.all([
+			canonicalizeExistingOrNearestParent(pathValue),
+			canonicalizeExistingOrNearestParent(workspace.sessionDir),
+			canonicalizeExistingOrNearestParent(dirname(pathValue)),
+		]);
+		// Deletion/rename/replace can mutate the symlink entry itself, whereas
+		// write/edit may follow it. Both locations must stay below scratch.
+		const entry = join(parent, basename(pathValue));
+		return isPathStrictlyInside(candidate, root) && isPathStrictlyInside(entry, root);
+	} catch {
+		return false;
+	}
 }
 
 function sessionChildName(sessionId: string | undefined, fallbackSessionId: string | undefined): string {
@@ -53,7 +69,31 @@ function isPathStrictlyInside(candidatePath: string, rootPath: string): boolean 
 	const candidate = normalizePath(candidatePath);
 	const root = normalizePath(rootPath);
 	const rel = relative(root, candidate);
-	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+	return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+async function canonicalizeExistingOrNearestParent(pathValue: string): Promise<string> {
+	let cursor = normalizePath(pathValue);
+	const missingSuffix: string[] = [];
+	while (true) {
+		try {
+			await lstat(cursor);
+		} catch (error) {
+			if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+			const parent = dirname(cursor);
+			if (parent === cursor) throw error;
+			missingSuffix.push(basename(cursor));
+			cursor = parent;
+			continue;
+		}
+		// A dangling symlink is not a missing directory. Resolve only after lstat
+		// succeeds, and never turn a realpath failure into an unresolved suffix.
+		const canonical = await realpath(cursor);
+		if (missingSuffix.length > 0 && !(await stat(canonical)).isDirectory()) {
+			throw new Error(`Scratch target ancestor is not a directory: ${cursor}`);
+		}
+		return normalizePath(join(canonical, ...missingSuffix.reverse()));
+	}
 }
 
 async function ensurePrivateDirectory(dir: string): Promise<void> {

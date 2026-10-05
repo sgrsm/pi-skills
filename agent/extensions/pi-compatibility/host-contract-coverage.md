@@ -46,7 +46,7 @@ Subagent approval/escalation, handoff, and Trash confirmation are not enrolled i
 Protects additive structured prompt contributions. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions) for the contract.
 
 - Uses the public loader and `ExtensionRunner`, an in-memory `SessionManager`, a fake UI/theme, and synthetic late contributors that stand in for MCP/other extensions. The last handler reads `event.systemPrompt` through the real host renderer, not a copied prompt builder.
-- Asserts that local handlers leave `forceSystemPrompt` unset; their owned sections keep guidance, unrelated sections, and late contributions without duplicates.
+- Asserts that local handlers leave `forceSystemPrompt` unset; their owned sections keep guidance, unrelated sections, and late contributions without duplicates. Scratch must exist before it is advertised; preparation failures are reported through the host and remove stale scratch guidance. Test scratch creation stays inside a disposable fixture through a scoped, restored test `TMPDIR`.
 - Covers repeated/reused options, no-UI mode, inactive tools and saved off modes, manual/ask/auto policies, child-only escalation, session/write approvals, inherited read-only and broad approval, depth caps, new session ids on one runtime, fresh-loader reload with the same session id, and deliberate whole-prompt overrides before and after the local handlers.
 - Does not measure provider cache behavior and uses no MCP connections or model requests.
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createEventBus, type ExtensionUIContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -88,7 +89,7 @@ test("session permission grants update the visible granted count", async () => {
 	assert.equal(ctx.statuses.get(FOOTER_STATUS_KEYS.permissions), "<dim>permissions: </dim><syntaxComment><bold>1</bold></syntaxComment><dim> (fs)</dim><dim> •</dim>");
 });
 
-test("before_agent_start adds only a one-line scratch temp dir hint without creating it", async () => {
+test("before_agent_start prepares private scratch before advertising it and preserves other sections", async () => {
 	await withTestScratchFixture(async (fixture) => {
 		const harness = createPermissionsHarness(fixture.sessionTemp);
 		const ctx = createContext("Deny", "permissions-prompt-test", fixture.project);
@@ -101,13 +102,116 @@ test("before_agent_start adds only a one-line scratch temp dir hint without crea
 		assert.equal(result, undefined);
 		assert.deepEqual(systemPromptOptions.sections, {
 			unrelated: "Keep me",
-			permissions_scratch: `Use scratch temp dir instead of /tmp: ${workspace.sessionDir}`,
+			permissions_scratch: `Session scratch (already created): ${workspace.sessionDir}\nWrite files or create subdirectories below it instead of /tmp. Pi manages the root; do not mkdir, chmod, rename, or delete it. Use explicit destination filenames.`,
 		});
-		await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
+		const created = await stat(workspace.sessionDir);
+		assert.equal(created.isDirectory(), true);
+		if (process.platform !== "win32") assert.equal(created.mode & 0o777, 0o700);
+		assert.equal(ctx.selectCalls, 0);
+
+		await harness.emit("before_agent_start", { systemPromptOptions }, ctx);
+		assert.equal(systemPromptOptions.sections.permissions_scratch.split(workspace.sessionDir).length - 1, 1);
+		assert.equal(ctx.selectCalls, 0);
 	});
 });
 
-test("mutations below the session temp workspace are auto-approved and create it on demand", async () => {
+test("failed scratch initialization removes a stale hint without requesting approval", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-unsafe-temp-test", fixture.project);
+		await fixture.symlink(fixture.protectedDir, join(fixture.sessionTemp, "pi"));
+		await harness.emit("session_start", {}, ctx);
+		const systemPromptOptions = { sections: { unrelated: "Keep me", permissions_scratch: "stale scratch path" } };
+
+		await assert.rejects(harness.emit("before_agent_start", { systemPromptOptions }, ctx), /Refusing to use Pi temp workspace directory/);
+		assert.deepEqual(systemPromptOptions.sections, { unrelated: "Keep me" });
+		assert.equal(ctx.selectCalls, 0);
+	});
+});
+
+test("cancelled agent start clears a stale scratch hint without creating the workspace", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-cancelled-temp-test", fixture.project);
+		const workspace = createPiTempWorkspace("permissions-cancelled-temp-test", { systemTempDir: fixture.sessionTemp });
+		await harness.emit("session_start", {}, ctx);
+		const systemPromptOptions = { sections: { permissions_scratch: "stale scratch path" } };
+		await assert.rejects(harness.emit("before_agent_start", { systemPromptOptions }, {
+			...ctx, signal: AbortSignal.abort(),
+		}), { name: "AbortError" });
+		assert.equal(systemPromptOptions.sections.permissions_scratch, undefined);
+		await assert.rejects(stat(workspace.sessionDir), { code: "ENOENT" });
+		assert.equal(ctx.selectCalls, 0);
+	});
+});
+
+test("shutdown during scratch preparation cannot advertise a late hint", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-shutdown-temp-test", fixture.project);
+		await harness.emit("session_start", {}, ctx);
+		const systemPromptOptions = { sections: { permissions_scratch: "stale scratch path" } };
+		const starting = harness.emit("before_agent_start", { systemPromptOptions }, ctx);
+		const cancelled = assert.rejects(starting, { name: "AbortError" });
+		await harness.emit("session_shutdown", {}, ctx);
+		await cancelled;
+		assert.equal(systemPromptOptions.sections.permissions_scratch, undefined);
+		assert.equal(ctx.selectCalls, 0);
+	});
+});
+
+test("scratch is revalidated before subsequent turns", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-revalidate-temp-test", fixture.project);
+		const workspace = createPiTempWorkspace("permissions-revalidate-temp-test", { systemTempDir: fixture.sessionTemp });
+		await harness.emit("session_start", {}, ctx);
+		const systemPromptOptions = { sections: {} as Record<string, string> };
+		await harness.emit("before_agent_start", { systemPromptOptions }, ctx);
+		await fixture.rename(workspace.sessionDir, join(workspace.baseDir, "displaced-session"));
+		await fixture.symlink(fixture.protectedDir, workspace.sessionDir);
+
+		await assert.rejects(harness.emit("before_agent_start", { systemPromptOptions }, ctx), /Refusing to use Pi temp workspace directory/);
+		assert.equal(systemPromptOptions.sections.permissions_scratch, undefined);
+		assert.equal(ctx.selectCalls, 0);
+	});
+});
+
+test("scratch aliases and ..-prefixed children are auto-approved, but symlink escapes are not", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-canonical-temp-test", fixture.project);
+		const workspace = createPiTempWorkspace("permissions-canonical-temp-test", { systemTempDir: fixture.sessionTemp });
+		await harness.emit("session_start", {}, ctx);
+		await harness.emit("before_agent_start", { systemPromptOptions: { sections: {} } }, ctx);
+		const alias = join(fixture.root, "temp-alias");
+		await fixture.symlink(fixture.sessionTemp, alias);
+		const aliasedWorkspace = createPiTempWorkspace("permissions-canonical-temp-test", { systemTempDir: alias });
+
+		for (const event of [
+			{ toolName: "write", input: { path: `${aliasedWorkspace.sessionDir}/missing/out.txt` } },
+			{ toolName: "edit", input: { path: `${await realpath(workspace.sessionDir)}/out.txt` } },
+			{ toolName: "bash", input: { command: `mkdir -p ${workspace.sessionDir}/..cache` } },
+			{ toolName: "bash", input: { command: `printf hi > ${aliasedWorkspace.sessionDir}/out.txt` } },
+		]) assert.equal(await harness.emitFirst("tool_call", event, ctx), undefined);
+		assert.equal(ctx.selectCalls, 0);
+
+		await fixture.symlink(fixture.protectedDir, join(workspace.sessionDir, "escape"));
+		const scratchFile = join(workspace.sessionDir, "file.txt");
+		await fixture.writeFile(scratchFile, "scratch contents");
+		const outsideLink = join(fixture.protectedDir, "link-to-scratch-file");
+		await fixture.symlink(scratchFile, outsideLink);
+		for (const event of [
+			{ toolName: "write", input: { path: `${workspace.sessionDir}/escape/out.txt` } },
+			{ toolName: "bash", input: { command: `touch ${workspace.sessionDir}/escape/missing/out.txt` } },
+			{ toolName: "bash", input: { command: `touch ${workspace.sessionDir}/out.txt ${workspace.sessionDir}/escape/../out.txt` } },
+			{ toolName: "bash", input: { command: `rm ${outsideLink}` } },
+		]) assert.equal((await harness.emitFirst("tool_call", event, ctx) as any)?.block, true);
+		assert.equal(ctx.selectCalls, 4);
+	});
+});
+
+test("mutations below the session temp workspace are auto-approved even without an agent-start event", async () => {
 	await withTestScratchFixture(async (fixture) => {
 		const harness = createPermissionsHarness(fixture.sessionTemp);
 		const ctx = createContext("Deny", "permissions-auto-temp-test", fixture.project);
@@ -135,7 +239,14 @@ test("mutating the session temp workspace root itself still prompts", async () =
 		const result = await harness.emitFirst("tool_call", { toolName: "bash", input: { command: `rm -rf ${workspace.sessionDir}` } }, ctx);
 
 		assert.deepEqual(result, { block: true, reason: `Blocked by user. Target scope(s): delete ${workspace.sessionDir}` });
-		assert.equal(ctx.selectCalls, 1);
+		for (const command of [
+			`mkdir -p ${workspace.sessionDir}`,
+			`chmod 700 ${workspace.sessionDir}`,
+			`mv ${workspace.sessionDir} ${workspace.sessionDir}/renamed`,
+			`cp README.md ${workspace.sessionDir}`,
+			`touch ${workspace.baseDir}/session-other/out.txt`,
+		]) assert.equal((await harness.emitFirst("tool_call", { toolName: "bash", input: { command } }, ctx) as any)?.block, true);
+		assert.equal(ctx.selectCalls, 6);
 	});
 });
 

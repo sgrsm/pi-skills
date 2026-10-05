@@ -1,87 +1,70 @@
 # Permissions extension
 
-Adds interactive guards around selected mutating actions. It is enabled by default for each Pi session and stores ordinary approvals only for the current session. A separate Priority 0 catastrophic-deletion guard is always active and non-grantable on the supported Bash surfaces described below.
+Provides ready-to-use session scratch and asks before selected mutations outside your working directory, protected Git operations, and dependency acquisition. It is enabled by default for each Pi session; ordinary approvals last only for that session. Catastrophic-deletion protection is always active.
 
-## Priority 0 catastrophic-deletion guard
+## Enable and use
 
-The extension applies an always-on, non-grantable catastrophic-deletion check to its owned `bash` tool (both model-issued and nested calls) and TUI `!`/`!!` commands, including a final check before local Bash execution. Priority 0 covers these supported Bash surfaces, not every tool capable of mutation. Recognized hard denials cannot be bypassed with ordinary approvals, session grants, scratch auto-approval, no-UI mode, or `/permissions off`.
+Pi loads the extension from its extensions directory. No additional settings or flags are required. Use `/permissions` to inspect approvals, or `/permissions on` and `/permissions off` to control ordinary prompts for the current session. Turning ordinary prompts off does **not** disable catastrophic-deletion protection.
 
-Protected canonical targets are:
+## Ready-to-use scratch
 
-- filesystem root
-- HOME
-- the command `cwd`
-- every ancestor of that `cwd`
+Pi is given a private, session-specific directory under your system temp location. The directory is already prepared when Pi receives its path: **no setup approval is needed**. Ask Pi to put temporary scripts, downloads, logs, and other disposable files there instead of using `/tmp`.
 
-The bounded recognizer covers common visible direct deletion, traversal deletion, ordinary command composition, common wrappers, literal nested shell payloads, and visible indirect deletion. It hard-denies exact protected roots and visible destructive operations whose dynamic, malformed, or unsupported targets cannot be classified safely. Concrete noncritical cleanup, including ordinary nonexistent targets, continues through the normal permission policy.
+For example:
 
-The recognizer intentionally does not emulate complete Bash semantics or infer hidden effects inside scripts, interpreters, or executables. Commands without visible deletion evidence are not blocked merely because unusual syntax could theoretically conceal behavior. Denials include stable `P0_*` diagnostics and actionable guidance. This is a practical accident-prevention classifier, not a shell parser or arbitrary-code containment boundary.
+> Put the temporary script and its output in the session scratch directory supplied by Pi. Create a work subdirectory if needed, and use explicit destination filenames.
 
-### Scope, trust boundary, and limitations
+In the examples below, replace `<scratch>` with the path supplied by Pi:
 
-Permissions classifies supported `bash`, `write`, and `edit` calls; it is not a general approval layer for arbitrary custom or MCP operations, including those invoked through `codemode`. Those operations still pass through Pi's tool-event pipeline, but receiving an event does not mean this extension recognizes or guards the operation's effects. A custom/MCP tool that mutates files, remote data, or other resources without using a supported built-in call is outside this classification.
+```bash
+mkdir -p "<scratch>/work"
+cp report.txt "<scratch>/work/report.txt"
+printf 'hello\n' > "<scratch>/out.txt"
+```
 
-Nested built-in `bash`, `write`, and `edit` calls made through Pi's nested-tool API, including from `codemode`, traverse the same existing permission guards as direct calls. They retain the ordinary path, Git, and dependency rules where applicable, and nested `bash` retains Priority 0. Using `codemode` neither bypasses these guards nor extends them to arbitrary custom/MCP behavior.
+Recognized file mutations below scratch do not need an ordinary file-permission prompt. Equivalent macOS `/var/...` and `/private/var/...` paths are supported. Scratch auto-approval does not add a session grant or increase the footer count.
 
-Tool annotations such as `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` are unverified declarations by tool authors or MCP servers, not authorization or containment guarantees. This extension does not use annotations to approve calls, bypass concrete guards, or provide generic custom/MCP approval. A read-only hint is not proof that an operation is safe.
+### Scratch actions that still prompt
 
-The guard assumes a trusted Pi host, ordinary local process environment, executable lookup, and global/user extensions. It is not designed to contain deliberate evasion, hostile local state, hidden behavior in arbitrary code, malicious extensions, or filesystem races. Users who need hostile-code containment should run Pi in a suitable container, remote environment, or VM.
+The extension manages the scratch root. Do not ask Pi to create, change permissions on, rename, or delete that root. Other sessions' scratch directories and other temp locations remain guarded.
 
-Ordinary path permission classification is best-effort and may be conservative or incomplete for nonstandard path forms and symlink-heavy layouts. Prefer explicit conventional paths, and avoid using symlinks as mutation targets or within the session scratch workspace when relying on automatic classification.
+| Action | What to expect |
+| --- | --- |
+| Write `<scratch>/out.txt` or create `<scratch>/work` | No ordinary file-permission prompt |
+| `mkdir -p "<scratch>"` or `chmod 700 "<scratch>"` | Root-level mutation still requires approval; setup is unnecessary |
+| `cp report.txt "<scratch>"` | The root is the destination, so it still requires approval; use `<scratch>/report.txt` instead |
+| Delete or rename `<scratch>` | Still guarded |
+| Mutate a different session's scratch or another temp path | Still guarded |
+| Install dependencies or perform a protected Git operation in scratch | Separate dependency or Git approval may still be needed |
 
-The permissions-owned Bash backend uses Pi's standard local operations. Some configured custom-shell behavior cannot be forwarded through the extension API; TUI command prefixes are still included in the final catastrophic check. These compatibility constraints are not security controls.
+Use straightforward paths without parent traversal (`..`). Names such as `..cache` are ordinary child names, but paths with `..`, broken symlinks, or symlinks that lead outside scratch do not qualify for scratch auto-approval. If one command includes both eligible scratch targets and guarded targets, the command can still prompt.
 
-## Safe test scratch setup
+`TMPDIR` is **not changed**. Programs that choose their own default temp location are not automatically redirected to session scratch.
 
-Filesystem-mutating tests require `PI_PERMISSIONS_TEST_SCRATCH_ROOT` with no fallback. The configured directory must already exist as a real, non-symlink, current-user-owned, non-group/world-writable directory that neither equals, contains, nor is contained by the actual HOME, repository, or process cwd. Filesystem `/` is rejected exactly without causing every descendant scratch directory to be rejected. The approved directory must contain a real current-user-owned `.step1-test-root-ready` file created by the approving caller.
-
-Tests create private `permissions-test-*` descendants, pin the approved and generated roots by device/inode, and mutate only strict canonical descendants whose real parent directory already exists. Every mutation helper revalidates both roots' exact identity, ownership, safe/private mode, non-symlink status, and exact canonical location at its boundary and again immediately before path mutation where practical. Cleanup atomically renames the pinned root to a fresh quarantine name inside the approved directory, revalidates identity, non-symlink status, ownership, and canonical containment after the rename and immediately before recursive Node removal, then removes only that quarantine. Any identity, ownership, mode, location, or containment mismatch refuses removal and reports the failure rather than guessing at recovery. Tests never create, rename, or remove the approved base or sentinel.
-
-Path-based checks cannot eliminate a malicious same-user race between validation and mutation. The helper narrows that window by actively enforcing pinned identities at each helper boundary and immediately before mutations, but this is not an OS sandbox or descriptor-relative filesystem transaction.
-
-Run `npm run test:permissions` only with that environment variable set to an explicitly approved Pi session scratch directory. The broader `npm test` and `npm run all-tests` commands, as well as the combined `npm run verify` gate, have the same prerequisite because they discover these test files.
+<a id="examples-of-guarded-commands"></a>
 
 ## What ordinary permissions guard
 
 ### File/path mutations outside the current working directory
 
-Prompts before:
+Prompts before `write` or `edit` calls outside the working directory and recognized Bash mutations there, such as deletion, redirection, move/copy, creation, permission changes, and in-place editing. Eligible session-scratch paths are the exception described above.
 
-- `write` or `edit` tool calls targeting paths outside `cwd`
-- recognized Bash mutations outside `cwd`, including common deletion, redirection, move/copy, creation, metadata-change, and in-place-edit forms
-
-Conventional output suppression to the null device is ignored; destructive or metadata-changing operations against the null device remain guarded.
-
-Paths inside the current working directory are not guarded by the ordinary prompt policy. Exact deletion of canonical `cwd` or a protected ancestor is still hard-denied by Priority 0.
-
-The extension also provides a per-session Pi temp workspace under `join(os.tmpdir(), "pi", "session-<id>")`. Before each agent turn, Pi gets a compact one-line hint (`Use scratch temp dir instead of /tmp: <path>`). Mutations strictly below that session workspace are auto-approved and the workspace is created on first use with private `0700` permissions. Mutating the workspace root itself, sibling session workspaces, or other temp paths is still guarded.
-
-If another extension forces a complete system prompt, Pi may not see the scratch hint; the scratch permission checks themselves are unchanged. Prompt-contribution details are in [maintenance](../maintenance.md#structured-prompt-contributions).
+Paths inside the working directory do not need ordinary file approval. Deleting that directory itself or a protected ancestor is still blocked by catastrophic-deletion protection. Conventional output suppression to `/dev/null` does not prompt; deleting or changing permissions on the null device remains guarded.
 
 ### Git mutations on existing non-agent branches
 
-Prompts before protected `git` operations on an existing branch that is not considered agent-created:
+Protected operations include:
 
-- `git merge`, `git pull`, `git rebase`, `git reset`
-- non-dry-run `git clean` (`git clean -n` and `git clean --dry-run` are exempt)
-- all `git restore` commands
-- explicit path checkout with `git checkout -- <paths>`
-- `git cherry-pick`, `git revert`
-- `git commit --amend`
-- force pushes
-- branch delete, rename, force/reset operations
+- `git merge`, `git pull`, `git rebase`, and `git reset`
+- non-dry-run `git clean`, all `git restore`, and `git checkout -- <paths>`
+- `git cherry-pick`, `git revert`, and `git commit --amend`
+- force pushes and branch delete, rename, force, or reset operations
 
-Branches with these prefixes are treated as agent branches and bypass this guard:
-
-- `pi/`
-- `agent/`
-- `codex/`
-
-The extension also tracks branches created successfully by Pi during the session and treats them as agent-created later.
+Branches prefixed with `pi/`, `agent/`, or `codex/`, and branches Pi successfully creates during the session, bypass this ordinary Git guard. `git clean -n` and `git clean --dry-run` are also exempt.
 
 ### Package/dependency acquisition
 
-Prompts before package install, update, download, or execute commands for supported managers, including:
+Prompts before supported package install, update, download, or execute commands, including:
 
 - Node: `npm`, `npx`, `yarn`, `pnpm`, `bun`, `bunx`
 - Python: `pip`, `python -m pip`, `uv`, `uvx`, `poetry`, `pipenv`
@@ -91,44 +74,62 @@ Maven and Gradle commands are intentionally excluded.
 
 ## Prompt choices
 
-When a guarded action is detected in the interactive UI, Pi asks how to proceed:
+When a guarded action is detected, choose:
 
-- `Allow once` - allow this tool call only
-- `Allow for current session` - store a scoped session grant
-- `Deny` - block the tool call
-- `Custom instructions` - block the tool call and pass the provided instructions back to the agent
+- **Allow once** — allow this tool call only.
+- **Allow for current session** — remember a scoped approval until the session ends.
+- **Deny** — block the tool call.
+- **Custom instructions** — block the call and tell Pi how to proceed instead.
 
-Session grant scopes are narrow:
+Session approvals cover only the same operation and approved scope: file operations within the approved directory, Git operations on the same repository and branch, or dependency operations for the same manager and project. One approval is not general permission to mutate everything nearby.
 
-- file/path grants: same operation under the listed target scope and nested paths
-- git grants: same operation, repository, and branch
-- dependency grants: same package manager, operation class, and project root
+Permissions and clarify questions appear one at a time. An earlier session approval can eliminate a duplicate prompt only if it covers the requested operation and scope. Cancelling a request, aborting the turn, or reloading/shutting down the session blocks unapproved work; late replies cannot approve cancelled requests.
 
-Auto-approval for the Pi temp workspace does not create a visible session grant and does not count in the footer.
+In the terminal UI, request details appear above a compact selector. If details exceed the display limit, approval is unavailable: only Deny or Custom instructions are offered. Ask Pi to split the action rather than approving scopes you cannot see. RPC clients receive the bounded details in the selector request.
 
-Approval dialogs and clarify questions share one session-local queue (first in, first out). Only one of these interactions is open at a time, including its custom-instructions exchange. An earlier session approval skips a queued duplicate prompt only when it covers the exact operation and scope. Read-only calls are not queued; no-UI blocks and catastrophic hard denials never wait for a dialog.
-
-Cancelling a queued or displayed request, aborting the turn, or shutting down/reloading the session blocks unapproved work. Late replies do not create grants or revive cancelled requests.
-
-In TUI mode, detailed requests appear as persistent warning notifications above a compact selector, keeping choices visible in fullscreen. Details are capped at 8,000 characters. If the full request exceeds that cap, approval is unavailable: only Deny or Custom instructions are offered, with a visible truncation notice. Ask Pi to split the action into smaller requests rather than approving undisplayed scopes. RPC selectors include the bounded details directly, so approval does not depend on a client displaying notifications.
-
-Custom instructions use a prefilled multiline editor inside Pi's TUI. Its external-editor shortcut (normally Ctrl+G) is disabled because that process cannot be cancelled safely; edit inside Pi instead. In RPC mode, custom instructions use cancellable text input rather than a multiline editor; starter text is a placeholder, not editable prefill.
+Custom instructions use a multiline editor in Pi's terminal UI. The external-editor shortcut (normally Ctrl+G) is unavailable during that exchange; edit inside Pi. RPC clients use text input instead, where starter text is a placeholder rather than editable prefill.
 
 In non-interactive/no-UI mode, guarded actions are blocked instead of prompting.
 
+## Priority 0 catastrophic-deletion guard
+
+Recognized deletion of filesystem root, your home directory, the command's working directory, or any ancestor of that working directory is blocked. Visible destructive operations with dynamic, malformed, or unsupported targets can also be blocked when they cannot be classified safely. Ordinary cleanup of concrete noncritical paths, including already-absent files, continues through the normal permission rules.
+
+This protection applies to supported `bash` calls, including nested calls, and terminal `!`/`!!` commands. It cannot be bypassed with an ordinary approval, a session grant, scratch auto-approval, no-UI mode, or `/permissions off`. A denial includes a `P0_*` diagnostic and guidance on how to rewrite the action safely.
+
+### Scope, trust boundary, and limitations
+
+This extension guards supported `bash`, `write`, and `edit` calls, **not arbitrary custom or MCP tools**. Built-in calls made through `codemode` retain their guards, but a custom tool that mutates resources on its own is outside this policy. A tool's declared read-only or safety hints are not proof that it is safe and do not authorize bypassing these guards.
+
+Path and command recognition is best-effort, not a complete shell parser. It assumes a trusted Pi installation, extensions, shell environment, and local filesystem. Hidden effects inside scripts or executables, unusual path forms, symlink-heavy layouts, malicious extensions, and filesystem races are not fully contained. Prefer explicit conventional paths and avoid symlink mutation targets when relying on automatic classification. Use a container, remote environment, or VM if you need hostile-code isolation; permissions is accident prevention, not a sandbox.
+
+Some custom-shell settings cannot be honored by the permissions-protected Bash tool. If a command depends on custom shell behavior, verify its environment rather than treating that configuration as a safety boundary.
+
+Read-only, test, and build commands without a recognized guarded mutation normally continue without a prompt. This does not guarantee that an arbitrary command has no side effects.
+
+## Troubleshooting
+
+### Pi asks to prepare scratch or uses another temp location
+
+Remind Pi that the supplied scratch directory is already ready. Ask it to write a file or create a child directory, not run `mkdir` or `chmod` on the root. For copies, specify the destination filename. A custom prompt can hide the scratch guidance; the permission rules still apply.
+
+### A scratch action still prompts
+
+Check that the target is below the current session's scratch, not the root, a sibling session, or another temp directory. Avoid `..` traversal and broken or escaping symlinks. Check the entire command for other targets, dependency acquisition, or protected Git operations.
+
+### Scratch preparation fails
+
+Pi reports an extension error and does not present the directory as ready. Check that the Pi temp base and session directories are real directories owned by your user, not symlinks or files, and that the temp location is writable. Do not disable guards to work around an unsafe workspace.
+
 ### Dialog collisions and stale RPC dialogs
 
-Scheduling coordinates permissions and clarify only. Subagent approvals/escalations, handoff dialogs, and Trash confirmations are not yet enrolled. If one opens while an approval or clarification is pending, it can replace the visible dialog and leave work waiting invisibly.
+Permissions and clarify questions are coordinated, but subagent approvals/escalations, handoff dialogs, and Trash confirmations are not. One of those dialogs can replace a pending permission or clarification and leave work waiting invisibly.
 
-If a dialog unexpectedly replaces another and work stalls, cancel the visible dialog, then abort the turn once the normal editor returns. Retry with the interactive steps separated. Aborting settles the permission/clarify side; an unrelated request may still require reloading or restarting Pi. Do not disable permission guards to work around a UI hang.
+If this happens, cancel the visible dialog, then abort the turn once the normal editor returns. Retry with the interactive steps separated. An unrelated request may still require reloading or restarting Pi. Do not disable permission guards to work around a UI hang.
 
-In RPC clients, an obsolete dialog may remain visible after abort because Pi 1.0 sends no client-side dismissal event. The cancelled backend request is settled and late replies cannot approve it; dismiss the obsolete dialog or refresh the client. This RPC visibility limitation does not apply to Pi's terminal UI.
+In RPC clients, an obsolete dialog can remain visible after abort. The backend request is already cancelled and late replies cannot approve it; dismiss the obsolete dialog or refresh the client. This visibility limitation does not apply to Pi's terminal UI.
 
 ## Slash command
-
-`/permissions` shows current state and active session grants.
-
-Examples:
 
 ```text
 /permissions
@@ -137,41 +138,16 @@ Examples:
 /permissions clear
 ```
 
-Arguments:
+- No argument shows current state and active session approvals, with an option to keep or clear approvals when any exist.
+- `on` enables ordinary permission guards.
+- `off` disables ordinary prompts for the session; catastrophic-deletion protection stays active.
+- `clear` clears file, Git, and dependency session approvals, but keeps Pi's tracking of agent-created branches.
 
-- `on` - enable permission guards
-- `off` - disable ordinary permission prompts for the current session; catastrophic deletion protection remains active
-- `clear` - clear file, git, and dependency session grants
-
-Running `/permissions` with active grants opens a small UI choice to keep or clear grants. This interaction uses the same queue and shows grants current when it opens, including approvals made while it waited. Agent-created branch tracking is kept when grants are cleared.
-
-Argument completions are provided for `on`, `off`, and `clear`.
-
-## Examples of guarded commands
-
-These examples trigger prompts when the agent runs them through the `bash` tool:
-
-```bash
-echo "hello" > /tmp/pi-out.txt
-rm -rf /tmp/pi/session-other
-git reset --hard HEAD~1
-git rebase main
-npm install
-npx create-vite@latest
-sudo apt-get install ripgrep
-```
-
-Read-only, test, and build commands without a recognized guarded mutation normally continue without a prompt. Conventional null-output suppression is not treated as a filesystem mutation, and eligible mutations below the session temp workspace are auto-approved.
-
-## Tools, flags, and events
-
-The extension owns the model-facing `bash` tool and observes `write`, `edit`, and `bash` calls. It uses Pi session, agent-start, tool-call/result, user-Bash, and shutdown events to maintain session-local permission state, advertise the scratch workspace, evaluate guarded actions, and track agent-created branches.
-
-There are no extension-specific CLI flags or settings; use `/permissions on` and `/permissions off` for session-local control.
+Argument completion is available for `on`, `off`, and `clear`.
 
 ## Footer status
 
-In the terminal UI, the extension keeps a footer status visible. The status key/order and legacy-key cleanup come from the shared footer status helper imported as `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`).
+The terminal footer shows whether ordinary guards are enabled and how many session approvals are active:
 
 ```text
 permissions: on •
@@ -180,16 +156,12 @@ permissions: 3 (fs×2, git) •
 permissions: 3 (fs, deps×2) •
 ```
 
-Runtime states:
+`fs`, `git`, and `deps` identify approval categories; `×<n>` is the count for that category. `off` takes precedence over approval counts, and scratch auto-approval is not counted. The footer is unavailable in no-UI mode.
 
-- `permissions: on •` - guards are enabled and there are no active session grants
-- `permissions: off •` - ordinary guards are disabled for the current session; catastrophic deletion protection remains active, and this ordinary disabled state takes precedence over grant counts in the footer
-- `permissions: <n> (...) •` - guards are enabled and there are active session grants from `Allow for current session`
-- no footer item - the terminal UI is unavailable (`hasUI` is false)
+## Safe test scratch setup
 
-Grant detail labels:
+For development, see the [safe test scratch setup](./maintenance.md#safe-test-scratch-setup).
 
-- `fs` - file/path grants
-- `git` - git grants
-- `deps` - package/dependency grants
-- `×<n>` - more than one grant in that category
+<a id="tools-flags-and-events"></a>
+
+Lifecycle, implementation contracts, and validation instructions are in [permissions maintenance](./maintenance.md).

@@ -11,6 +11,7 @@ import {
 import { withTestScratchFixture } from "../permissions/testScratch.ts";
 
 const ownedKeys = ["clarify_policy", "permissions_scratch", "subagent_policy"] as const;
+const scratchHint = (path: string) => `Session scratch (already created): ${path}\nWrite files or create subdirectories below it instead of /tmp. Pi manages the root; do not mkdir, chmod, rename, or delete it. Use explicit destination filenames.`;
 const clarificationPolicy = `Clarification policy:
 - If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.
 - If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.
@@ -21,6 +22,47 @@ const clarificationPolicy = `Clarification policy:
 const clarificationNote = `Clarification note:
 - The clarify tool requires interactive UI and is not usable in this mode.
 - If user input is required, ask in plain text instead of calling clarify.`;
+
+test("host reports scratch initialization failure without retaining a stale prompt section", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const agentDir = join(fixture.root, "agent");
+		await fixture.mkdir(agentDir);
+		await fixture.symlink(fixture.protectedDir, join(fixture.sessionTemp, "pi"));
+		const savedTmpDir = process.env.TMPDIR;
+		const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+		let runner: ExtensionRunner | undefined;
+		try {
+			process.env.TMPDIR = fixture.sessionTemp;
+			process.env.PI_CODING_AGENT_DIR = agentDir;
+			const path = fileURLToPath(new URL("../permissions/index.ts", import.meta.url));
+			const loaded = await discoverAndLoadExtensions([path], fixture.project, agentDir, createEventBus());
+			assert.deepEqual(loaded.errors, []);
+			runner = new ExtensionRunner(loaded.extensions, loaded.runtime, fixture.project, SessionManager.inMemory(fixture.project), {} as ModelRegistry);
+			const errors: unknown[] = [];
+			runner.onError((error) => errors.push(error));
+			await runner.emit({ type: "session_start", reason: "startup" });
+			const result = await runner.emitBeforeAgentStart("Synthetic prompt", undefined, {
+				cwd: fixture.project, sections: { unrelated: "Keep me", permissions_scratch: "stale scratch path" },
+			});
+			assert.deepEqual(result.systemPromptOptions.sections, { unrelated: "Keep me" });
+			assert.equal(result.systemPromptOptions.forceSystemPrompt, undefined);
+			assert.equal(errors.length, 1);
+			assert.match(JSON.stringify(errors), /before_agent_start.*Refusing to use Pi temp workspace directory/);
+		} finally {
+			try {
+				if (runner) {
+					try { await runner.emit({ type: "session_shutdown", reason: "quit" }); }
+					finally { runner.invalidate(); }
+				}
+			} finally {
+				if (savedTmpDir === undefined) delete process.env.TMPDIR;
+				else process.env.TMPDIR = savedTmpDir;
+				if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+				else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+			}
+		}
+	});
+});
 
 // Public loader/runner, real in-memory SessionManager, synthetic late MCP guidance.
 // Reading event.systemPrompt in the last handler uses the host's actual renderer;
@@ -33,6 +75,7 @@ test("additive prompt contributors preserve the structured host contract", async
 		const envKeys = ["PI_CODING_AGENT_DIR", "PI_SUBAGENT_DEPTH", "PI_SUBAGENT_PARENT_ESCALATION",
 			"PI_SUBAGENT_INHERITED_APPROVAL", "PI_SUBAGENT_INHERITED_APPROVAL_SCOPE"];
 		const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+		const savedTmpDir = process.env.TMPDIR;
 		const events = createEventBus();
 		let rendered = "";
 		const unsubscribe = events.on("structured-prompt-snapshot", (value) => { rendered = String(value); });
@@ -82,6 +125,8 @@ test("additive prompt contributors preserve the structured host contract", async
 		}
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		for (const key of envKeys.slice(1)) delete process.env[key];
+		// Eager scratch creation must remain inside this disposable fixture.
+		process.env.TMPDIR = fixture.sessionTemp;
 		try {
 			await fixture.writeFile(join(agentDir, "settings.json"), JSON.stringify({ subagents: {
 				maxParallelTasks: 7, maxConcurrency: 3, maxDelegationDepth: 2,
@@ -97,8 +142,8 @@ test("additive prompt contributors preserve the structured host contract", async
 				assert.equal(options.sections.clarify_policy, clarificationPolicy);
 				assert.match(options.sections.subagent_policy!, /Current parallel limits: 7 task\(s\).*3 subagent\(s\)/);
 				const workspace = join(tmpdir(), "pi", `session-${h.manager.getSessionId()}`);
-				assert.equal(options.sections.permissions_scratch, `Use scratch temp dir instead of /tmp: ${workspace}`);
-				await assert.rejects(stat(workspace), { code: "ENOENT" });
+				assert.equal(options.sections.permissions_scratch, scratchHint(workspace));
+				assert.equal((await stat(workspace)).isDirectory(), true);
 				for (const key of ownedKeys) assert.equal(rendered.split(`<${key}>`).length - 1, 1, key);
 			});
 			await t.test("repeated turns replace owned contributions, including reused options", async () => {
@@ -185,7 +230,9 @@ test("additive prompt contributors preserve the structured host contract", async
 				await h.configure();
 				const second = await h.turn(first);
 				assert.notEqual(second.sections.permissions_scratch, first.sections.permissions_scratch);
-				assert.equal(second.sections.permissions_scratch, `Use scratch temp dir instead of /tmp: ${join(tmpdir(), "pi", `session-${h.manager.getSessionId()}`)}`);
+				const workspace = join(tmpdir(), "pi", `session-${h.manager.getSessionId()}`);
+				assert.equal(second.sections.permissions_scratch, scratchHint(workspace));
+				assert.equal((await stat(workspace)).isDirectory(), true);
 				assert.deepEqual({ ...second.sections, permissions_scratch: first.sections.permissions_scratch }, first.sections);
 			});
 			await t.test("fresh loader instances preserve sections and session id on real-style reload", async () => {
@@ -224,6 +271,8 @@ test("additive prompt contributors preserve the structured host contract", async
 				}
 			} finally {
 				unsubscribe();
+				if (savedTmpDir === undefined) delete process.env.TMPDIR;
+				else process.env.TMPDIR = savedTmpDir;
 				for (const key of envKeys) {
 					if (savedEnv[key] === undefined) delete process.env[key];
 					else process.env[key] = savedEnv[key];

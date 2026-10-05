@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { setImmediate } from "node:timers/promises";
+import { setImmediate, setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createEventBus, initTheme, type ExtensionAPI, type ExtensionUIDialogOptions, type ExtensionUIContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createTestExtensionContext } from "../permissions/testContext.ts";
@@ -121,6 +121,10 @@ export async function flushDialogs() {
 }
 
 export async function expectRequestCount(requests: DialogRequest[], count: number) {
+	// Filesystem preflight can outlast a fixed number of event-loop turns,
+	// especially when the full suite shares the worker pool. Keep the wait bounded.
+	const deadline = Date.now() + 1000;
+	while (requests.length < count && Date.now() < deadline) await setTimeout(1);
 	await flushDialogs();
 	assert.equal(requests.length, count);
 }

@@ -228,7 +228,7 @@ for (const choice of ["Keep", "Clear permissions"]) {
 		const next = h.permission("file", "next", ctx, true);
 		await flushDialogs();
 		if (choice === "Keep") { assert.equal(h.requests.length, 3); assert.equal(await next, undefined); }
-		else { assert.equal(h.requests.length, 4); h.requests[3]!.answer("Deny"); assert.equal((await next)?.block, true); }
+		else { await expectRequestCount(h.requests, 4); h.requests[3]!.answer("Deny"); assert.equal((await next)?.block, true); }
 	});
 }
 
