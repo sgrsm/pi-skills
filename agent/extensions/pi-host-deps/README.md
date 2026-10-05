@@ -12,7 +12,7 @@ Maintains the local `agent/extensions/node_modules` links for Pi packages that a
 - `@earendil-works/pi-tui`
 - `typebox`
 
-`sync` replaces missing, copied, broken, or stale local entries with links to the current host package tree. It only touches those configured package entries under `agent/extensions/node_modules`.
+`sync` replaces missing, copied, broken, or stale local entries with links to the current host package tree. It only touches those configured package entries under `agent/extensions/node_modules`. Both nested npm dependencies and sibling packages in Pi's managed installer layout are supported.
 
 ## When to run it
 
@@ -53,7 +53,7 @@ The utility normally finds the host package through npm's global root or the act
 PI_HOST_PACKAGE_ROOT=/path/to/@earendil-works/pi-coding-agent npm run sync:pi-host-deps
 ```
 
-Use the same Node/npm environment that provides the `pi` command when possible.
+Use the same Node/npm environment that provides the `pi` command when possible. If `pi` is a managed-install launcher and automatic discovery fails, set this override to the active release's `node_modules/@earendil-works/pi-coding-agent` directory for both `sync` and validation commands, including `npm run verify`. A managed launcher may sit outside the actual package tree.
 
 ## Troubleshooting
 

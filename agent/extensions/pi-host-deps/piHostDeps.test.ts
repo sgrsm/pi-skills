@@ -6,7 +6,7 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { checkPiHostDeps, PI_HOST_PACKAGES, syncPiHostDeps } from "./piHostDeps.ts";
 
-async function makeFixture(t: TestContext): Promise<{
+async function makeFixture(t: TestContext, layout: "nested" | "sibling" = "nested"): Promise<{
 	packageRoot: string;
 	piCodingAgentRoot: string;
 	expectedTargets: Map<string, string>;
@@ -24,7 +24,8 @@ async function makeFixture(t: TestContext): Promise<{
 		if (packageName === "@earendil-works/pi-coding-agent") {
 			continue;
 		}
-		const hostPackagePath = path.join(piCodingAgentRoot, "node_modules", ...packageName.split("/"));
+		const hostNodeModules = layout === "nested" ? path.join(piCodingAgentRoot, "node_modules") : path.dirname(path.dirname(piCodingAgentRoot));
+		const hostPackagePath = path.join(hostNodeModules, ...packageName.split("/"));
 		await writePackage(hostPackagePath, packageName);
 		expectedTargets.set(packageName, realpathSync(hostPackagePath));
 	}
@@ -98,6 +99,24 @@ test("check reports copied and stale local host dependency entries", async (t) =
 			return true;
 		},
 	);
+});
+
+test("sync and check support sibling host packages from the managed Pi installer", async (t) => {
+	const fixture = await makeFixture(t, "sibling");
+	const options = {
+		packageRoot: fixture.packageRoot,
+		piCodingAgentRoot: fixture.piCodingAgentRoot,
+		execFileSync: neverExec,
+	};
+
+	const links = syncPiHostDeps(options);
+	assert.equal(links.length, PI_HOST_PACKAGES.length);
+	for (const packageName of PI_HOST_PACKAGES) {
+		const localPath = localPackagePath(fixture.packageRoot, packageName);
+		assert.equal(lstatSync(localPath).isSymbolicLink(), true);
+		assert.equal(realpathSync(localPath), fixture.expectedTargets.get(packageName));
+	}
+	assert.doesNotThrow(() => checkPiHostDeps(options));
 });
 
 function neverExec(): never {

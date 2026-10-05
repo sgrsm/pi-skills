@@ -157,7 +157,11 @@ function resolveHostPackagePath(
 		return assertPackageDirectory(piCodingAgentRoot, packageName);
 	}
 
-	const candidates = [path.join(piCodingAgentRoot, "node_modules", ...packageName.split("/"))];
+	const hostNodeModulesRoot = path.dirname(path.dirname(piCodingAgentRoot));
+	const candidates = [
+		path.join(piCodingAgentRoot, "node_modules", ...packageName.split("/")),
+		path.join(hostNodeModulesRoot, ...packageName.split("/")),
+	];
 	for (const candidate of candidates) {
 		try {
 			return assertPackageDirectory(candidate, packageName);
