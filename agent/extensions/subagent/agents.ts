@@ -20,18 +20,36 @@ export interface AgentConfig {
 export interface AgentDiscoveryResult {
 	agents: AgentConfig[];
 	projectAgentsDir: string | null;
+	diagnostics: string[];
 }
 
 export const USER_AGENTS_DISPLAY_PATH = `~/${CONFIG_DIR_NAME}/agent/agents`;
 export const PROJECT_AGENTS_DISPLAY_PATH = `${CONFIG_DIR_NAME}/agents`;
 
-function normalizeNonEmptyString(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : undefined;
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
+type ToolListParseResult =
+	| { valid: true; tools: string[] | undefined }
+	| { valid: false; reason: string };
+
+function parseToolList(value: unknown): ToolListParseResult {
+	if (value === undefined || value === null) return { valid: true, tools: undefined };
+	if (typeof value !== "string" && !Array.isArray(value)) {
+		return { valid: false, reason: "tools must be a comma-separated string, an array of strings, or null" };
+	}
+	const raw: unknown[] = typeof value === "string" ? value.split(",") : value;
+	const tools: string[] = [];
+	for (const tool of raw) {
+		if (typeof tool !== "string") return { valid: false, reason: "tools array members must all be strings" };
+		const name = tool.trim();
+		if (name) tools.push(name);
+	}
+	return { valid: true, tools: tools.length > 0 ? tools : undefined };
+}
+
+function loadAgentsFromDir(dir: string, source: "user" | "project", diagnostics: string[]): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
 	if (!fs.existsSync(dir)) {
@@ -57,21 +75,35 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			continue;
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content);
-
-		if (!frontmatter.name || !frontmatter.description) {
+		let parsed: { frontmatter: Record<string, unknown>; body: string };
+		try {
+			parsed = parseFrontmatter<Record<string, unknown>>(content);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message.split("\n")[0].slice(0, 300) : "parse failed";
+			diagnostics.push(`Skipped agent ${filePath}: invalid YAML frontmatter (${reason})`);
+			continue;
+		}
+		const { frontmatter, body } = parsed;
+		if (!frontmatter || typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
+			diagnostics.push(`Skipped agent ${filePath}: frontmatter must be a YAML mapping`);
+			continue;
+		}
+		const { name, description } = frontmatter;
+		if (!isNonEmptyString(name) || !isNonEmptyString(description)) {
+			diagnostics.push(`Skipped agent ${filePath}: name and description must be non-empty strings`);
 			continue;
 		}
 
-		const tools = frontmatter.tools
-			?.split(",")
-			.map((t: string) => t.trim())
-			.filter(Boolean);
+		const toolList = parseToolList(frontmatter.tools);
+		if (!toolList.valid) {
+			diagnostics.push(`Skipped agent ${filePath}: ${toolList.reason}`);
+			continue;
+		}
 
 		agents.push({
-			name: frontmatter.name,
-			description: frontmatter.description,
-			tools: tools && tools.length > 0 ? tools : undefined,
+			name,
+			description,
+			tools: toolList.tools,
 			systemPrompt: body,
 			source,
 			filePath,
@@ -105,8 +137,9 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	const userDir = path.join(getAgentDir(), "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
 
-	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
+	const diagnostics: string[] = [];
+	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user", diagnostics);
+	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project", diagnostics);
 
 	const agentMap = new Map<string, AgentConfig>();
 
@@ -119,7 +152,7 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 		for (const agent of projectAgents) agentMap.set(agent.name, agent);
 	}
 
-	return { agents: Array.from(agentMap.values()), projectAgentsDir };
+	return { agents: Array.from(agentMap.values()), projectAgentsDir, diagnostics };
 }
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {

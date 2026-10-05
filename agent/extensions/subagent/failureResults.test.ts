@@ -82,6 +82,8 @@ function registerTool() {
 
 async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 	tool: any; ctx: any; children: FakeChild[]; call: (mode?: string, signal?: AbortSignal) => Promise<any>;
+	handlers: Map<string, Array<(event: any, ctx: any) => any>>;
+	writeAgent: (fileName: string, fields: string) => Promise<string>;
 }) => Promise<void>, systemPrompt = "") {
 	const fixture = await createTestScratchFixture();
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -120,7 +122,12 @@ async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 			}
 			return outcome;
 		};
-		await fn({ tool, ctx, children, call });
+		const writeAgent = async (fileName: string, fields: string) => {
+			const filePath = path.join(agentDir, "agents", fileName);
+			await fixture.writeFile(filePath, `---\n${fields}\n---\nFixture prompt.`);
+			return filePath;
+		};
+		await fn({ tool, ctx, children, call, handlers, writeAgent });
 		for (const child of children) {
 			assert.equal(child.listenerCount("close"), 0, "lifecycle listeners released");
 			assert.equal(child.stdout.listenerCount("data"), 0);
@@ -381,6 +388,47 @@ for (const [label, override] of Object.entries({
 		for (const expanded of [false, true]) assert.match(render(tool, result, expanded), /fallback diagnostic/);
 	});
 }
+
+test("discovery warnings reach UI or stderr once per execution without blocking valid children", async (t) => {
+	for (const hasUI of [false, true]) {
+		await withTool(t, [{}, {}], async ({ ctx, call, children, writeAgent }) => {
+			const filePath = await writeAgent("broken.md", "name: broken\ndescription: Broken tools\ntools: [read, false]");
+			const warnings: string[] = [];
+			ctx.hasUI = hasUI;
+			ctx.ui = {
+				notify(message: string, type: string) { assert.equal(type, "warning"); warnings.push(message); },
+				setStatus() {},
+				theme: { fg(_color: string, text: string) { return text; } },
+			};
+			const stderr = t.mock.method(console, "error", (message: string) => warnings.push(message));
+			try {
+				const outcome = await call("parallel");
+				assert.equal(outcome.isError, false);
+				assert.equal(children.length, 2);
+				assert.equal(warnings.length, 1, "cached discoveries must not repeat rejection warnings");
+				assert.ok(warnings[0].includes(filePath));
+				assert.match(warnings[0], /tools/);
+				assert.equal(stderr.mock.callCount(), hasUI ? 0 : 1);
+			} finally {
+				stderr.mock.restore();
+			}
+		});
+	}
+});
+
+test("policy rejection for malformed requested agents includes the file path and reason", async (t) => {
+	await withTool(t, [], async ({ ctx, handlers, children, writeAgent }) => {
+		const filePath = await writeAgent("broken.md", "name: broken\ndescription: Broken tools\ntools: 42");
+		const [handler] = handlers.get("tool_call") ?? [];
+		assert.ok(handler);
+		const decision = await handler({ toolName: "subagent", toolCallId: "bad-tools-policy",
+			input: { mode: "single", items: [{ agent: "broken", task: "Do not run" }] } }, ctx);
+		assert.equal(decision.block, true);
+		assert.ok(decision.reason.includes(filePath));
+		assert.match(decision.reason, /tools/);
+		assert.equal(children.length, 0);
+	});
+});
 
 test("renderer preserves valid failure diagnostics and usage in collapsed and expanded views", () => {
 	const { tool } = registerTool();

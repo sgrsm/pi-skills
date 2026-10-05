@@ -4,7 +4,7 @@ This directory tracks known technical debt that is intentionally not being addre
 
 | ID | Title | Status | Priority |
 |---|---|---|---|
-| [TDR-0001](./0001-subagent-tools-frontmatter-yaml-arrays.md) | Accept YAML arrays in subagent `tools` frontmatter | Open | Low |
+| [TDR-0001](./0001-subagent-tools-frontmatter-yaml-arrays.md) | Accept YAML arrays in subagent `tools` frontmatter | Resolved | Low |
 | [TDR-0002](./0002-propagate-transient-project-trust-to-subagents.md) | Preserve transient project trust for contained subagent children | Open | Low |
 | [TDR-0003](./0003-clarify-fullscreen-input-host-blocker.md) | Restore safe fullscreen clarify input | Open — Home/End improve on 1.0.3; lifecycle blocker remains | Medium |
 | [TDR-0004](./0004-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Open — reproduced on Pi 1.0.3 | Medium |

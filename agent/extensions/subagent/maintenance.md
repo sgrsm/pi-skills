@@ -5,10 +5,19 @@ Maintainer notes for [`subagent`](./README.md). User-facing commands, settings a
 ## Source map
 
 - `index.ts` — tools, `/subagents`, policy, `execute()` orchestration for `single` / `parallel` / `chain`, result rendering.
+- `agents.ts` — per-file YAML/frontmatter validation, tool-list normalization, discovery diagnostics, source precedence.
 - `scheduler.ts` — bounded parallel worker pool (`mapWithConcurrencyLimit()`).
 - `usageAccounting.ts` — child usage accumulation/aggregation (`aggregateBillableUsage()` in `index.ts` wraps it). Child JSON already includes nested-tool usage; do not re-sum nested `details.results`.
 - `childProcessLifecycle.ts`, `processTreeTermination.ts` — bounded process/cleanup handling.
-- Tests: `failureResults.test.ts`, `scheduler.test.ts`, `usageAccounting.test.ts`, `ux.test.ts`, `resultState.test.ts`, `policy.test.ts`, `projectTrust.test.ts`, lifecycle tests, and `../pi-compatibility/{tool-activation,structured-prompt}.test.ts`.
+- Tests: `agents.test.ts`, `failureResults.test.ts`, `scheduler.test.ts`, `usageAccounting.test.ts`, `ux.test.ts`, `resultState.test.ts`, `policy.test.ts`, `projectTrust.test.ts`, lifecycle tests, and `../pi-compatibility/{tool-activation,structured-prompt}.test.ts`.
+
+## Agent discovery contract
+
+`parseFrontmatter()` values are treated as `unknown`. Discovery validates a mapping with non-empty string `name` and `description`, preserving valid string identities and prompts. `parseToolList()` distinguishes invalid values from absent/empty allowlists: CSV and arrays of strings are accepted, whitespace/empty entries are removed, and omitted/null/empty values yield no allowlist. Unsupported non-null types and any non-string array member reject the whole definition. YAML exceptions are caught per file; they do not interrupt valid neighboring discovery. Model/thinking frontmatter remains ignored.
+
+`AgentDiscoveryResult.diagnostics` contains path-qualified rejection messages. The per-request resolver deduplicates them across cached cwd discoveries. Policy blocks and approval prompts include diagnostics in their reasons; execution reports warnings through `ctx.ui.notify()` or stderr without UI, leaving stdout protocols untouched. Discovery itself has no notification side effects. A rejected project file never enters the name map, so a valid same-name user agent remains the fallback in `both` scope.
+
+`agents.test.ts` exercises real YAML parsing and isolated user/project directories. `failureResults.test.ts` covers policy rejection diagnostics and execution warning delivery with fake children. Keep diagnostics independent of model/thinking selection and project-trust gates.
 
 ## Startup tool availability
 

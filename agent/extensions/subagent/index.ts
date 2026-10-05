@@ -463,17 +463,24 @@ function getExternalChildCwdBlockReason(agentScope: AgentScope): string {
 function createAgentDiscoveryResolver(
 	defaultCwd: string,
 	scope: AgentScope,
+	onDiagnostic?: (message: string) => void,
 ): (requestedCwd: string | undefined) => AgentDiscoveryResult {
 	const cache = new Map<string, AgentDiscoveryResult>();
+	const reportedDiagnostics = new Set<string>();
 	return (requestedCwd) => {
 		const childCwd = getChildCwdTrustBoundary(defaultCwd, requestedCwd);
 		if (scope !== "user" && !childCwd.reusesParentProjectTrust) {
-			return { agents: [], projectAgentsDir: null };
+			return { agents: [], projectAgentsDir: null, diagnostics: [] };
 		}
 		let discovery = cache.get(childCwd.executionCwd);
 		if (!discovery) {
 			discovery = discoverAgents(childCwd.executionCwd, scope);
 			cache.set(childCwd.executionCwd, discovery);
+			for (const message of discovery.diagnostics) {
+				if (reportedDiagnostics.has(message)) continue;
+				reportedDiagnostics.add(message);
+				onDiagnostic?.(message);
+			}
 		}
 		return discovery;
 	};
@@ -2722,7 +2729,8 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, requestedScope);
+		const discoveryDiagnostics: string[] = [];
+		const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, requestedScope, (message) => discoveryDiagnostics.push(message));
 		const summary = summarizeSubagentRequestWithResolver(
 			event.input,
 			(task) => resolveDiscovery(task.cwd).agents,
@@ -2741,6 +2749,7 @@ export default function (pi: ExtensionAPI) {
 			sessionApprovalState.askModeApproved,
 			sessionApprovalState.writeCapableApproved,
 		);
+		if (discoveryDiagnostics.length > 0) decision.reason += `\n\n${discoveryDiagnostics.join("\n")}`;
 		const delegatedApprovalScope = getDelegatedApprovalScope(
 			explicitRequest,
 			inheritedApprovalScope,
@@ -3114,7 +3123,10 @@ export default function (pi: ExtensionAPI) {
 				agentScope === "user" ? true : projectTrusted,
 			);
 			if (projectAgentTrustBlockReason) throw new Error(projectAgentTrustBlockReason);
-			const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, agentScope);
+			const resolveDiscovery = createAgentDiscoveryResolver(ctx.cwd, agentScope, (message) => {
+				if (ctx.hasUI) ctx.ui.notify(message, "warning");
+				else console.error(message);
+			});
 			const discovery = resolveDiscovery(undefined);
 			const agents = discovery.agents;
 			const projectAgentDirs = Array.from(

@@ -98,7 +98,11 @@ Standard user agents are `scout`, `worker`, `reviewer`, and `planner`. `scout`, 
 
 ## Agents and project trust
 
-Agents are Markdown files with frontmatter such as `name`, `description`, and `tools`. A declared `tools` list controls the tools available to that child. Model and thinking settings belong in `settings.json`, not agent frontmatter.
+Agents are Markdown files with required `name` and `description` frontmatter. Model and thinking settings belong in `settings.json`, not agent frontmatter.
+
+`tools` accepts a comma-separated string (`tools: read, grep`) or a YAML string array (`tools: [read, grep]`). A non-empty list restricts the child's available tools.
+
+**Omitted, `null`, or empty `tools` means no explicit allowlist—not zero tools.** For read-only delegation, declare a non-empty inspection-only list.
 
 User agents are loaded by default. Project agents require `agentScope: "project"` or `"both"`, a trusted project, and usually confirmation. `confirmProjectAgents: false` skips only the extra agent-source confirmation; it does not bypass trust or policy checks.
 
@@ -173,7 +177,7 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 
 ## Troubleshooting
 
-- **Unknown agent:** check the agent name and configured agent scope.
+- **Unknown agent:** check the agent name, configured scope, and any skipped-definition warnings.
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
 - **Too many tasks:** raise `maxParallelTasks` or reduce the `items` length for a `parallel` call.
