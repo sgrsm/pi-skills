@@ -103,6 +103,8 @@ This extension guards supported `bash`, `write`, and `edit` calls, **not arbitra
 
 Path and command recognition is best-effort, not a complete shell parser. It assumes a trusted Pi installation, extensions, shell environment, and local filesystem. Hidden effects inside scripts or executables, unusual path forms, symlink-heavy layouts, malicious extensions, and filesystem races are not fully contained. Prefer explicit conventional paths and avoid symlink mutation targets when relying on automatic classification. Use a container, remote environment, or VM if you need hostile-code isolation; permissions is accident prevention, not a sandbox.
 
+For recognized simple shell commands, line breaks between commands work like semicolons. Quoted line breaks remain part of an argument; backslash-newline outside single quotes continues the same command. Use explicit destination paths when relying on these checks: arbitrary variables such as `$scratch` and `$log` are not resolved, although `$HOME` and `$PWD` are recognized. Sourcing a script does not by itself make that script a file-mutation target; recognized output redirections still count, and hidden effects inside the script remain outside classification.
+
 Some custom-shell settings cannot be honored by the permissions-protected Bash tool. If a command depends on custom shell behavior, verify its environment rather than treating that configuration as a safety boundary.
 
 Read-only, test, and build commands without a recognized guarded mutation normally continue without a prompt. This does not guarantee that an arbitrary command has no side effects.

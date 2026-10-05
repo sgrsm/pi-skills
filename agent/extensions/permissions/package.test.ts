@@ -68,6 +68,20 @@ test("maven and gradle commands are intentionally excluded", () => {
 	assert.deepEqual(analyzePackageCommands("./gradlew test", cwd).actions, []);
 });
 
+test("package analyzer preserves newline command boundaries and line continuations", () => {
+	for (const commands of [
+		["printf ready", "npm install left-pad"],
+		["npm test", "pip install requests"],
+		["READY=1", "cd ../other", "npm install"],
+	]) {
+		for (const separator of ["\n", ";\n", "\n\n", "\n# comment\n"]) {
+			assert.deepEqual(analyzePackageCommands(commands.join(separator), cwd), analyzePackageCommands(commands.join("; "), cwd));
+		}
+	}
+	assert.deepEqual(analyzePackageCommands("npm ins\\\ntall left-pad", cwd), analyzePackageCommands("npm install left-pad", cwd));
+	assert.deepEqual(analyzePackageCommands("printf 'npm\ninstall left-pad'", cwd).actions, []);
+});
+
 test("package analyzer honors simple cd and manager-specific project directory flags", () => {
 	assert.equal(analyzePackageCommands("cd ../other && npm install", cwd).actions[0]?.cwd, "/repo/other");
 	assert.equal(analyzePackageCommands("npm --prefix ../other install", cwd).actions[0]?.cwd, "/repo/other");

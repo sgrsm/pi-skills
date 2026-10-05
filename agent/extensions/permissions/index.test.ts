@@ -211,6 +211,31 @@ test("scratch aliases and ..-prefixed children are auto-approved, but symlink es
 	});
 });
 
+test("multiline Bash scratch requests classify only actual destinations", async () => {
+	await withTestScratchFixture(async (fixture) => {
+		const harness = createPermissionsHarness(fixture.sessionTemp);
+		const ctx = createContext("Deny", "permissions-multiline-temp-test", fixture.project);
+		const workspace = createPiTempWorkspace("permissions-multiline-temp-test", { systemTempDir: fixture.sessionTemp });
+		await harness.emit("session_start", {}, ctx);
+		await harness.emit("before_agent_start", { systemPromptOptions: { sections: {} } }, ctx);
+		const source = 'source "$HOME/.sdkman/bin/sdkman-init.sh"';
+		const result = await harness.emitFirst("tool_call", {
+			toolName: "bash",
+			input: { command: `READY=1\nmkdir -p "${workspace.sessionDir}/work"\n${source}\nmvn test > "${workspace.sessionDir}/test.log" 2>&1` },
+		}, ctx);
+		assert.equal(result, undefined);
+		assert.equal(ctx.selectCalls, 0);
+
+		for (const destination of [workspace.sessionDir, `${fixture.protectedDir}/work`]) {
+			const denied = await harness.emitFirst("tool_call", {
+				toolName: "bash", input: { command: `mkdir -p "${destination}"\n${source}` },
+			}, ctx);
+			assert.deepEqual(denied, { block: true, reason: `Blocked by user. Target scope(s): bash mutation ${destination}` });
+		}
+		assert.equal(ctx.selectCalls, 2);
+	});
+});
+
 test("mutations below the session temp workspace are auto-approved even without an agent-start event", async () => {
 	await withTestScratchFixture(async (fixture) => {
 		const harness = createPermissionsHarness(fixture.sessionTemp);

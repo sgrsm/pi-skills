@@ -131,6 +131,55 @@ test("bash still guards destructive or metadata-changing operations against /dev
 	]);
 });
 
+test("newline-separated mutation commands classify like semicolon-separated commands", () => {
+	const source = 'source "$HOME/.sdkman/bin/sdkman-init.sh"';
+	for (const commands of [
+		["mkdir -p ./target/permission-repro", source],
+		["mkdir -p /outside/work", source],
+		['scratch="/outside/work"', 'log="/outside/test.log"', "mkdir -p /outside/work", source, "mvn test > /outside/test.log 2>&1"],
+		["printf ready", "touch /outside/out.txt"],
+		["cd /outside", "touch generated.txt"],
+	]) {
+		assert.deepEqual(
+			analyzeBashMutation(commands.join("\n"), cwd)?.targets,
+			analyzeBashMutation(commands.join("; "), cwd)?.targets,
+			commands.join("\n"),
+		);
+	}
+	assert.equal(analyzeBashMutation(`mkdir -p ./target/permission-repro\n${source}`, cwd), undefined);
+});
+
+test("multiline source commands guard actual redirections, not the sourced operand", () => {
+	const request = analyzeBashMutation('mkdir -p /outside/work\nsource "$HOME/.sdkman/bin/sdkman-init.sh" > /outside/source.log', cwd);
+	assert.deepEqual(request?.targets.map(({ path, reason }) => ({ path, reason })), [
+		{ path: "/outside/work", reason: "mkdir target" },
+		{ path: "/outside/source.log", reason: "shell redirection" },
+	]);
+});
+
+test("quoted newlines remain path content and shell line continuations join words", () => {
+	for (const quote of ["'", '"']) {
+		const quotedPath = "/outside/line\nbreak.txt";
+		assert.equal(analyzeBashMutation(`touch ${quote}${quotedPath}${quote}`, cwd)?.targets[0]?.path, quotedPath);
+	}
+	const continuedPath = "/outside/line\\\nbreak.txt";
+	for (const command of [`touch ${continuedPath}`, `touch "${continuedPath}"`, `touch \\\n /outside/linebreak.txt`]) {
+		assert.equal(analyzeBashMutation(command, cwd)?.targets[0]?.path, "/outside/linebreak.txt", command);
+	}
+	assert.equal(analyzeBashMutation(`touch '${continuedPath}'`, cwd)?.targets[0]?.path, continuedPath);
+	assert.equal(analyzeBashMutation('touch "/outside/line\\name.txt"', cwd)?.targets[0]?.path, "/outside/line\\name.txt");
+});
+
+test("comments end at newlines without contributing mutation operands", () => {
+	const request = analyzeBashMutation("mkdir -p ./target # /outside/not-an-operand\n# another comment\ntouch /outside/out.txt", cwd);
+	assert.deepEqual(request?.targets.map((target) => target.path), ["/outside/out.txt"]);
+});
+
+test("here-document data is not classified as a mutation command", () => {
+	const request = analyzeBashMutation("cat <<'EOF'\nmkdir -p /outside/data-only\nEOF\ntouch /outside/real.txt", cwd);
+	assert.deepEqual(request?.targets.map((target) => target.path), ["/outside/real.txt"]);
+});
+
 test("bash mutation detection tracks simple cd commands before relative targets", () => {
 	assert.equal(analyzeBashMutation("cd src && rm generated.txt", cwd), undefined);
 

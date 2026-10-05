@@ -1,4 +1,5 @@
 import { basename, isAbsolute, normalize, resolve } from "node:path";
+import { splitShellCommands } from "./shell.ts";
 
 export type GitProtectedOperation =
 	| "merge"
@@ -70,7 +71,6 @@ export interface GitRepositoryStateProvider {
 	branchExists(repoRoot: string, branch: string): Promise<boolean>;
 }
 
-const SHELL_SEPARATORS = new Set([";", "&&", "||", "|", "&"]);
 const REDIRECTION_TOKENS = new Set([">", ">>", "<", "<<", "<<<", "1>", "1>>", "2>", "2>>", "&>", "&>>"]);
 const SUDO_OPTIONS_WITH_VALUE = new Set([
 	"-u",
@@ -170,8 +170,7 @@ export class GitPermissionStore {
 }
 
 export function analyzeGitCommands(command: string, cwd: string): GitCommandAnalysis {
-	const tokens = tokenizeShell(command);
-	const commands = splitShellCommands(tokens);
+	const commands = splitShellCommands(command);
 	const protectedActions: GitProtectedAction[] = [];
 	const branchCreations: GitBranchCreation[] = [];
 	let effectiveCwd = normalizePath(cwd);
@@ -654,117 +653,4 @@ function skipWrapperOptions(tokens: string[], startIndex: number, optionsWithVal
 
 function isEnvAssignment(token: string): boolean {
 	return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
-}
-
-function splitShellCommands(tokens: string[]): string[][] {
-	const commands: string[][] = [];
-	let current: string[] = [];
-	for (const token of tokens) {
-		if (SHELL_SEPARATORS.has(token)) {
-			if (current.length > 0) {
-				commands.push(current);
-				current = [];
-			}
-			continue;
-		}
-		current.push(token);
-	}
-	if (current.length > 0) commands.push(current);
-	return commands;
-}
-
-function tokenizeShell(command: string): string[] {
-	const tokens: string[] = [];
-	let current = "";
-	let quote: "'" | '"' | undefined;
-	let escaped = false;
-
-	const flush = () => {
-		if (current.length > 0) {
-			tokens.push(current);
-			current = "";
-		}
-	};
-
-	for (let index = 0; index < command.length; index += 1) {
-		const char = command[index] ?? "";
-		const next = command[index + 1];
-
-		if (escaped) {
-			current += char;
-			escaped = false;
-			continue;
-		}
-
-		if (char === "\\") {
-			escaped = true;
-			continue;
-		}
-
-		if (quote) {
-			if (char === quote) quote = undefined;
-			else current += char;
-			continue;
-		}
-
-		if (char === "'" || char === '"') {
-			quote = char;
-			continue;
-		}
-
-		if (/\s/.test(char)) {
-			flush();
-			continue;
-		}
-
-		if (char === ";") {
-			flush();
-			tokens.push(char);
-			continue;
-		}
-
-		if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
-			flush();
-			tokens.push(`${char}${next}`);
-			index += 1;
-			continue;
-		}
-
-		if (char === "&" && next === ">") {
-			flush();
-			if (command[index + 2] === ">") {
-				tokens.push("&>>");
-				index += 2;
-			} else {
-				tokens.push("&>");
-				index += 1;
-			}
-			continue;
-		}
-
-		if (char === "|" || char === "&") {
-			flush();
-			tokens.push(char);
-			continue;
-		}
-
-		if (char === ">" || char === "<") {
-			flush();
-			if (next === char && command[index + 2] === char) {
-				tokens.push(`${char}${char}${char}`);
-				index += 2;
-			} else if (next === char) {
-				tokens.push(`${char}${char}`);
-				index += 1;
-			} else {
-				tokens.push(char);
-			}
-			continue;
-		}
-
-		current += char;
-	}
-
-	flush();
-	return tokens;
 }

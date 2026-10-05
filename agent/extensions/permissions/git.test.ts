@@ -67,6 +67,20 @@ test("git analyzer tracks branch creation commands and target-branch mutations",
 	assert.deepEqual(forcedSwitch.branchCreations.map((creation) => creation.branch), ["old-topic"]);
 });
 
+test("git analyzer preserves newline command boundaries and line continuations", () => {
+	for (const commands of [
+		["printf ready", "git reset --hard"],
+		["git status", "git merge feature", "git reset --hard"],
+		["READY=1", "cd ../other", "git reset --hard"],
+	]) {
+		for (const separator of ["\n", ";\n", "\n\n", "\n# comment\n"]) {
+			assert.deepEqual(analyzeGitCommands(commands.join(separator), cwd), analyzeGitCommands(commands.join("; "), cwd));
+		}
+	}
+	assert.deepEqual(analyzeGitCommands("git re\\\nset --hard", cwd), analyzeGitCommands("git reset --hard", cwd));
+	assert.deepEqual(analyzeGitCommands("printf 'git\nreset --hard'", cwd).protectedActions, []);
+});
+
 test("git analyzer honors git -C and simple cd before protected commands", () => {
 	const viaGitC = analyzeGitCommands("git -C ../other reset --hard", cwd);
 	assert.equal(viaGitC.protectedActions[0]?.cwd, "/repo/other");

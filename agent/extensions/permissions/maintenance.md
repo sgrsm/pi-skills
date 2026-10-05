@@ -12,6 +12,12 @@ The catastrophic-deletion recognizer covers common visible direct deletion, trav
 
 The Bash backend uses Pi's standard local operations. Some configured custom-shell behavior cannot be forwarded through the extension API; terminal command prefixes are included in the final catastrophic check. These compatibility constraints do not provide containment.
 
+## Ordinary shell command classification
+
+`shell.ts` supplies the shared lexical command splitter for file, Git, and dependency guards. It recognizes unquoted command-boundary newlines and existing control operators, preserves quoted/escaped separators as word content, removes backslash-newline continuations outside single quotes, and skips comments beginning at an unquoted word boundary. Empty quoted words are retained. Visible here-document bodies are skipped through their literal, quote-removed delimiters, including multiple bodies and `<<-` tab stripping; body expansions are not evaluated. This is best-effort lexing, not control-flow evaluation or a complete Bash parser; variable assignments do not establish a substitution environment for later mutation operands.
+
+File analysis requests output-redirection tokenization only; Git and dependency analysis retain input-redirection tokenization too. Keep these existing analyzer differences explicit rather than changing redirection policy while sharing boundary handling. Priority 0 retains its independent recognizer and must not depend on this ordinary-guard helper.
+
 ## Session scratch contract
 
 Workspace paths are built under `join(os.tmpdir(), "pi", "session-<id>")`. Scratch guidance is contributed through the owned `permissions_scratch` section; a deliberate full-prompt override by another extension may hide it without changing permission checks. Follow the [structured prompt contribution rules](../maintenance.md#structured-prompt-contributions).
@@ -54,8 +60,10 @@ Run `npm run test:permissions` only with the environment variable set to an expl
 Use the [approved scratch setup](#safe-test-scratch-setup) before running tests from `agent/extensions/`.
 
 - `tempWorkspace.test.ts`: private directories, alias equivalence, missing descendants, root/sibling exclusion, symlink target and entry containment, dangling links, and non-directory ancestors.
-- `permissions.test.ts`: component-aware lexical containment and preservation/deduplication of unnormalized filesystem targets.
-- `index.test.ts`: readiness before advertising, failure and cancellation without stale hints, revalidation, scratch approval through tool events, root guards, and Priority 0 ordering.
+- `shell.test.ts`: command boundaries, quoted and escaped separators/newlines, continuation joining, comments, empty quoted words, visible here-document boundaries, and analyzer-specific redirection tokenization.
+- `permissions.test.ts`: component-aware lexical containment, preservation/deduplication of unnormalized filesystem targets, multiline mutation attribution, and source/log-redirection separation.
+- `git.test.ts` and `package.test.ts`: later guarded commands after newlines, assignment-only commands, directory changes, comments, and continued subcommand words.
+- `index.test.ts`: readiness before advertising, failure and cancellation without stale hints, revalidation, scratch approval through tool events (including multiline Bash), actual guarded destinations, root guards, and Priority 0 ordering.
 - `pi-compatibility/structured-prompt.test.ts`: public-host prompt composition, ready directories on session changes/reload, and host-reported preparation failure without a stale section. It scopes test `TMPDIR` to a disposable fixture and restores it afterward.
 - `shared/dialogTestHarness.test.ts`: bounded condition-based waiting for asynchronous permission preflight. Dialog tests must not assume filesystem analysis finishes within a fixed number of event-loop turns.
 
