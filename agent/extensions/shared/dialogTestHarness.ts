@@ -84,7 +84,7 @@ export function createDialogHarness() {
 				};
 				// Faithful to Pi: factory is synchronous, but installation is a microtask;
 				// completing inside the factory skips host installation/disposal.
-				const tui = { terminal: { rows: 24, columns: 80, write: (data: string) => terminalWrites.push(data) }, requestRender() {} };
+				const tui = { mode: "fullscreen" as const, terminal: { rows: 24, columns: 80, write: (data: string) => terminalWrites.push(data) }, requestRender() {} };
 				Promise.resolve(factory(tui as any, ui.theme, { matches: () => false } as any, done))
 					.then((value) => { if (!closed) { component = value; request.component = value; } })
 					.catch(reject);

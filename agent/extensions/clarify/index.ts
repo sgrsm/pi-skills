@@ -226,6 +226,8 @@ async function showClarifySelector(
 	const descriptionsByValue = new Map(optionItems.map((item) => [item.value, item.description]));
 
 	return showCancellableCustom<ClarifySelection>(ctx.ui, signal, (tui, theme, _keybindings, done) => {
+		// Fullscreen mouse modes belong to Pi; retain legacy wheel support only in regular mode.
+		const ownsMouseModes = tui.mode === "regular";
 		const selectList = new SelectList(items, Math.min(items.length, CLARIFY_MAX_VISIBLE_OPTIONS), {
 			selectedPrefix: (text: string) => theme.fg("accent", text),
 			selectedText: (text: string) => theme.fg("accent", text),
@@ -275,7 +277,7 @@ async function showClarifySelector(
 		selectList.onSelect = (item) => done(resolveSelection(item));
 		selectList.onCancel = () => done(undefined);
 
-		tui.terminal.write(ENABLE_MOUSE_SCROLL);
+		if (ownsMouseModes) tui.terminal.write(ENABLE_MOUSE_SCROLL);
 
 		return {
 			render(width: number): string[] {
@@ -369,7 +371,7 @@ async function showClarifySelector(
 			},
 
 			dispose() {
-				tui.terminal.write(DISABLE_MOUSE_SCROLL);
+				if (ownsMouseModes) tui.terminal.write(DISABLE_MOUSE_SCROLL);
 			},
 		};
 	});

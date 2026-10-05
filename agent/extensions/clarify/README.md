@@ -117,7 +117,7 @@ Interactive selector in TUI mode:
 
 **Known Pi 1.0.3 fullscreen limitation (open):** Home/End scroll the question in the tested cases, but despite the on-screen help, PageUp/PageDown and wheel input still go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question, or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
 
-The selector also turns terminal mouse reporting on and off in both modes; in fullscreen this conflicts with Pi's own mouse handling. The conflict is confirmed from captured output and source, but its effect in specific terminals has not been tested live. A fix remains deferred pending a Pi host correction; maintainer details are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md).
+In fullscreen, Clarify leaves Pi in control of mouse handling, so closing a question does not disable transcript scrolling. If wheel/trackpad scrolling is already stuck after using an older version of this extension, restart Pi after updating; `/reload` alone does not restore terminal mouse modes. Regular-mode wheel behavior is unchanged. The remaining fullscreen limitations above are still open; see [maintainer details](./maintenance.md#fullscreen-input-defect).
 
 Tool display states:
 

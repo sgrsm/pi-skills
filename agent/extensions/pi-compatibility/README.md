@@ -43,7 +43,7 @@ Checks visible, cancel-first Trash approval at representative narrow fullscreen 
 
 ### `clarify-input.test.ts`
 
-Protects working fullscreen Home/End routing, focused-overlay routing controls, and regular-mode interaction. On the tested Pi 1.0.3, PageUp/PageDown/wheel routing, mouse ownership, help clipping, and overlay completion remain open under [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks are in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction.
+Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, focused-overlay controls, and unchanged regular-mode interaction/setup/cleanup. On the tested Pi 1.0.3, question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and overlay completion remain open under [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
 
 ### `dialog-concurrency.test.ts`
 

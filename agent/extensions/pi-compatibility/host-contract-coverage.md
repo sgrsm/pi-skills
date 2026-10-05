@@ -21,15 +21,15 @@ Protects safe, visible Trash approval at fullscreen sizes.
 
 ## `clarify-input.test.ts` and `clarify-input.diagnostic.ts`
 
-Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). On the tested Pi 1.0.3, fullscreen Home/End routing works, but the remaining input/layout/mouse defects and host overlay-completion blocker are still **open**. No local runtime fix or installed-host patch is included.
+Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Fullscreen mouse-mode ownership is corrected locally, and Pi 1.0.3 Home/End routing works. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and the host overlay-completion blocker remain **open**. No installed-host patch or overlay redesign is included.
 
 - `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures, the simplified fixed-dock composition, and the test-only `custom()` adapter.
-- Normal contract tests require Home/End to scroll the question without moving the transcript; they also protect regular-mode interaction and focused-overlay input controls.
-- Diagnostics require PageUp/PageDown/wheel to scroll the question, help to remain visible, and the extension to leave mouse modes alone. These positive requirements fail on Pi 1.0.3; no test asserts that the bugs should persist.
+- Normal contract tests require fullscreen creation, selection, Escape, and abort to leave host mouse modes untouched, restore editor focus, and retain post-dialog wheel routing. They also protect Home/End question scrolling, regular-mode interaction/setup/cleanup, and focused-overlay input controls.
+- Diagnostics require PageUp/PageDown/wheel to scroll the question, help to remain visible, and regular mode to leave mouse modes alone. These remaining positive requirements fail on Pi 1.0.3; the scoped fix preserves regular-mode behavior without weakening its outstanding acceptance requirement.
 - Adapter lifecycle diagnostics require owned-dialog removal without stealing stacked search or an unrelated overlay on pre-install cancellation. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support.
 - A separate scratch-only, version-checked invocation of the actual Pi 1.0.3 `showExtensionCustom()` method confirmed the stacked-search and pre-install failures, including completion inside the factory; normal mounted completion was a positive control. The TDR retains reconstruction steps, not private committed imports.
 
-The adapter hard-codes completion behavior and cannot independently detect an identity-safe host correction. After an upgrade, inspect the actual close path and reconstruct the real-method probe before changing adapter expectations or declaring the lifecycle fixed. No live-terminal validation is claimed.
+The adapter hard-codes completion behavior and cannot independently detect an identity-safe host correction. After an upgrade, inspect the actual close path and reconstruct the real-method probe before changing adapter expectations or declaring the lifecycle fixed. Mouse-write assertions check ownership; injected wheel events check renderer routing, not Ghostty's wheel-to-arrow fallback. Live-terminal confirmation covers macOS/Ghostty trackpad scrolling after normal option selection only; Escape, abort, and other terminal/input combinations remain unverified live.
 
 ## `dialog-concurrency.test.ts`
 

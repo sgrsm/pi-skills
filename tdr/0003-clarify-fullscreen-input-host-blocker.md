@@ -1,6 +1,6 @@
 # TDR-0003: Restore safe fullscreen clarify input
 
-- **Status:** Open — Pi 1.0.3 improves Home/End; host lifecycle blocker remains
+- **Status:** Open — fullscreen mouse ownership corrected; other input/layout and host lifecycle defects remain
 - **Priority:** Medium
 - **Created:** 2026-10-03
 - **Area:** `agent/extensions/clarify`; Pi custom-dialog integration
@@ -8,9 +8,9 @@
 
 ## Summary and decision
 
-Clarify's fullscreen selector still loses PageUp/PageDown/wheel input to the transcript on the tested Pi 1.0.3 and manipulates mouse modes owned by Pi. Home/End now scroll the question in the tested cases, but long dialogs can still have their bottom help clipped. The remaining defects are not intentional behavior or evidence of resolution.
+Clarify's fullscreen selector still loses question PageUp/PageDown/wheel input to the transcript on the tested Pi 1.0.3. Home/End scroll the question in the tested cases, but long dialogs can still have their bottom help clipped. A scoped local correction now leaves fullscreen mouse modes under Pi's ownership; regular-mode mouse setup/cleanup remains unchanged. The remaining defects are not intentional behavior or evidence of resolution.
 
-A focused custom overlay repaired input routing in isolation, but Pi 1.0.0's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer the runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. All attempted runtime/helper changes were withdrawn; only characterization tests and documentation were retained.
+The earlier focused custom overlay repaired input routing in isolation, but Pi 1.0.0's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer that broader runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. That attempted runtime/helper implementation was withdrawn; its tests and documentation were retained. The mouse-ownership-only correction below does not introduce overlays or change the completion contract.
 
 This record is self-contained. It does not require the original audit/work-package files or ephemeral probe artifacts to understand or resume the work.
 
@@ -18,7 +18,7 @@ This record is self-contained. It does not require the original audit/work-packa
 
 The investigation used Pi **1.0.0**, Node **v22.19.0**, and repository HEAD `0a5f25053f4df1a85cdf86bc995621bcc7a92676`. Host dependency links were valid. The inspected configuration had no TUI-mode override; the installed host defaults to fullscreen.
 
-In `agent/extensions/clarify/index.ts`, `showClarifySelector()`:
+In that investigated version of `agent/extensions/clarify/index.ts`, `showClarifySelector()`:
 
 - Opens a non-overlay `ctx.ui.custom()` component in the input dock.
 - Handles and advertises PageUp/PageDown/Home/End/wheel scrolling, but has no normalized `handleMouse()` handler.
@@ -51,7 +51,7 @@ Two independent read-only reviewers identified the lifecycle hazard; parent prob
 
 ## Pi 1.0.3 revalidation
 
-Public fullscreen renderer tests confirm that Home/End now move the question without scrolling the transcript. PageUp/PageDown/wheel still move only the transcript. Captured extension writes still enable and disable mouse reporting in both TUI modes, and the simplified 80×24 dock still clips navigation help. Regular-mode interaction and focused-overlay routing remain positive controls; no runtime selector changes were made.
+Before the scoped correction below, public fullscreen renderer tests confirmed that Home/End moved the question without scrolling the transcript, while PageUp/PageDown/wheel moved only the transcript. Captured extension writes enabled and disabled mouse reporting in both TUI modes, and the simplified 80×24 dock clipped navigation help. Regular-mode interaction and focused-overlay routing were positive controls; that revalidation did not change the runtime selector.
 
 Source inspection of Pi 1.0.3 still shows `showExtensionCustom()` calling topmost `hideOverlay()`. A scratch-only, version-checked invocation of the actual method on synthetic public `TuiAltScreen` state confirmed:
 
@@ -62,6 +62,16 @@ Source inspection of Pi 1.0.3 still shows `showExtensionCustom()` calling topmos
 These are executed actual-method probes, not conclusions drawn from the adapter or the higher version number. They use fake terminal input and isolated synthetic state, not a live session. Live-terminal mouse effects, complete resize/layout acceptance, and the larger remediation remain unverified or deferred.
 
 Working routes and controls belong in `clarify-input.test.ts`. Outstanding positive requirements belong in `clarify-input.diagnostic.ts`; `npm run diagnose:pi-host` exits nonzero while they remain broken. The shared `clarifyUiFixture.ts` adapter still models the observed close path and cannot independently detect a future host correction.
+
+## Scoped fullscreen mouse-mode correction
+
+The reported macOS/Ghostty symptom is trackpad gestures recalling prompt history after a Clarify dialog closes. The selector's disable sequences can leave the terminal translating wheel gestures into arrow keys instead of reporting mouse events to Pi.
+
+`showClarifySelector()` now snapshots the supplied renderer's `tui.mode === "regular"` and uses that same decision for mouse setup and disposal. Fullscreen sends neither enable nor disable sequences, including on selection, Escape, and abort. Regular mode retains its existing raw-SGR wheel behavior and paired mouse toggles; removing those toggles remains an outstanding diagnostic requirement, not part of this correction.
+
+The current non-overlay dock, shared FIFO, permission handling, and host completion lifecycle are unchanged. The host overlay blocker therefore still prevents the broader overlay remediation, but does not block this ownership-only correction.
+
+The fullscreen ownership requirement is promoted into `clarify-input.test.ts`, covering creation/cleanup and post-dialog transcript wheel routing through the public renderer. Regular-mode setup/cleanup and input remain controls. These fake-terminal checks do not emulate Ghostty's wheel-to-arrow fallback; live-terminal verification of the correction remains separate. The earlier investigation and Pi 1.0.3 revalidation above describe the state before this scoped runtime correction.
 
 ## Reproduction and revalidation
 
@@ -123,4 +133,4 @@ In the deferred investigation's final retained state, the focused command above 
 
 The initial test-first acceptance run had 9 failures and 16 passing controls. A provisional implementation later passed 42 focused tests and a 338-test gate, but two additional reviewer-driven regressions exposed the description-cap and stacked-overlay problems. The runtime patch was withdrawn, illustrating why the earlier green gate was insufficient.
 
-Fullscreen PageUp/PageDown/wheel scrolling, mouse ownership, and layout remain unresolved on the tested Pi 1.0.3; Home/End improvement alone does not close this record. Small-terminal/resize/repeated-interaction acceptance was not fully revalidated for the unchanged selector, and terminal-specific mouse degradation was not live-tested. Historical scratch artifacts are not prerequisites: the tests and reconstruction steps above retain the actionable evidence.
+The scoped local correction resolves fullscreen mouse-mode ownership, not the full record. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, clipping/layout, and host overlay completion remain unresolved on the tested Pi 1.0.3. Small-terminal/resize/repeated-interaction acceptance is not complete. User-confirmed live validation covers macOS/Ghostty trackpad scrolling after normal option selection only; Escape, abort, and other terminal/input combinations remain unverified live. Historical scratch artifacts are not prerequisites: the tests and reconstruction steps above retain the actionable evidence.

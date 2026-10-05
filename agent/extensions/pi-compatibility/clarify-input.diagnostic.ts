@@ -30,22 +30,22 @@ for (const [name, key, initialKey, direction] of scrollingInputs) {
 	});
 }
 
-for (const mode of ["fullscreen", "regular"] as const) {
-	test(`TDR-0003: ${mode} clarify does not take over terminal mouse modes`, async (t) => {
-		const h = createUi(mode);
-		const abort = new AbortController();
-		t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
-		h.writes.length = 0; // Exclude renderer startup/shutdown writes.
-		const { result, dialog } = await h.open(abort);
-		abort.abort();
-		assert.equal((await result).details.answerType, "cancelled");
-		assert.equal(dialog.doneCalls, 1);
-		const writes = h.writes.join("");
-		assert.ok(!writes.includes("\x1b[?1000h") && !writes.includes("\x1b[?1006h") &&
-			!writes.includes("\x1b[?1000l") && !writes.includes("\x1b[?1006l"),
-			"the extension must leave mouse reporting ownership to the renderer/terminal");
-	});
-}
+// Fullscreen ownership is now a contract regression in clarify-input.test.ts.
+// Removing regular-mode mouse toggles remains outside the scoped runtime fix.
+test("TDR-0003: regular clarify does not take over terminal mouse modes", async (t) => {
+	const h = createUi("regular");
+	const abort = new AbortController();
+	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
+	h.writes.length = 0; // Exclude renderer startup/shutdown writes.
+	const { result, dialog } = await h.open(abort);
+	abort.abort();
+	assert.equal((await result).details.answerType, "cancelled");
+	assert.equal(dialog.doneCalls, 1);
+	const writes = h.writes.join("");
+	assert.ok(!writes.includes("\x1b[?1000h") && !writes.includes("\x1b[?1006h") &&
+		!writes.includes("\x1b[?1000l") && !writes.includes("\x1b[?1006l"),
+		"the extension must leave mouse reporting ownership to the renderer/terminal");
+});
 
 test("TDR-0003: fullscreen clarify keeps navigation help visible at 80x24", async (t) => {
 	const h = createUi("fullscreen");
