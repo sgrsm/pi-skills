@@ -1,3 +1,6 @@
+## Writing style
+- In prose, do not use unspaced em dashes (`No—module`). Use spaces on both sides (`No — module`) or rephrase with a comma, colon, or separate sentence.
+
 ## Change authorization
 - Do not eagerly modify files, run mutating commands, or otherwise make changes when the user is asking for analysis, advice, or a proposal. Make changes only when the user explicitly instructs you to do so (for example, "make", "perform", "apply", "execute", "implement", "add", or similar wording). Treat these as examples of intent, not a required list of keywords.
 - If it is unclear whether the user wants changes made or only wants a recommendation, use `clarify` to confirm before acting.
