@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
-import { parseMcpStatuses, type McpConfigScope, type McpStatus } from "./state.ts";
+import { parseMcpStatuses, type McpConfigScope, type McpStatus, type McpStatusEntry } from "./state.ts";
 
 export const MCP_STATUS_KEY = FOOTER_STATUS_KEYS.mcp;
 export const MCP_STATUS_UPDATE_INTERVAL_MS = 1_000;
@@ -51,7 +51,7 @@ export function registerMcpStatusExtension(
   let context: ExtensionContext | undefined;
   let interval: TimerHandle | undefined;
   let lastStatus: string | undefined | null = null;
-  const lastValidFiles = new Map<string, McpStatus[]>();
+  const lastValidFiles = new Map<string, McpStatusEntry[]>();
 
   function stop(): void {
     if (interval !== undefined) dependencies.clearInterval(interval);
@@ -62,7 +62,7 @@ export function registerMcpStatusExtension(
     lastValidFiles.clear();
   }
 
-  function readStatuses(path: string, scope: McpConfigScope): McpStatus[] {
+  function readStatuses(path: string, scope: McpConfigScope): McpStatusEntry[] {
     const cacheKey = `${scope}:${path}`;
     try {
       const text = dependencies.readFile(path);
@@ -79,8 +79,18 @@ export function registerMcpStatusExtension(
     if (!context) return;
     const merged = new Map<string, McpStatus>();
     const namespaces = new Map<string, string>();
-    function merge(statuses: McpStatus[]): void {
+    function merge(statuses: McpStatusEntry[]): void {
       for (const status of statuses) {
+        if ("override" in status) {
+          const base = merged.get(status.name);
+          // A patch needs an exact-name global server; it cannot define one or claim a colliding name.
+          if (base) merged.set(status.name, {
+            ...base,
+            enabled: status.enabled ?? base.enabled,
+            exposure: status.exposure ?? base.exposure,
+          });
+          continue;
+        }
         const namespace = status.name.replace(/-/g, "_");
         const owner = namespaces.get(namespace);
         if (owner !== undefined && owner !== status.name) continue;

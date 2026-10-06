@@ -1,7 +1,11 @@
 import type { McpExposure } from "@earendil-works/pi-coding-agent";
 
 export type McpStatus = { name: string; enabled: boolean; exposure: McpExposure };
+export type McpStatusOverride = { name: string; override: true; enabled?: boolean; exposure?: McpExposure };
+export type McpStatusEntry = McpStatus | McpStatusOverride;
 export type McpConfigScope = "global" | "project";
+
+const OVERRIDE_KEYS = new Set(["enabled", "exposure", "toolExposure"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,13 +46,15 @@ function hasValidTransport(value: Record<string, unknown>): boolean {
   return false;
 }
 
-/** Project only display fields: never retain commands, environment values, or credentials. */
-export function parseMcpStatuses(text: string, scope: McpConfigScope = "global"): McpStatus[] {
+/** Project only display fields; keep project patches unresolved so omitted fields inherit at refresh. */
+export function parseMcpStatuses(text: string, scope?: "global"): McpStatus[];
+export function parseMcpStatuses(text: string, scope: McpConfigScope): McpStatusEntry[];
+export function parseMcpStatuses(text: string, scope: McpConfigScope = "global"): McpStatusEntry[] {
   const parsed: unknown = JSON.parse(text);
   if (!isRecord(parsed) || (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers))) {
     throw new Error("Expected an MCP config object");
   }
-  const statuses: McpStatus[] = [];
+  const statuses: McpStatusEntry[] = [];
   for (const [name, value] of Object.entries(parsed.mcpServers ?? {})) {
     if (!/^[A-Za-z0-9_-]+$/.test(name) || !isRecord(value)) continue;
     if (value.enabled !== undefined && typeof value.enabled !== "boolean") continue;
@@ -56,6 +62,16 @@ export function parseMcpStatuses(text: string, scope: McpConfigScope = "global")
     if (exposure === undefined) continue;
     if (value.toolExposure !== undefined && (!isRecord(value.toolExposure) ||
         Object.values(value.toolExposure).some((entry) => normalizeExposure(entry) === undefined))) continue;
+    if (scope === "project" && value.command === undefined && value.url === undefined && value.type === undefined) {
+      if (Object.keys(value).some((key) => !OVERRIDE_KEYS.has(key))) continue;
+      // Do not default patch fields or retain tool mappings, commands, environment values, or credentials.
+      statuses.push({
+        name, override: true,
+        ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+        ...(value.exposure === undefined ? {} : { exposure }),
+      });
+      continue;
+    }
     if (value.description !== undefined && typeof value.description !== "string") continue;
     if (value.timeout !== undefined && (typeof value.timeout !== "number" || !(value.timeout > 0))) continue;
     if (!hasValidTransport(value)) continue;

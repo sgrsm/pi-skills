@@ -4,9 +4,19 @@ User-visible behavior, display rules and limitations are in the [user guide](./R
 
 ## Scope
 
-- `state.ts` projects only display fields (`name`, `enabled`, `exposure`) from cheap config checks. It normalizes the legacy `codemode-deferred` exposure to `codemode` and keeps `deferred` distinct. It does not retain commands, environment values or credentials.
-- `index.ts` polls the global file and, only when the project is trusted, the project file. It merges the projections in global-then-project order, allowing exact-name project overrides but omitting later differently named entries whose normalized names collide.
+- `state.ts` projects display fields (`name`, `enabled`, `exposure`) from cheap config checks, with an `override: true` discriminator for project-only patches. It normalizes the legacy `codemode-deferred` exposure to `codemode` and keeps `deferred` distinct. It does not retain commands, environment values, credentials or per-tool exposure mappings.
+- `index.ts` polls the global file and, only when the project is trusted, the project file. It merges the projections in global-then-project order, applying exact-name project patches or replacements but omitting later differently named definitions whose normalized names collide.
 - This is not Pi's full validator and does not connect to servers. Green means enabled in configuration; see [What green means](./README.md#what-green-means). Do not add connection, credential or extension-registered-server claims here or in the guide.
+
+## Project precedence
+
+- Match Pi's settings-only override detection: a project entry has no defined `command`, `url`, or `type`. Only `enabled`, `exposure`, and `toolExposure` are allowed; malformed values or extra keys reject the whole patch.
+- Do not default omitted patch fields. They inherit the current global enabled state and exposure; an empty or valid tool-exposure-only patch leaves the server-level display unchanged.
+- Patches require an exact-name projected global server. They cannot create a server or reserve a normalized-name namespace. Full project definitions still replace same-name global entries, with normal defaults rather than inheritance.
+- Keep patches unresolved in the last-valid cache and reapply them to current global projections on each refresh. A cached enabled-only patch must pick up a newly saved global exposure even while the project file is unreadable.
+- The project provider-auth restriction applies to full project definitions, not to settings-only patches of a global server.
+
+Regression anchors in [`index.test.ts`](./index.test.ts): `footer follows effective global/project settings, inheriting omitted override fields` and `cached project patches reapply to current global settings and are cleared on trust revocation`. Parser and invalid/orphan-patch cases are in neighboring tests.
 
 ## Last-valid fallback identity
 

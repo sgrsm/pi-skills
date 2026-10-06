@@ -18,6 +18,7 @@
 /conversations/
 /handoff/
 /archives/
+*.json
 
 # Dependencies / build / cache junk
 **/node_modules/

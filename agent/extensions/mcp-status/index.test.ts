@@ -92,6 +92,35 @@ test("project provider-auth restriction is source-aware and projection retains n
   } } }), "project"), []);
 });
 
+test("project-only patches preserve omitted fields and reject invalid override settings", () => {
+  const valid = [
+    [{ enabled: true }, { name: "intellij", override: true, enabled: true }],
+    [{ enabled: false }, { name: "intellij", override: true, enabled: false }],
+    [{ exposure: "direct" }, { name: "intellij", override: true, exposure: "direct" }],
+    [{ exposure: "codemode-deferred" }, { name: "intellij", override: true, exposure: "codemode" }],
+    [{ toolExposure: { "*": "direct" } }, { name: "intellij", override: true }],
+    [{}, { name: "intellij", override: true }],
+  ];
+  for (const [value, expected] of valid) {
+    const text = JSON.stringify({ mcpServers: { intellij: value } });
+    assert.deepEqual(parseMcpStatuses(text, "project"), [expected]);
+    assert.deepEqual(parseMcpStatuses(text, "global"), [], "patches cannot define global servers");
+  }
+  const invalid = [
+    { enabled: "true" }, { exposure: null }, { exposure: "wrong" },
+    { toolExposure: [] }, { toolExposure: { "*": "wrong" } },
+    { enabled: true, description: "not allowed in an override" },
+    { enabled: true, timeout: 60 }, { enabled: true, env: {} },
+    { enabled: true, auth: { provider: "fixture" } },
+    { enabled: true, headers: { Authorization: "!never-run-this" } },
+    { enabled: true, command: null }, { enabled: true, url: null },
+    { enabled: true, type: "stdio" },
+  ];
+  for (const value of invalid) {
+    assert.deepEqual(parseMcpStatuses(JSON.stringify({ mcpServers: { intellij: value } }), "project"), [], JSON.stringify(value));
+  }
+});
+
 function harness(mode = "tui", agentDir = "/agent") {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
   const statuses = new Map<string, string | undefined>();
@@ -157,6 +186,88 @@ test("polling tracks /mcp changes, trusted project overrides, and malformed writ
   h.files.delete("/agent/mcp.json");
   h.tick();
   assert.equal(h.statuses.get(MCP_STATUS_KEY), undefined);
+});
+
+test("footer follows effective global/project settings, inheriting omitted override fields", async () => {
+  const h = harness();
+  h.setTrusted(true);
+  const gray = "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>";
+  const green = (exposure: string) => `<success>MCP: </success><success>idea · ${exposure}</success><dim> •</dim>`;
+  const project = (value: object) => h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: { intellij: value } }));
+  await h.emit("session_start");
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), gray, "no override uses the disabled global setting");
+  project({ enabled: true });
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), green("deferred"), "project enable takes precedence and inherits exposure");
+  h.files.set("/agent/mcp.json", config(true, "direct"));
+  project({ enabled: false });
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), gray, "project disable takes precedence over global enable");
+  project({ exposure: "hidden" });
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), green("hidden"), "exposure-only override inherits global enabled");
+  h.files.set("/agent/mcp.json", config(false, "direct"));
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), gray, "exposure-only override must not enable a disabled global server");
+  project({ enabled: true, exposure: "codemode-deferred" });
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), green("codemode"));
+  project({});
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), gray, "empty override inherits both global settings");
+  project({ command: "project-server" });
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), green("codemode"), "full project definitions use defaults, not global inheritance");
+  h.files.delete("/project/.pi/mcp.json");
+  h.files.set("/agent/mcp.json", config(true, "direct"));
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), green("direct"), "removing the override restores global settings");
+  project({ enabled: true });
+  h.files.delete("/agent/mcp.json");
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), undefined, "an orphan override does not define a server");
+});
+
+test("cached project patches reapply to current global settings and are cleared on trust revocation", async () => {
+  const h = harness();
+  h.setTrusted(true);
+  h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: { intellij: { enabled: true } } }));
+  await h.emit("session_start");
+  assert.ok(h.statuses.get(MCP_STATUS_KEY)?.includes("idea · deferred"));
+  h.files.set("/project/.pi/mcp.json", "{");
+  h.files.set("/agent/mcp.json", config(false, "direct"));
+  h.tick();
+  assert.ok(h.statuses.get(MCP_STATUS_KEY)?.includes("idea · direct"), "cache patches, not the previously resolved status");
+  h.readErrors.add("/project/.pi/mcp.json");
+  h.tick();
+  assert.ok(h.statuses.get(MCP_STATUS_KEY)?.includes("idea · direct"), "read failures retain the last valid patch");
+  h.setTrusted(false);
+  const reads = h.reads.length;
+  h.tick();
+  assert.equal(h.reads.length, reads + 1, "only global config is read after trust revocation");
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>");
+  h.setTrusted(true);
+  h.tick();
+  assert.equal(h.statuses.get(MCP_STATUS_KEY), "<dim>MCP: </dim><dim>idea</dim><dim> •</dim>", "revoked patches must not be reused");
+});
+
+test("project patches require valid exact-name global entries and may inherit global provider auth", async () => {
+  const h = harness();
+  h.setTrusted(true);
+  h.files.set("/agent/mcp.json", JSON.stringify({ mcpServers: {
+    "foo-bar": { command: "server", enabled: false },
+    intellij: { command: "idea", enabled: false },
+    docs: { url: "https://example.com/mcp", auth: { provider: "fixture" }, enabled: false, exposure: "direct" },
+  } }));
+  h.files.set("/project/.pi/mcp.json", JSON.stringify({ mcpServers: {
+    foo_bar: { enabled: true },
+    orphan: { enabled: true },
+    intellij: { enabled: true, env: { KEY: "fixture-secret" } },
+    docs: { enabled: true },
+  } }));
+  await h.emit("session_start");
+  assert.equal(h.statuses.get(MCP_STATUS_KEY),
+    "<success>MCP: </success><success>docs · direct</success><dim>, </dim><dim>foo-bar</dim><dim>, </dim><dim>idea</dim><dim> •</dim>");
 });
 
 test("merge rejects later normalized-name collisions, but accepts exact project overrides", async () => {
