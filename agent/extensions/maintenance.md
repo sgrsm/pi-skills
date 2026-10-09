@@ -85,11 +85,13 @@ Contract:
 
 Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
-Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
+Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 
 ## Extension retirement
 
 The Pi **1.0.0** assessment found no complete shipped-and-enabled built-in replacement for the 12 local runtime extensions assessed at that version. Partial native overlap, extension examples, and possible third-party MCP integrations are not equivalent replacements. Re-check the current host documentation, examples, enabled configuration, and owning extension guides after upgrades; this version-bound conclusion is neither a permanent keep requirement nor approval to remove anything. The old custom MCP bridge and IDEA connector were already retired and are not remaining compatibility backlog.
+
+Pi **1.1.0** revalidation reached the same retirement conclusion: none of the 12 local runtime extensions has a complete bundled-and-enabled replacement. Program-status reporting, per-tool duration/padding, and the live `/mcp` manager are partial overlaps, not replacements for the local workflows and persistent indicators. The shared dialog queue and tool-availability helper also remain necessary. This supplements, rather than replaces, the Pi 1.0.0 baseline above.
 
 If simplification is requested, the preference-based candidates are `handoff`, `trash-history`, `hide-tool-output`, `short-paths`, and `mcp-status`. Removing them trades away workflow features; it is not cleanup of obsolete compatibility shims.
 
@@ -109,5 +111,7 @@ npm run verify
 ```
 
 `npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-0003/TDR-0004. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
+
+For the current Pi 1.1.0 runtime-check results, unresolved fake-terminal typecheck incompatibility, and independently failing host acceptance checks, see [compatibility revalidation and limits](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). Successful standalone runtime checks do not imply that `npm run verify` passes.
 
 Run npm dependency commands from `agent/extensions/`, not from `agent/`.

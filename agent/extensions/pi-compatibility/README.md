@@ -43,7 +43,7 @@ Checks visible, cancel-first Trash approval at representative narrow fullscreen 
 
 ### `clarify-input.test.ts`
 
-Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, focused-overlay controls, and unchanged regular-mode interaction/setup/cleanup. On the tested Pi 1.0.3, question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and overlay completion remain open under [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
+Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, focused-overlay controls, and unchanged regular-mode interaction/setup/cleanup. On the tested Pi 1.0.3 and revalidated Pi 1.1.0, question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and overlay completion remain open under [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
 
 ### `dialog-concurrency.test.ts`
 
@@ -59,7 +59,7 @@ Protects optional-tool availability and preservation of restored tools across st
 
 ### `sdk-resume.test.ts`
 
-Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration remains broken on the tested Pi 1.0.3 under [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md); `sdk-resume.diagnostic.ts` checks the required positive restoration behavior. Passing the contract controls does not mean resume restoration works.
+Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration remains broken on the tested Pi 1.0.3 and revalidated Pi 1.1.0 under [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md); `sdk-resume.diagnostic.ts` checks the required positive restoration behavior. Passing the contract controls does not mean resume restoration works.
 
 ### `short-paths-loader.test.ts`
 
@@ -72,6 +72,12 @@ Checks native/wrapped file-tool selection at startup and reload, restrictive SDK
 ## Maintainer coverage notes
 
 [Host-contract coverage and limitations](host-contract-coverage.md) records what the larger tests cover and do not cover, the guarantee/characterization distinction, and what to re-check after a Pi upgrade.
+
+## Pi 1.1.0 status
+
+Runtime contract checks and public loading of all local runtime extensions succeeded against Pi 1.1.0. This is not a green `npm run verify`: the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` still lack the newly required `Terminal.setProgramStatus()` method, so typechecking fails. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
+
+Positive host acceptance diagnostics still fail for TDR-0003 and TDR-0004. Actual-host custom-dialog completion probes corroborate the lifecycle blocker rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
 
 ## Scratch setup
 
@@ -119,7 +125,7 @@ Run outstanding host acceptance checks explicitly, particularly after a Pi upgra
 npm run diagnose:pi-host
 ```
 
-This command intentionally exits nonzero on the tested Pi 1.0.3 because TDR-0003 and TDR-0004 remain unresolved. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
+This command intentionally exits nonzero on the tested Pi 1.0.3 and revalidated Pi 1.1.0 because TDR-0003 and TDR-0004 remain unresolved. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
 
 Optional validation before broader extension work:
 

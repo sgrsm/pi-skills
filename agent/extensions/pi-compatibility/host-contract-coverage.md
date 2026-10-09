@@ -10,6 +10,16 @@ Related integration rules are in [extension maintenance](../maintenance.md): [sh
 - Tests that load extensions or create files need the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup). Set both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved root; several tests assert that they match. Fixtures use isolated agent configuration and in-memory or disposable sessions, restore environment variables, and shut down and invalidate runtimes. They never use personal settings, session files, credentials, live providers, or live MCP servers.
 - **Contract regressions** protect working behavior and local safety invariants in `*.test.ts`. **Outstanding host acceptance checks** live in `*.diagnostic.ts` and run explicitly through `npm run diagnose:pi-host`; they assert desired behavior and fail nonzero while tracked debt remains. They are neither skipped nor TODOs. A green contract gate is not evidence that host debt is fixed. Revalidate diagnostics and any copied host adapters on upgrades, and promote verified fixes into the normal suite.
 
+## Pi 1.1.0 revalidation
+
+Runtime contract checks and public loading of all local runtime extensions succeeded using Pi 1.1.0 host packages and isolated configuration. These observations do not establish a green combined verification gate or resolution of host debt:
+
+- **Verification gate:** typechecking still fails because the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` omit the newly required `Terminal.setProgramStatus()` method. The unchanged fixtures typecheck against Pi 1.0.4. Verify host-package links before running checks so direct imports and declarations come from the host version under review.
+- **Clarify:** working fullscreen mouse-ownership and Home/End controls remain intact; positive PageUp/PageDown/wheel, regular-mode mouse-ownership and help-visibility requirements still fail. A separate version-checked invocation of the actual Pi 1.1.0 `showExtensionCustom()` method also reproduced removal of stacked search while leaving the disposed owned overlay mounted, and removal of an unrelated overlay on completion before installation. Normal mounted completion removed the owned overlay and disposed it once. This corroborates the adapter; it does not unblock the overlay remediation.
+- **Resume:** positive SDK and actual CLI `--session` restoration checks still fail with and without local extensions. Working `/tree`, indirect-callability and local-availability controls remain separate from creation-time restoration.
+
+Live-terminal, live MCP and live provider compatibility were not tested. The earlier Pi 1.0.0/1.0.3 investigation baselines below and in the [owning TDRs](../../../tdr/README.md) are retained; passing characterization tests is not a guarantee or a debt resolution.
+
 ## `trash-confirmation.test.ts`
 
 Protects safe, visible Trash approval at fullscreen sizes.
@@ -21,11 +31,11 @@ Protects safe, visible Trash approval at fullscreen sizes.
 
 ## `clarify-input.test.ts` and `clarify-input.diagnostic.ts`
 
-Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Fullscreen mouse-mode ownership is corrected locally, and Pi 1.0.3 Home/End routing works. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and the host overlay-completion blocker remain **open**. No installed-host patch or overlay redesign is included.
+Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Fullscreen mouse-mode ownership is corrected locally, and Home/End routing works on the tested Pi 1.0.3 and revalidated Pi 1.1.0. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and the host overlay-completion blocker remain **open**. No installed-host patch or overlay redesign is included.
 
 - `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures, the simplified fixed-dock composition, and the test-only `custom()` adapter.
 - Normal contract tests require fullscreen creation, selection, Escape, and abort to leave host mouse modes untouched, restore editor focus, and retain post-dialog wheel routing. They also protect Home/End question scrolling, regular-mode interaction/setup/cleanup, and focused-overlay input controls.
-- Diagnostics require PageUp/PageDown/wheel to scroll the question, help to remain visible, and regular mode to leave mouse modes alone. These remaining positive requirements fail on Pi 1.0.3; the scoped fix preserves regular-mode behavior without weakening its outstanding acceptance requirement.
+- Diagnostics require PageUp/PageDown/wheel to scroll the question, help to remain visible, and regular mode to leave mouse modes alone. These remaining positive requirements fail on Pi 1.0.3 and Pi 1.1.0; the scoped fix preserves regular-mode behavior without weakening its outstanding acceptance requirement.
 - Adapter lifecycle diagnostics require owned-dialog removal without stealing stacked search or an unrelated overlay on pre-install cancellation. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support.
 - A separate scratch-only, version-checked invocation of the actual Pi 1.0.3 `showExtensionCustom()` method confirmed the stacked-search and pre-install failures, including completion inside the factory; normal mounted completion was a positive control. The TDR retains reconstruction steps, not private committed imports.
 
@@ -69,7 +79,7 @@ Protects [built-in replacement configuration](../short-paths/maintenance.md#buil
 
 ## `sdk-resume.test.ts` (contract controls)
 
-Protects working controls without asserting omission as desired behavior. The separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) was reproduced on Pi 1.0.3 with public SDK construction and the actual CLI, both with and without local extensions. No host patch or local workaround exists.
+Protects working controls without asserting omission as desired behavior. The separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) was reproduced on Pi 1.0.3 and Pi 1.1.0 with public SDK construction and the actual CLI, both with and without local extensions. No host patch or local workaround exists.
 
 - `resumeFixture.ts` shares isolated offline fixtures between contract tests and diagnostics. It reopens a real disposable JSONL transcript with `SessionManager.open()` and validates transcript identity and registered late-tool names/exposures.
 - Normal tests protect positive `/tree` restoration, indirect callability, every local off-mode/relay combination's availability and parity with the host baseline, and actual CLI transcript/parity controls. Parity expectations use each baseline phase rather than freezing its omitted loadout.
@@ -80,4 +90,4 @@ Protects working controls without asserting omission as desired behavior. The se
 
 ## `sdk-resume.diagnostic.ts`
 
-Requires the selected transcript declarations to restore through late registration in ordinary SDK construction and actual CLI `--session`, each with and without local extensions. These positive acceptance checks fail on the tested Pi 1.0.3 and print selected versus active loadouts. They are excluded from normal contract discovery only by the explicit `.diagnostic.ts` convention, not skips or weakened assertions. Run `npm run diagnose:pi-host` after upgrades; a verified fix should be promoted into the normal suite. TDR closure additionally requires the selection-precedence and safety checks listed in the owning record.
+Requires the selected transcript declarations to restore through late registration in ordinary SDK construction and actual CLI `--session`, each with and without local extensions. These positive acceptance checks fail on the tested Pi 1.0.3 and revalidated Pi 1.1.0 and print selected versus active loadouts. They are excluded from normal contract discovery only by the explicit `.diagnostic.ts` convention, not skips or weakened assertions. Run `npm run diagnose:pi-host` after upgrades; a verified fix should be promoted into the normal suite. TDR closure additionally requires the selection-precedence and safety checks listed in the owning record.
