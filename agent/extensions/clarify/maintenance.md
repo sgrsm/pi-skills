@@ -37,7 +37,7 @@ Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool a
 
 ## Structured prompt section
 
-The hook writes or deletes `systemPromptOptions.sections.clarify_policy`: UI policy, plain-text note without UI, or removal when disabled/inactive. Follow [Structured prompt contributions](../maintenance.md#structured-prompt-contributions); do not return `systemPrompt` from this hook.
+The hook writes or deletes `systemPromptOptions.sections.clarify_policy`: UI policy, plain-text note without UI, or removal when disabled/inactive. Tool metadata and the interactive policy share direct-call-only guidance; the no-UI note still asks in plain text rather than advertising a usable tool. Follow [Structured prompt contributions](../maintenance.md#structured-prompt-contributions); do not return `systemPrompt` from this hook.
 
 ## Validation
 

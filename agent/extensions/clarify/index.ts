@@ -40,6 +40,7 @@ type ClarifyModeState = {
 
 const AGENT_DIR = getAgentDir();
 const CLARIFY_TOOL_NAME = "clarify";
+const CLARIFY_DIRECT_CALL_GUIDANCE = "Call clarify directly as a model tool; it is model-only. Do not invoke tools.clarify() from codemode or call clarify through another tool.";
 const CLARIFY_STATUS_KEY = FOOTER_STATUS_KEYS.clarify;
 const CLARIFY_MODE_STATE_PATH = join(AGENT_DIR, "clarify.json");
 const CLARIFY_LEGACY_MODE_STATE_PATH = join(AGENT_DIR, "clarify-choice.json");
@@ -520,10 +521,11 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 		exposure: "model-only",
 		executionMode: "sequential",
 		description:
-			"Ask the user to choose between different paths or confirm/adjust an assumption. Use when multiple meaningful ways forward exist or when a non-trivial assumption needs confirmation.",
+			`Ask the user to choose between different paths or confirm/adjust an assumption. Use when multiple meaningful ways forward exist or when a non-trivial assumption needs confirmation. ${CLARIFY_DIRECT_CALL_GUIDANCE}`,
 		promptSnippet:
-			"Use clarify to ask the user to choose between materially different approaches or confirm/adjust a non-trivial assumption.",
+			"Call clarify directly to ask the user to choose between materially different approaches or confirm/adjust a non-trivial assumption.",
 		promptGuidelines: [
+			CLARIFY_DIRECT_CALL_GUIDANCE,
 			"Use clarify when you detect multiple materially different ways to proceed, or when a non-trivial assumption would affect correctness, behavior, scope, safety, or user intent.",
 			"Prefer clarify instead of silently choosing whenever the branch you pick would materially change the outcome.",
 			"Keep clarify options concise and distinct. Prefer around 2-5 options plus the custom-instructions path.",
@@ -704,6 +706,6 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 			return;
 		}
 
-		sections.clarify_policy = "Clarification policy:\n- If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.\n- If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.\n- Keep choices focused and distinct. Prefer around 2-5 options plus the custom-instructions path.\n- Phrase options as actionable paths, and use descriptions only for brief trade-offs or consequences.\n- Do not interrupt for trivial defaults, obvious next steps, or decisions the user already made.\n- After the user answers, follow that direction and continue.";
+		sections.clarify_policy = `Clarification policy:\n- ${CLARIFY_DIRECT_CALL_GUIDANCE}\n- If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.\n- If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.\n- Keep choices focused and distinct. Prefer around 2-5 options plus the custom-instructions path.\n- Phrase options as actionable paths, and use descriptions only for brief trade-offs or consequences.\n- Do not interrupt for trivial defaults, obvious next steps, or decisions the user already made.\n- After the user answers, follow that direction and continue.`;
 	});
 }

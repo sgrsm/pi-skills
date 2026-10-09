@@ -13,6 +13,7 @@ import { withTestScratchFixture } from "../permissions/testScratch.ts";
 
 type RegisteredToolMetadata = {
 	name: unknown;
+	description?: unknown;
 	promptSnippet?: unknown;
 	promptGuidelines?: unknown;
 	exposure?: unknown;
@@ -58,6 +59,22 @@ test("workflow tools are model-only when available, hidden and inactive otherwis
 		assert.ok(tool.exposure === "model-only" || tool.exposure === "hidden", String(tool.name));
 		if (tool.exposure === "hidden") assert.equal(tool.defaultActive, false, String(tool.name));
 	}
+});
+
+test("workflow tool metadata explains direct model calls and prohibits codemode invocation", () => {
+	const tools = [testClarifyExtension, subagentExtension].flatMap(captureRegisteredTools);
+	for (const tool of tools) {
+		const name = String(tool.name);
+		assert.match(String(tool.description), new RegExp(`Call ${name} directly as a model tool`), name);
+		assert.match(String(tool.description), /model-only/, name);
+		assert.match(String(tool.promptSnippet), new RegExp(`Call ${name} directly`), name);
+		const guidance = (tool.promptGuidelines as string[]).join("\n");
+		assert.match(guidance, new RegExp(`Call ${name} directly as a model tool`), name);
+		assert.ok(guidance.includes(`Do not invoke tools.${name}() from codemode`), name);
+		assert.match(guidance, new RegExp(`call ${name} through another tool`), name);
+	}
+	const subagentGuidance = tools.find((tool) => tool.name === "subagent")!.promptGuidelines as string[];
+	assert.match(subagentGuidance.join("\n"), /one direct subagent call with mode="parallel" and multiple items/);
 });
 
 test("inspection and retrieval hints preserve existing direct and nested-callable exposure", async () => {

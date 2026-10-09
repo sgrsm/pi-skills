@@ -108,6 +108,9 @@ const SUBAGENT_PARENT_ESCALATION_ENV = "PI_SUBAGENT_PARENT_ESCALATION";
 const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
 const SUBAGENT_SESSION_APPROVAL_CUSTOM_TYPE = "subagent-session-approval";
 const PARENT_ESCALATION_TOOL_NAME = "escalate_to_parent";
+const SUBAGENT_DIRECT_CALL_GUIDANCE = "Call subagent directly as a model tool; it is model-only. Do not invoke tools.subagent() from codemode or call subagent through another tool.";
+const SUBAGENT_PARALLEL_CALL_GUIDANCE = 'For parallel delegation, use one direct subagent call with mode="parallel" and multiple items.';
+const PARENT_ESCALATION_DIRECT_CALL_GUIDANCE = "Call escalate_to_parent directly as a model tool; it is model-only. Do not invoke tools.escalate_to_parent() from codemode or call escalate_to_parent through another tool.";
 const subagentFooterActivity = new SubagentFooterActivityTracker();
 const APPROVAL_OPTION_ALLOW_ONCE = "Allow once";
 const APPROVAL_OPTION_ALLOW_SESSION = "Allow for current session";
@@ -904,6 +907,7 @@ function buildSubagentPolicyPrompt(
 	sessionApproval: boolean,
 	executionSettings: LoadedSubagentExecutionSettings,
 	parentEscalationAvailable: boolean,
+	subagentAvailable: boolean,
 	writeCapableSessionApproval = false,
 ): string {
 	const currentDepth = getCurrentSubagentDepth();
@@ -926,6 +930,11 @@ function buildSubagentPolicyPrompt(
 		lines.push("- Max delegation depth has been reached in this session.");
 	}
 
+	if (subagentAvailable && mode !== "off" && !depthLimitReached) {
+		lines.push(`- ${SUBAGENT_DIRECT_CALL_GUIDANCE}`);
+		lines.push(`- ${SUBAGENT_PARALLEL_CALL_GUIDANCE}`);
+	}
+
 	if (writeCapableSessionApproval && mode === "ask") {
 		lines.push("- This session has current-session approval for non-explicit write-capable user-scoped subagents; future matching calls can run without another prompt.");
 		lines.push("- Project-local agents, unknown agents, ordinary PR-review guardrails, and depth/limit guardrails still require approval or block as usual.");
@@ -941,6 +950,7 @@ function buildSubagentPolicyPrompt(
 	}
 
 	if (parentEscalationAvailable) {
+		lines.push(`- ${PARENT_ESCALATION_DIRECT_CALL_GUIDANCE}`);
 		lines.push("- Interactive clarification and approval requests from this delegated session do not reach the top-level user directly.");
 		lines.push(`- If you need the parent agent to ask the user a question or request broader approval, use ${PARENT_ESCALATION_TOOL_NAME}.`);
 		lines.push(`- After calling ${PARENT_ESCALATION_TOOL_NAME}, stop and let the parent agent continue.`);
@@ -2577,10 +2587,11 @@ export default function (pi: ExtensionAPI) {
 		label: "Escalate to Parent",
 		exposure: "model-only",
 		description:
-			"Request that the parent agent obtain user clarification or approval before this delegated subagent continues.",
+			`Request that the parent agent obtain user clarification or approval before this delegated subagent continues. ${PARENT_ESCALATION_DIRECT_CALL_GUIDANCE}`,
 		promptSnippet:
-			"Use escalate_to_parent only from delegated subagents when you need the parent agent to ask the user a question or request broader approval.",
+			"Call escalate_to_parent directly, only from delegated subagents, when you need the parent agent to ask the user a question or request broader approval.",
 		promptGuidelines: [
+			PARENT_ESCALATION_DIRECT_CALL_GUIDANCE,
 			"Use escalate_to_parent only from delegated subagents. The top-level assistant should ask the user directly instead.",
 			"Use escalate_to_parent when you need a user decision, approval, or instruction that cannot be safely assumed inside this delegated session.",
 			"Keep the escalate_to_parent question focused and provide a small set of materially different options when possible.",
@@ -2653,7 +2664,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const { sections } = event.systemPromptOptions;
-		if (!pi.getActiveTools().includes("subagent") && !pi.getActiveTools().includes(PARENT_ESCALATION_TOOL_NAME)) {
+		const activeTools = pi.getActiveTools();
+		if (!activeTools.includes("subagent") && !activeTools.includes(PARENT_ESCALATION_TOOL_NAME)) {
 			delete sections.subagent_policy;
 			return;
 		}
@@ -2665,7 +2677,8 @@ export default function (pi: ExtensionAPI) {
 			getInheritedSubagentApprovalScope(),
 			sessionApprovalState.askModeApproved,
 			executionSettings,
-			hasParentEscalationRelay(),
+			hasParentEscalationRelay() && activeTools.includes(PARENT_ESCALATION_TOOL_NAME),
+			activeTools.includes("subagent"),
 			sessionApprovalState.writeCapableApproved,
 		);
 	});
@@ -3071,6 +3084,7 @@ export default function (pi: ExtensionAPI) {
 		exposure: "model-only",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
+			SUBAGENT_DIRECT_CALL_GUIDANCE,
 			"Use one canonical request shape: mode (single, parallel, or chain) plus a non-empty items array. Single mode requires exactly one item; chain supports {previous}.",
 			"Child model and thinking selection is owned by local settings.json: subagents.agentDefaults per agent, then Pi defaults.",
 			"Standard user agents: scout, worker, reviewer, planner.",
@@ -3078,8 +3092,10 @@ export default function (pi: ExtensionAPI) {
 			`Default agent scope is "user" (from ${USER_AGENTS_DISPLAY_PATH}).`,
 			`To enable project-local agents in ${PROJECT_AGENTS_DISPLAY_PATH}, set agentScope: "both" (or "project").`,
 		].join(" "),
-		promptSnippet: "Use subagent to delegate work to isolated subagents in single, parallel, or chain mode.",
+		promptSnippet: "Call subagent directly to delegate work to isolated subagents in single, parallel, or chain mode.",
 		promptGuidelines: [
+			SUBAGENT_DIRECT_CALL_GUIDANCE,
+			SUBAGENT_PARALLEL_CALL_GUIDANCE,
 			"Use subagent when the user explicitly asks for sub-agents, delegation, named subagents, or multiple agents, or when non-trivial work clearly benefits from isolated delegation under the current policy mode.",
 			"Do not use subagent for ordinary PR reviews, small diffs, or simple tasks; handle those directly unless the user explicitly asks for subagent review.",
 			"Use subagent with mode=parallel and multiple items when the user asks to spawn multiple sub-agents for independent work, and try to match the requested number of sub-agents with focused tasks when the work can be cleanly decomposed.",

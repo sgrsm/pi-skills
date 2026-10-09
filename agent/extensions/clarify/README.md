@@ -48,6 +48,8 @@ Saved off mode keeps clarify unavailable at startup and `/reload`, even if a too
 
 Tool name: `clarify`. It is model-only: direct model calls are supported, but codemode scripts and other tools cannot invoke it through `ctx.executeTool()`. The `/clarify` command is unchanged.
 
+If codemode reports that `tools.clarify` does not exist, ask the model to retry with a direct `clarify` tool call, outside codemode. Tool discovery or changing codemode mode will not make it callable from scripts. Without interactive UI, the agent should ask in plain text instead.
+
 Parameters:
 
 - `question` - required question to show the user.

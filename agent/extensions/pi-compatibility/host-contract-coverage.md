@@ -69,6 +69,14 @@ Protects optional-tool availability without losing restored tools. See [tool ava
 - Also covers manual/ask/auto policies, fresh and reloaded depth caps, changed saved state, explicit persisted toggles, active and callable sets for available and withdrawn tools, model-only nested-call rejection, direct child escalation, unrelated session tool choices, `defaultTools`, `+codemode`, allowlists/exclusions (including late restoration), and no-tools options.
 - The codemode placeholder checks selection only, not the real sandbox or loadout renderer. The constructor-restoration case deliberately omits `initialActiveToolNames`; it does not fix or claim to fix the separate SDK/CLI resume defect below.
 
+## `model-only-codemode.test.ts`
+
+Protects the direct-only invocation boundary for `clarify`, `subagent`, and `escalate_to_parent` with the real public `createCodemodeExtension()` in `on` and `only` modes.
+
+- Loads the actual local workflow extensions with isolated saved state, an offline runtime, and an in-memory session. Checks model-only exposure, active/callable sets, model-facing descriptions and rendered guidance, and the agent's request projection. A callable `read` control remains declared in `on` and is hidden in `only`; workflow declarations remain visible in both.
+- Runs catalog/property checks in the real QuickJS sandbox. Workflow names are absent from `ALL_TOOLS`, search and descriptions, and property access produces a missing-member error. A callable `read` discovery control remains available.
+- Does not invoke nested tools, child processes, dialogs, providers or MCP servers. It does not validate nested delegation lifecycle/accounting or prove that models always follow the prompt guidance. Policy-section availability and no-UI fallback remain covered by `structured-prompt.test.ts`.
+
 ## `wrapped-builtins.test.ts`
 
 Protects [built-in replacement configuration](../short-paths/maintenance.md#built-in-replacement-configuration).

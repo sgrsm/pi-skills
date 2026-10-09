@@ -24,6 +24,7 @@ Protects custom-tool prompt metadata and the chosen exposure of workflow tools.
 
 - Checks that `clarify`, `subagent`, and `escalate_to_parent` use model-only exposure when available, or hidden/inactive registration when unavailable, excluding programmatic nested calls.
 - Captures registered prompt metadata from `clarify`, `git-inspect`, `web-search`, and `subagent`.
+- Checks direct-call-only guidance for model-only workflow tools and the single-call parallel delegation shape.
 - The invariant is that every `promptSnippet` and `promptGuidelines` entry names its tool explicitly. Pi composes tool prompt metadata into a flat prompt, so each standalone line must remain clear about which tool it is describing.
 
 ### `ui-mode-guards.test.ts`
@@ -56,6 +57,10 @@ Protects additive structured prompt contributions from clarify, permissions, and
 ### `tool-activation.test.ts`
 
 Protects optional-tool availability and preservation of restored tools across startup, reload, `/tree`, and SDK selection. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
+
+### `model-only-codemode.test.ts`
+
+Checks that real codemode in both `on` and `only` modes preserves direct model declarations and guidance for workflow tools while excluding them from script discovery and access. See [coverage and limitations](host-contract-coverage.md#model-only-codemodetestts).
 
 ### `sdk-resume.test.ts`
 

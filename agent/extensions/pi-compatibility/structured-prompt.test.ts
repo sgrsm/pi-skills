@@ -13,6 +13,7 @@ import { withTestScratchFixture } from "../permissions/testScratch.ts";
 const ownedKeys = ["clarify_policy", "permissions_scratch", "subagent_policy"] as const;
 const scratchHint = (path: string) => `Session scratch (already created): ${path}\nWrite files or create subdirectories below it instead of /tmp. Pi manages the root; do not mkdir, chmod, rename, or delete it. Use explicit destination filenames.`;
 const clarificationPolicy = `Clarification policy:
+- Call clarify directly as a model tool; it is model-only. Do not invoke tools.clarify() from codemode or call clarify through another tool.
 - If you discover multiple materially different ways to proceed, stop and use clarify before committing to one.
 - If you would otherwise make a non-trivial assumption that affects correctness, behavior, scope, safety, or user intent, use clarify first.
 - Keep choices focused and distinct. Prefer around 2-5 options plus the custom-instructions path.
@@ -141,6 +142,10 @@ test("additive prompt contributors preserve the structured host contract", async
 				assert.equal(options.sections.unrelated, "Keep me");
 				assert.equal(options.sections.clarify_policy, clarificationPolicy);
 				assert.match(options.sections.subagent_policy!, /Current parallel limits: 7 task\(s\).*3 subagent\(s\)/);
+				assert.match(options.sections.subagent_policy!, /Call subagent directly as a model tool; it is model-only/);
+				assert.match(options.sections.subagent_policy!, /Do not invoke tools\.subagent\(\) from codemode or call subagent through another tool/);
+				assert.match(options.sections.subagent_policy!, /one direct subagent call with mode="parallel" and multiple items/);
+				assert.doesNotMatch(options.sections.subagent_policy!, /Call escalate_to_parent directly/);
 				const workspace = join(tmpdir(), "pi", `session-${h.manager.getSessionId()}`);
 				assert.equal(options.sections.permissions_scratch, scratchHint(workspace));
 				assert.equal((await stat(workspace)).isDirectory(), true);
@@ -186,6 +191,7 @@ test("additive prompt contributors preserve the structured host contract", async
 					const options = await h.turn();
 					assert.match(options.sections.subagent_policy!, new RegExp(`Current subagent mode is ${mode}\\.`));
 					assert.equal(options.forceSystemPrompt, undefined);
+					assert.match(options.sections.subagent_policy!, /Call subagent directly as a model tool/);
 					if (mode === "auto") assert.match(options.sections.subagent_policy!, /out-of-policy calls block because no approval UI/);
 				});
 			}
@@ -194,16 +200,33 @@ test("additive prompt contributors preserve the structured host contract", async
 					process.env.PI_SUBAGENT_PARENT_ESCALATION = "1";
 					process.env.PI_SUBAGENT_INHERITED_APPROVAL_SCOPE = "read-only";
 					await h.configure(true, "off");
+					h.setActive(["escalate_to_parent", "bash"]);
 					const off = await h.turn();
 					assert.match(off.sections.subagent_policy!, /subagent tool is disabled completely/);
 					assert.match(off.sections.subagent_policy!, /use escalate_to_parent/);
+					assert.match(off.sections.subagent_policy!, /Call escalate_to_parent directly as a model tool; it is model-only/);
+					assert.match(off.sections.subagent_policy!, /Do not invoke tools\.escalate_to_parent\(\) from codemode or call escalate_to_parent through another tool/);
+					assert.doesNotMatch(off.sections.subagent_policy!, /Call subagent directly/);
 					process.env.PI_SUBAGENT_DEPTH = "2";
 					await h.configure();
+					h.setActive(["escalate_to_parent", "bash"]);
 					const capped = await h.turn(off);
 					assert.match(capped.sections.subagent_policy!, /inherits read-only nested delegation approval/);
 					assert.match(capped.sections.subagent_policy!, /maximum delegation depth has already been reached/);
 					assert.match(capped.sections.subagent_policy!, /use escalate_to_parent/);
+					assert.match(capped.sections.subagent_policy!, /Call escalate_to_parent directly as a model tool/);
+					assert.doesNotMatch(capped.sections.subagent_policy!, /Call subagent directly/);
 					assert.equal(capped.forceSystemPrompt, undefined);
+					delete process.env.PI_SUBAGENT_DEPTH;
+					await h.configure();
+					h.setActive(["escalate_to_parent", "bash"]);
+					const relayOnly = await h.turn(capped);
+					assert.match(relayOnly.sections.subagent_policy!, /Call escalate_to_parent directly as a model tool/);
+					assert.doesNotMatch(relayOnly.sections.subagent_policy!, /Call subagent directly/);
+					h.setActive(["subagent", "bash"]);
+					const delegationOnly = await h.turn(relayOnly);
+					assert.match(delegationOnly.sections.subagent_policy!, /Call subagent directly as a model tool/);
+					assert.doesNotMatch(delegationOnly.sections.subagent_policy!, /Call escalate_to_parent directly/);
 				} finally {
 					for (const key of envKeys.slice(1)) delete process.env[key];
 				}

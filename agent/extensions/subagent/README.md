@@ -2,7 +2,7 @@
 
 Adds multi-agent delegation to Pi through the `subagent` tool. Each delegated child runs in its own `pi` process with an isolated context window.
 
-`subagent` and `escalate_to_parent` are model-only: models can call them directly, but codemode scripts and other tools cannot invoke them through `ctx.executeTool()`. Child models can still delegate directly when their tools and policy allow it.
+`subagent` and `escalate_to_parent` are model-only: models can call them directly, but codemode scripts and other tools cannot invoke them through `ctx.executeTool()`. For parallel delegation, use one direct `subagent` call with `mode: "parallel"` and multiple `items`. Child models can still delegate directly when their tools and policy allow it.
 
 Use subagents for explicit delegation requests or non-trivial work that benefits from focused investigation or clean decomposition. Avoid them for small tasks and ordinary reviews unless the user asks for delegation.
 
@@ -177,6 +177,7 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 
 ## Troubleshooting
 
+- **Codemode says `tools.subagent` or `tools.escalate_to_parent` does not exist:** ask the model to retry with a direct tool call, outside codemode. These tools are intentionally unavailable to scripts; tool discovery or changing codemode mode will not make them callable there.
 - **Unknown agent:** check the agent name, configured scope, and any skipped-definition warnings.
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
