@@ -1,4 +1,4 @@
-# TDR-0005: Retain subagent results and usage on orchestration cancellation and exceptions
+# TDR-20261009-1203: Retain subagent results and usage on orchestration cancellation and exceptions
 
 - **Status:** Open — parallel cancellation confirmed; exception paths source-supported / verify first
 - **Priority:** Medium

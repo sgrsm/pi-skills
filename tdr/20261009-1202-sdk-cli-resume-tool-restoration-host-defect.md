@@ -1,4 +1,4 @@
-# TDR-0004: Restore the transcript tool loadout on SDK/CLI resume
+# TDR-20261009-1202: Restore the transcript tool loadout on SDK/CLI resume
 
 - **Status:** Open — reproduced on Pi 1.0.3; correction requires Pi source/upstream work
 - **Priority:** Medium; MCP-specific impact latent while servers are disabled
@@ -76,7 +76,7 @@ npm run verify
 node --test pi-compatibility/sdk-resume.diagnostic.ts
 ```
 
-Normal `*.test.ts` checks protect working contracts and local-availability parity, including the positive `/tree` control. Passing them does **not** demonstrate successful SDK/CLI creation-time restoration. Explicit `*.diagnostic.ts` checks assert the required positive restoration behavior and fail nonzero on the tested Pi 1.0.3; they are neither skipped nor marked TODO. `npm run diagnose:pi-host` runs both this record's and TDR-0003's outstanding checks. After upgrades, rerun diagnostics and re-evaluate the actual behavior rather than pinning a version or preserving omission as intended behavior.
+Normal `*.test.ts` checks protect working contracts and local-availability parity, including the positive `/tree` control. Passing them does **not** demonstrate successful SDK/CLI creation-time restoration. Explicit `*.diagnostic.ts` checks assert the required positive restoration behavior and fail nonzero on the tested Pi 1.0.3; they are neither skipped nor marked TODO. `npm run diagnose:pi-host` runs both this record's and TDR-20261009-1201's outstanding checks. After upgrades, rerun diagnostics and re-evaluate the actual behavior rather than pinning a version or preserving omission as intended behavior.
 
 ### Reconstruct the SDK reproduction
 

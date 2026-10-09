@@ -17,7 +17,7 @@ type DialogComponent = Component & { dispose?(): void };
 /**
  * Public renderer fixture for contract tests and explicit host diagnostics.
  * custom() completion is a test adapter, not an actual host-method invocation.
- * Compare it with the host close path after upgrades; see TDR-0003.
+ * Compare it with the host close path after upgrades; see TDR-20261009-1201.
  */
 export function createUi(mode: "fullscreen" | "regular", presentation: "current-dock" | "custom-overlay-probe" = "current-dock") {
 	const bindings = new KeybindingsManager(TUI_KEYBINDINGS);

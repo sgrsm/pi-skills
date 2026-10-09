@@ -1,4 +1,4 @@
-# TDR-0007: Decide the Trash-history all-projects storage policy
+# TDR-20261009-1205: Decide the Trash-history all-projects storage policy
 
 - **Status:** Open — policy decision pending
 - **Priority:** Medium for shared/custom storage; latent with default per-project storage

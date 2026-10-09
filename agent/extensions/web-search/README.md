@@ -33,7 +33,7 @@ Default state is enabled when no saved state exists.
 
 Saved off mode keeps web search unavailable at startup and `/reload`, even if a tool selection names it. When on, restrictive CLI tool allowlists/exclusions still win. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
-**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Tool
 

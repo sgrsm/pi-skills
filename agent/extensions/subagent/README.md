@@ -116,7 +116,7 @@ Top-level sessions never get `escalate_to_parent`, even if a tool selection name
 
 The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
 
-**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Settings
 
@@ -171,7 +171,7 @@ Large child outputs use Pi's standard truncation limits. The complete output is 
 
 Single and chain child failures are error results that keep the child's diagnostics and reported token/cost usage. A chain stops at the failed step and keeps earlier completed steps and their usage. Cancelling between chain steps keeps completed work and starts no further child. `Ctrl+O` shows retained diagnostics and usage; errors without valid child details fall back to plain text.
 
-**Accounting limits (open):** usage reported by completed single/chain children is counted once in the parent session, including child failures and cancellations, but accounting is best effort: tokens/cost a child never reported cannot be recovered. A parallel call that finishes normally keeps per-child failure summaries and usage, but **cancelling a parallel call returns an abort-only error with no collected results or usage**. Other orchestration-accounting debt (for example unexpected exceptions after usage was collected) is tracked in [TDR-0005](../../../tdr/0005-subagent-orchestration-failure-accounting.md). Parent-input requests are escalation outcomes, not child failures. Implementation notes: [subagent maintenance](./maintenance.md#failure-results-and-usage-accounting).
+**Accounting limits (open):** usage reported by completed single/chain children is counted once in the parent session, including child failures and cancellations, but accounting is best effort: tokens/cost a child never reported cannot be recovered. A parallel call that finishes normally keeps per-child failure summaries and usage, but **cancelling a parallel call returns an abort-only error with no collected results or usage**. Other orchestration-accounting debt (for example unexpected exceptions after usage was collected) is tracked in [TDR-20261009-1203](../../../tdr/20261009-1203-subagent-orchestration-failure-accounting.md). Parent-input requests are escalation outcomes, not child failures. Implementation notes: [subagent maintenance](./maintenance.md#failure-results-and-usage-accounting).
 
 Top-level children run in POSIX process groups so cancelling them also cleans up nested work. Cancellation is bounded and reports when process cleanup cannot be confirmed.
 

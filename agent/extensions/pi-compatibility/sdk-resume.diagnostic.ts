@@ -4,10 +4,10 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import { assertRegisteredLateTools, declared, lateNames, off, withResumeFixture } from "./resumeFixture.ts";
 
 // Deliberately outside *.test.ts: these are positive acceptance checks for open
-// TDR-0004, not assertions that the known omission should persist. Run via
+// TDR-20261009-1202, not assertions that the known omission should persist. Run via
 // npm run diagnose:pi-host; failures are real unresolved debt, never skips/TODOs.
 for (const withLocals of [false, true]) {
-	test(`TDR-0004: SDK resume restores selected late declarations (${withLocals ? "local extensions" : "host only"})`, async (t) => {
+	test(`TDR-20261009-1202: SDK resume restores selected late declarations (${withLocals ? "local extensions" : "host only"})`, async (t) => {
 		t.diagnostic(`Pi ${VERSION}; offline reopened-transcript SDK fixture`);
 		await withResumeFixture(async (h) => {
 			const actual = await h.sdk(withLocals, off);
@@ -21,7 +21,7 @@ for (const withLocals of [false, true]) {
 }
 
 for (const withLocals of [false, true]) {
-	test(`TDR-0004: actual CLI --session restores selected declarations (${withLocals ? "local extensions" : "host only"})`, { timeout: 25_000 }, async (t) => {
+	test(`TDR-20261009-1202: actual CLI --session restores selected declarations (${withLocals ? "local extensions" : "host only"})`, { timeout: 25_000 }, async (t) => {
 		t.diagnostic(`Pi ${VERSION}; offline CLI --session fixture`);
 		await withResumeFixture(async (h) => {
 			const actual = await h.cli(withLocals);

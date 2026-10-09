@@ -1,4 +1,4 @@
-# TDR-0006: Expose physical model identity to provider-request extensions
+# TDR-20261009-1204: Expose physical model identity to provider-request extensions
 
 - **Status:** Open — source-verified API limitation; host enhancement deferred
 - **Priority:** Low; direct legacy Codex verbosity remains supported

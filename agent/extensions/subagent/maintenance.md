@@ -21,7 +21,7 @@ Maintainer notes for [`subagent`](./README.md). User-facing commands, settings a
 
 ## Startup tool availability
 
-`subagent` and child `escalate_to_parent` are registered through `registerToolAvailability()` (`../shared/toolAvailability.ts`). `session_start` and `syncSubagentSessionState()` call the availability setters, so saved off mode, a delegation depth cap, and top-level (no relay) escalation withdrawal use hidden re-registration rather than subtractive `setActiveTools()`. See [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only an explicit `/subagents off` (`setPolicyMode()`) removes `subagent` from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and open: [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+`subagent` and child `escalate_to_parent` are registered through `registerToolAvailability()` (`../shared/toolAvailability.ts`). `session_start` and `syncSubagentSessionState()` call the availability setters, so saved off mode, a delegation depth cap, and top-level (no relay) escalation withdrawal use hidden re-registration rather than subtractive `setActiveTools()`. See [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only an explicit `/subagents off` (`setPolicyMode()`) removes `subagent` from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and open: [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Child MCP startup limitation
 
@@ -61,7 +61,7 @@ Pi contract: throwing from `execute()` becomes a text-only error with no `detail
 - **Rendering:** `renderResult()` validates saved details with `normalizeRenderableSubagentResult()`, normalizes older usage, and falls back to plain text for malformed entries. Persisted data and execution accounting are not changed by rendering.
 - Unreported child tokens/cost cannot be recovered; accounting is best-effort.
 
-Open debt (parallel abort-only loss, unexpected-exception paths, optional nested-UI observations, reproduction and acceptance criteria): [TDR-0005](../../../tdr/0005-subagent-orchestration-failure-accounting.md). `failureResults.test.ts` ("parallel cancellation keeps its existing abort-only contract") characterizes the loss; passing it does not mean the debt is resolved, and a fix should replace it with positive expectations.
+Open debt (parallel abort-only loss, unexpected-exception paths, optional nested-UI observations, reproduction and acceptance criteria): [TDR-20261009-1203](../../../tdr/20261009-1203-subagent-orchestration-failure-accounting.md). `failureResults.test.ts` ("parallel cancellation keeps its existing abort-only contract") characterizes the loss; passing it does not mean the debt is resolved, and a fix should replace it with positive expectations.
 
 ## Validation
 

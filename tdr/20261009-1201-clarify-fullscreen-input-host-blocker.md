@@ -1,4 +1,4 @@
-# TDR-0003: Restore safe fullscreen clarify input
+# TDR-20261009-1201: Restore safe fullscreen clarify input
 
 - **Status:** Open — fullscreen mouse ownership corrected; other input/layout and host lifecycle defects remain
 - **Priority:** Medium

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { contextStart, createUi, lines, scrollingInputs } from "./clarifyUiFixture.ts";
 
-// Working routes are contract regressions. Outstanding TDR-0003 requirements
+// Working routes are contract regressions. Outstanding TDR-20261009-1201 requirements
 // are positive acceptance checks in clarify-input.diagnostic.ts.
 for (const completion of ["selection", "escape", "abort"] as const) {
 	test(`fullscreen clarify preserves host mouse modes and transcript scrolling after ${completion}`, async (t) => {

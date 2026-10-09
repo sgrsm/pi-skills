@@ -5,13 +5,13 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import { Text, TuiAltScreen } from "@earendil-works/pi-tui";
 import { contextStart, createUi, scrollingInputs } from "./clarifyUiFixture.ts";
 
-// Positive acceptance checks for open TDR-0003, run via diagnose:pi-host.
+// Positive acceptance checks for open TDR-20261009-1201, run via diagnose:pi-host.
 // The public renderer is real; custom() installation/close is a test adapter.
-// Reconstruct the actual-host scratch probe in TDR-0003 after host upgrades:
+// Reconstruct the actual-host scratch probe in TDR-20261009-1201 after host upgrades:
 // these adapter lifecycle assertions alone cannot prove a host correction.
 for (const [name, key, initialKey, direction] of scrollingInputs) {
 	if (name === "Home" || name === "End") continue; // Positive contract tests cover these working routes.
-	test(`TDR-0003: fullscreen dock routes ${name} to the question, not the transcript`, async (t) => {
+	test(`TDR-20261009-1201: fullscreen dock routes ${name} to the question, not the transcript`, async (t) => {
 		t.diagnostic(`Pi ${VERSION}; public fullscreen renderer, fake terminal`);
 		const h = createUi("fullscreen");
 		const abort = new AbortController();
@@ -32,7 +32,7 @@ for (const [name, key, initialKey, direction] of scrollingInputs) {
 
 // Fullscreen ownership is now a contract regression in clarify-input.test.ts.
 // Removing regular-mode mouse toggles remains outside the scoped runtime fix.
-test("TDR-0003: regular clarify does not take over terminal mouse modes", async (t) => {
+test("TDR-20261009-1201: regular clarify does not take over terminal mouse modes", async (t) => {
 	const h = createUi("regular");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
@@ -47,7 +47,7 @@ test("TDR-0003: regular clarify does not take over terminal mouse modes", async 
 		"the extension must leave mouse reporting ownership to the renderer/terminal");
 });
 
-test("TDR-0003: fullscreen clarify keeps navigation help visible at 80x24", async (t) => {
+test("TDR-20261009-1201: fullscreen clarify keeps navigation help visible at 80x24", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
@@ -56,7 +56,7 @@ test("TDR-0003: fullscreen clarify keeps navigation help visible at 80x24", asyn
 	assert.match(h.tui.getScreenLines().map(stripVTControlCharacters).join("\n"), /navigate • Enter select • Esc cancel/);
 });
 
-test("TDR-0003: adapter contract removes the cancelled owned overlay while preserving search", async (t) => {
+test("TDR-20261009-1201: adapter contract removes the cancelled owned overlay while preserving search", async (t) => {
 	const h = createUi("fullscreen", "custom-overlay-probe");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
@@ -72,7 +72,7 @@ test("TDR-0003: adapter contract removes the cancelled owned overlay while prese
 	assert.equal(dialog.doneCalls, 1);
 });
 
-test("TDR-0003: adapter contract preserves unrelated overlays on abort before installation", async (t) => {
+test("TDR-20261009-1201: adapter contract preserves unrelated overlays on abort before installation", async (t) => {
 	const h = createUi("fullscreen", "custom-overlay-probe");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });

@@ -1,4 +1,4 @@
-# TDR-0002: Preserve transient project trust for contained subagent children
+# TDR-20261009-1200: Preserve transient project trust for contained subagent children
 
 - **Status:** Open
 - **Priority:** Low

@@ -27,13 +27,13 @@ Maintainer notes for [`clarify`](./README.md). User-facing behavior, commands an
 
 ## Fullscreen input defect
 
-Fullscreen mouse-mode ownership is corrected locally: Clarify no longer enables or disables Pi's mouse reporting. On the tested Pi 1.0.3, Home/End routing works; PageUp/PageDown/wheel routing within the question, help clipping, regular-mode mouse ownership, and the host overlay-completion defect remain open. The broader overlay remediation is still deferred. The full evidence, host blocker, scoped correction, safety boundaries and acceptance criteria are in [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md); do not duplicate them here.
+Fullscreen mouse-mode ownership is corrected locally: Clarify no longer enables or disables Pi's mouse reporting. On the tested Pi 1.0.3, Home/End routing works; PageUp/PageDown/wheel routing within the question, help clipping, regular-mode mouse ownership, and the host overlay-completion defect remain open. The broader overlay remediation is still deferred. The full evidence, host blocker, scoped correction, safety boundaries and acceptance criteria are in [TDR-20261009-1201](../../../tdr/20261009-1201-clarify-fullscreen-input-host-blocker.md); do not duplicate them here.
 
 `showClarifySelector()` snapshots `tui.mode === "regular"` at creation and uses that same ownership decision for legacy mouse setup and disposal. Fullscreen emits neither toggle. The non-overlay presentation, raw key/wheel parsing, and terminal-row rendering budget are unchanged. `pi-compatibility/clarify-input.test.ts` protects fullscreen ownership across selection, Escape, and abort, post-dialog wheel routing, working routes, and regular-mode setup/cleanup. `clarify-input.diagnostic.ts` retains the outstanding positive requirements, including removal of regular-mode toggles. Its custom-dialog lifecycle adapter is not an actual host-method invocation; reconstruct the TDR's scratch-only real-host probe after upgrades. Fake-terminal tests do not emulate Ghostty's wheel-to-arrow fallback or establish live-terminal behavior after the correction.
 
 ## Startup availability and resume
 
-Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only explicit `/clarify off` removes the tool from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and still open: [TDR-0004](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md).
+Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only explicit `/clarify off` removes the tool from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and still open: [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Structured prompt section
 
@@ -48,4 +48,4 @@ node --test clarify/index.test.ts pi-compatibility/clarify-input.test.ts pi-comp
 npm run verify
 ```
 
-Tests use injected clarify state (`loadModeState`) and fake dialogs, never personal clarify settings. Run `npm run diagnose:pi-host` separately after host upgrades and before closing TDR-0003/TDR-0004; it exits nonzero while the tracked defects persist. A green contract gate does not resolve those defects.
+Tests use injected clarify state (`loadModeState`) and fake dialogs, never personal clarify settings. Run `npm run diagnose:pi-host` separately after host upgrades and before closing TDR-20261009-1201/TDR-20261009-1202; it exits nonzero while the tracked defects persist. A green contract gate does not resolve those defects.

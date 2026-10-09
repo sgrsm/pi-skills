@@ -31,7 +31,7 @@ Protects safe, visible Trash approval at fullscreen sizes.
 
 ## `clarify-input.test.ts` and `clarify-input.diagnostic.ts`
 
-Protect working routes and test outstanding requirements separately; see [TDR-0003](../../../tdr/0003-clarify-fullscreen-input-host-blocker.md). Fullscreen mouse-mode ownership is corrected locally, and Home/End routing works on the tested Pi 1.0.3 and revalidated Pi 1.1.0. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and the host overlay-completion blocker remain **open**. No installed-host patch or overlay redesign is included.
+Protect working routes and test outstanding requirements separately; see [TDR-20261009-1201](../../../tdr/20261009-1201-clarify-fullscreen-input-host-blocker.md). Fullscreen mouse-mode ownership is corrected locally, and Home/End routing works on the tested Pi 1.0.3 and revalidated Pi 1.1.0. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and the host overlay-completion blocker remain **open**. No installed-host patch or overlay redesign is included.
 
 - `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures, the simplified fixed-dock composition, and the test-only `custom()` adapter.
 - Normal contract tests require fullscreen creation, selection, Escape, and abort to leave host mouse modes untouched, restore editor focus, and retain post-dialog wheel routing. They also protect Home/End question scrolling, regular-mode interaction/setup/cleanup, and focused-overlay input controls.
@@ -79,7 +79,7 @@ Protects [built-in replacement configuration](../short-paths/maintenance.md#buil
 
 ## `sdk-resume.test.ts` (contract controls)
 
-Protects working controls without asserting omission as desired behavior. The separate **open** [host defect](../../../tdr/0004-sdk-cli-resume-tool-restoration-host-defect.md) was reproduced on Pi 1.0.3 and Pi 1.1.0 with public SDK construction and the actual CLI, both with and without local extensions. No host patch or local workaround exists.
+Protects working controls without asserting omission as desired behavior. The separate **open** [host defect](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md) was reproduced on Pi 1.0.3 and Pi 1.1.0 with public SDK construction and the actual CLI, both with and without local extensions. No host patch or local workaround exists.
 
 - `resumeFixture.ts` shares isolated offline fixtures between contract tests and diagnostics. It reopens a real disposable JSONL transcript with `SessionManager.open()` and validates transcript identity and registered late-tool names/exposures.
 - Normal tests protect positive `/tree` restoration, indirect callability, every local off-mode/relay combination's availability and parity with the host baseline, and actual CLI transcript/parity controls. Parity expectations use each baseline phase rather than freezing its omitted loadout.
