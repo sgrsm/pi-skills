@@ -58,6 +58,8 @@ With smart paths enabled, paths are shortened to fit the available row width:
 4. fall back to an ellipsis path such as `…/src/file.ts` when needed;
 5. if only the basename can fit, left-truncate it with `…`.
 
+Summaries follow Pi's `outputPad` setting: 0 means no horizontal padding, and 1 (the default) means one column.
+
 Tool summaries also include small metadata where available:
 
 - `read` - optional line range such as `:10-25`

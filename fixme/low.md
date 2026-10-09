@@ -1,17 +1,14 @@
-### 4. Low — hidden `edit` summaries ignore the newly extended `outputPad` setting
+### 4. Low — hidden `edit` summaries ignore the newly extended `outputPad` setting (resolved)
 
-**Files:** `agent/extensions/short-paths/toolCallSummary.ts:504–511`, `agent/extensions/pi-compatibility/short-paths-loader.test.ts:107–114`
+**Status:** Resolved.
 
-In v1.1.0, tool rendering honors `outputPad`. The local self-rendered hidden `edit` summary still constructs `Box(1, 1, …)` without applying `context.outputPad`.
+**Files:** `agent/extensions/short-paths/toolCallSummary.ts`, `agent/extensions/pi-compatibility/short-paths-loader.test.ts`
 
-Confirmed with a rendering probe:
+**Original finding:** The hidden self-rendered `edit` summary did not apply `context.outputPad`. Fresh summaries retained one column at `outputPad: 0`, while reused native components could retain earlier padding.
 
-- `outputPad: 0`: native `edit` has no horizontal padding; hidden `edit` retains one column.
-- Reusing a native component can preserve its previous padding, making the result dependent on toggle history.
+**Resolution:** Apply `box.setPaddingX(context.outputPad ?? 1)` on every self-shell render, including reused components. Vertical padding and default-shell behavior are unchanged. User and maintainer documentation now describe padding behavior.
 
-Your current `outputPad: 1` setting generally masks this.
-
-**Action:** Apply `box.setPaddingX(context.outputPad ?? 1)` on every render. Add explicit padding values to the loader fixture and cover both settings plus component reuse. The existing fixture omits the new field, so its native-versus-native comparisons are not sufficient coverage.
+**Regression coverage:** The loader fixture explicitly supplies `outputPad`. Tests independently assert indentation for both values on the first render, changes in both directions, and native → hidden → native transitions with component identity preserved.
 
 ### 5. Low — document and test the new CLI modifier syntax at local integration boundaries
 

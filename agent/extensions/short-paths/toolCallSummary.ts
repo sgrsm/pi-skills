@@ -505,6 +505,8 @@ export function renderSmartToolCall(
     const bg = getSelfShellBg(theme, !!context.isPartial, !!context.isError)
     const box = context.lastComponent instanceof Box ? (context.lastComponent as SmartSummaryBox) : (new Box(1, 1, bg) as SmartSummaryBox)
     box.setBgFn(bg)
+    // Self-shell renderers own horizontal padding; a reused box may carry an earlier value.
+    box.setPaddingX(context.outputPad ?? 1)
     box.clear()
 
     const line = getLineComponent(box.summaryLine, parts)

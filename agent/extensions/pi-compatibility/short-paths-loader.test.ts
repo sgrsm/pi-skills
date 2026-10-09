@@ -103,7 +103,7 @@ async function setup(fixture: TestScratchFixture, agentDir: string) {
 }
 
 type Loaded = Awaited<ReturnType<Awaited<ReturnType<typeof setup>>["load"]>>;
-function row(h: Loaded, name: string, hidden: boolean, expanded = false, id = name) {
+function row(h: Loaded, name: string, hidden: boolean, expanded = false, id = name, outputPad: 0 | 1 = 1) {
   const tool = h.tools.get(name)!;
   const native = factories.map((factory) => factory(process.cwd())).find((tool) => tool.name === name)!;
   const args = { path: longPath, pattern: "needle", content: "hello", edits: [{ oldText: "a", newText: "b" }] };
@@ -111,6 +111,7 @@ function row(h: Loaded, name: string, hidden: boolean, expanded = false, id = na
   let invalidations = 0;
   const context: any = {
     toolCallId: id, state: {}, cwd: process.cwd(), expanded,
+    outputPad, // Pi 1.1 supplies this; self-shell renderers must apply it themselves.
     // Native edit previews read files asynchronously; path-formatting tests must not
     // request a diff preview of synthetic HOME paths or race preview completion.
     isPartial: false, isError: false, argsComplete: name !== "edit", executionStarted: true,
@@ -123,6 +124,7 @@ function row(h: Loaded, name: string, hidden: boolean, expanded = false, id = na
   render();
   return {
     context, tool, args,
+    component: () => component,
     invalidations: () => invalidations,
     actual: (width: number) => component.render(width),
     expected(enabled: boolean, width: number) {
@@ -356,5 +358,66 @@ test("failed persistence does not publish an uncommitted preference", async () =
     assert.deepEqual(r.actual(40), r.expected(true, 40));
     await loaded.toggle("");
     assert.equal(loaded.notifications.at(-1), "short-paths is on");
+  });
+});
+
+// Counts leading spaces of the call header without reusing any production padding logic.
+function headerIndent(lines: string[]): number {
+  const header = lines.find((line) => line.trimStart().startsWith("edit "));
+  assert.ok(header, `edit header missing in ${JSON.stringify(lines)}`);
+  return header.length - header.trimStart().length;
+}
+
+test("hidden self-rendered edit summaries apply the current outputPad, including component reuse", async () => {
+  await withLoader(async (h) => {
+    await h.persist('{"enabled":true}');
+    await h.fixture.writeFile(join(h.agentDir, "hide-tool-output.json"), '{"enabled":false}');
+    const loaded = await h.load();
+    await loaded.start();
+    const hideTool = loaded.commands.get("hide-tool")!;
+    const setHidden = (mode: "on" | "off") =>
+      hideTool.handler(mode, loaded.runner.createContext() as ExtensionCommandContext);
+    // Hidden summaries add edit-count metadata (fixture has one edit); native edit headers do not.
+    const isHidden = (r: ReturnType<typeof row>) => r.actual(120).some((line: string) => line.includes("(1 edit)"));
+    const check = (r: ReturnType<typeof row>, pad: 0 | 1, hidden: boolean, label: string) => {
+      r.context.outputPad = pad;
+      r.context.invalidate(); // host redraw: renders again with lastComponent
+      assert.equal(isHidden(r), hidden, `${label}: renderer under test`);
+      assert.equal(headerIndent(r.actual(80)), pad, `${label}: outputPad ${pad}`);
+    };
+
+    // One component through native -> hidden -> native, changing both settings between renders.
+    const reused = row(loaded, "edit", false);
+    const reusedComponent = reused.component();
+    check(reused, 1, false, "native");
+    check(reused, 0, false, "native");
+    check(reused, 1, false, "native");
+    await setHidden("on");
+    check(reused, 1, true, "reused native->hidden");
+    check(reused, 0, true, "reused hidden");
+    check(reused, 1, true, "reused hidden");
+    check(reused, 0, true, "reused hidden");
+    await setHidden("off");
+    check(reused, 0, false, "reused hidden->native");
+    check(reused, 1, false, "reused native");
+    assert.equal(reused.component(), reusedComponent, "one component survives native -> hidden -> native");
+
+    // Reuse where a native component's earlier padding differs from the first hidden request.
+    for (const [before, after] of [[1, 0], [0, 1]] as const) {
+      const component = row(loaded, "edit", false);
+      check(component, before, false, `native pad ${before}`);
+      await setHidden("on");
+      check(component, after, true, `native pad ${before} -> hidden pad ${after}`);
+      await setHidden("off");
+    }
+
+    // Fresh hidden components honor either setting from their first render, before any invalidate().
+    await setHidden("on");
+    for (const pad of [0, 1] as const) {
+      const fresh = row(loaded, "edit", true, false, `fresh-${pad}`, pad);
+      assert.equal(isHidden(fresh), true, `fresh hidden pad ${pad}: renderer under test`);
+      assert.equal(fresh.invalidations(), 0);
+      assert.equal(headerIndent(fresh.actual(80)), pad, `fresh hidden pad ${pad}: first render`);
+    }
   });
 });

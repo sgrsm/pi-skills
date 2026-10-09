@@ -30,6 +30,9 @@ Native Node imports alone could share module caches and conceal state divergence
   `lastComponent` reuse. Matching call ids must not suppress a live row's redraw.
 - Actual mixed row expansion and unchanged expanded/collapsed result-line
   counts, including partial/error output, with no global expansion calls.
+- Hidden `edit` summaries honor `outputPad` 0 and 1 for fresh rows and for one
+  reused component moving native → hidden → native while the setting changes.
+  Indentation is counted from rendered text, not by comparing renderers.
 - A scratch wrapper invokes one command factory twice with separately scoped
   buses. One factory's command cache must not suppress another's broadcast.
 

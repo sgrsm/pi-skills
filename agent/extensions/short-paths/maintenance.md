@@ -75,6 +75,10 @@ Important invariants:
 - Visible default-shell tools use the smart header wrapper. Visible
   self-rendered edit/write calls retain the native renderer; path toggles do not
   alter those headers.
+- Hidden self-shell summaries must apply the current
+  `context.outputPad` (default 1) on every render, because they own their
+  horizontal padding. Reused components can carry a previous value from the
+  native renderer or an earlier setting.
 - Disabling smart shortening does not disable normal home-directory formatting.
 - Tool execution remains delegated against the active session cwd. Changes to
   path state must not affect schemas, result data, activation or allowlists.
