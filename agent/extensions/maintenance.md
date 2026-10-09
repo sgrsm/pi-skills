@@ -2,13 +2,13 @@
 
 ## Pi host dependency links
 
-`agent/extensions` treats Pi host packages as peer dependencies and links them from the currently installed global Pi package tree.
+`agent/extensions` treats Pi host packages as peer dependencies and links them from the installed Pi host's package tree, whether npm/global or managed/versioned.
 
-After an ordinary `pi update`, no local `npm install` is normally needed.
+Host upgrades normally need no local `npm install`, but that does not eliminate link refreshes. In-place npm/global upgrades can keep paths stable; managed host upgrades select a new `install/releases/<version>` tree. Refresh links before validation so checks do not use an old host or a tree later removed by release pruning.
 
-For command details, environment overrides, and troubleshooting, see [`pi-host-deps/README.md`](./pi-host-deps/README.md).
+Refresh the host-package symlinks after managed host upgrades, Node/nvm or npm global-prefix changes, or moving/reinstalling the Pi host.
 
-If switching Node/nvm versions, changing npm global prefix, or moving/reinstalling the global Pi install, refresh the host-package symlinks:
+For managed installs, first set `PI_HOST_PACKAGE_ROOT` to the active release using the [managed-install recipe](./pi-host-deps/README.md#managed-install-recipe). Keep the same override for synchronization and validation, including `npm run verify`. See the [utility guide](./pi-host-deps/README.md) for command details and troubleshooting.
 
 From the Pi config root:
 

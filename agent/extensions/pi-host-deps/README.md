@@ -18,12 +18,13 @@ Maintains the local `agent/extensions/node_modules` links for Pi packages that a
 
 Run `sync` after changing the host Pi installation context, especially when you:
 
+- upgrade a managed Pi installation to a new host release;
 - switch Node/nvm versions;
 - change npm's global prefix;
-- move or reinstall the global Pi package;
+- move or reinstall the Pi host;
 - run `npm install` in `agent/extensions` and it leaves copied peer dependency folders.
 
-An ordinary `pi update` usually leaves the links valid because the host paths do not change.
+An in-place npm/global host upgrade can keep package paths stable. Managed installs instead select `install/releases/<version>`, so refresh links after each managed host upgrade, before typechecking or direct tests. Stale links can silently validate against an old host, then become broken when release pruning removes that tree. Refreshing these links does not require a local `npm install`.
 
 Run `check` before typechecking or testing when you want to verify the local links without changing them. The `typecheck` package script runs `check` first.
 
@@ -47,13 +48,29 @@ With no command, the script defaults to `check`.
 
 ## Environment override
 
-The utility normally finds the host package through npm's global root or the active `pi` command. If that lookup fails, point it at the installed Pi package root, or any path inside that package:
+The utility normally searches npm's global root and the active `pi` command. To select a particular host installation, point `PI_HOST_PACKAGE_ROOT` at the installed Pi package root, or any path inside that package:
 
 ```bash
 PI_HOST_PACKAGE_ROOT=/path/to/@earendil-works/pi-coding-agent npm run sync:pi-host-deps
 ```
 
-Use the same Node/npm environment that provides the `pi` command when possible. If `pi` is a managed-install launcher and automatic discovery fails, set this override to the active release's `node_modules/@earendil-works/pi-coding-agent` directory for both `sync` and validation commands, including `npm run verify`. A managed launcher may sit outside the actual package tree.
+Use the same Node/npm environment that provides the `pi` command when possible. For managed installs, use an explicit active-release root for both `sync` and validation commands, including `npm run verify`. A managed launcher sits outside the actual package tree; automatic discovery can fail or select a separate npm/global installation.
+
+### Managed-install recipe
+
+For the default managed layout under `~/.pi/agent/install`, derive the host root from `current-version` rather than pinning a release number:
+
+```bash
+cd ~/.pi/agent/extensions &&
+IFS= read -r pi_version < "$HOME/.pi/agent/install/current-version" &&
+export PI_HOST_PACKAGE_ROOT="$HOME/.pi/agent/install/releases/$pi_version/node_modules/@earendil-works/pi-coding-agent" &&
+npm run sync:pi-host-deps &&
+npm run typecheck
+```
+
+Run the recipe again after each managed host upgrade so the exported override follows the newly active release. For a custom config/install location, adjust the paths accordingly. To inspect existing links without changing them, replace `npm run sync:pi-host-deps` with `npm run check:pi-host-deps`.
+
+For the full verification gate, keep the same exported override and prepare the [approved test scratch](../permissions/README.md#safe-test-scratch-setup) before running `npm run verify`.
 
 ## Troubleshooting
 
