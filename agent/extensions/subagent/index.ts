@@ -2794,15 +2794,19 @@ export default function (pi: ExtensionAPI) {
 			: null;
 		const projectAgentConfirmationCoveredByPolicyApproval = Boolean(projectAgentConfirmationDetails);
 
+		const approvalDetails = buildApprovalPrompt(
+			policyState.mode,
+			summary,
+			decision.reason,
+			latestUserPrompt,
+			explicitRequest,
+			projectAgentConfirmationDetails,
+		);
+		// Pi reports TUI dialog titles through OSC 7501. Warning notifications
+		// keep decision details in the transcript without exporting them as status.
+		if (ctx.mode === "tui") ctx.ui.notify(approvalDetails, "warning");
 		const choice = await ctx.ui.select(
-			buildApprovalPrompt(
-				policyState.mode,
-				summary,
-				decision.reason,
-				latestUserPrompt,
-				explicitRequest,
-				projectAgentConfirmationDetails,
-			),
+			ctx.mode === "tui" ? "Subagent delegation approval\nSee request details above." : approvalDetails,
 			getSubagentApprovalOptions(policyState.mode, summary),
 		);
 		if (choice === APPROVAL_OPTION_ALLOW_SESSION) {
@@ -3175,7 +3179,7 @@ export default function (pi: ExtensionAPI) {
 				};
 
 			const buildParentEscalationResult = async (mode: "single" | "parallel" | "chain", results: SingleResult[]) => {
-				const resolutions = await resolveInteractiveParentClarificationsFromUx(ctx.hasUI ? ctx.ui : null, results);
+				const resolutions = await resolveInteractiveParentClarificationsFromUx(ctx.hasUI ? ctx.ui : null, results, ctx.mode);
 				const usage = aggregateBillableUsage(results);
 				return {
 					content: [{ type: "text" as const, text: formatParentEscalationSummaryFromUx(results, resolutions) }],

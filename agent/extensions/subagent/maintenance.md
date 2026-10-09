@@ -51,6 +51,18 @@ If impact is material and no safe control exists, record the measured evidence a
 
 `before_agent_start` writes or deletes `systemPromptOptions.sections.subagent_policy` (via `buildSubagentPolicyPrompt()`), once per submitted prompt, only while `subagent` or `escalate_to_parent` is active. Tool metadata and the policy share direct-call-only guidance. The policy includes delegation invocation guidance only when `subagent` is active and neither off nor depth-capped; escalation guidance requires an active child relay tool. It does not return `systemPrompt`. Follow [Structured prompt contributions](../maintenance.md#structured-prompt-contributions). Policy, approval, trust, depth and allowlist enforcement do not depend on this text.
 
+## Dialog content and program status
+
+Pi 1.1.0 reports complete standard TUI dialog titles through OSC 7501, subject to control-character sanitization and a UTF-8 size cap. Neither operation redacts request content. Keep TUI titles content-free; details belong in a separate visible surface.
+
+- Policy approval in `index.ts` builds the existing detailed prompt once, emits it with `ctx.ui.notify(details, "warning")` in TUI mode, then opens the static-titled selector. Preserve approval choices, session-scope consequences, and project-agent source/trust warnings.
+- Live parent clarification is owned by `ux.ts`; orchestration must pass `ctx.mode`. Each actionable TUI occurrence emits one detailed preview before its selector or direct editor. Selecting custom instructions reuses that preview and opens a static-titled editor. Preserve option descriptions, editor prefill, answer mapping, cancellation, and existing preview limits.
+- Warning notifications remain in the TUI transcript; ordinary info notifications can coalesce and overwrite each other. Do not replace the preview with an info notification or a line-limited widget.
+- Non-TUI/RPC dialogs retain their existing detailed titles and emit no preview notification. RPC is an intentional request/response UI channel, not the interactive terminal status path; clients may ignore fire-and-forget notifications.
+- Separate project-agent confirmation already uses a static title and a message body. No-UI blocking and non-actionable/approval-type escalation handling are unchanged.
+
+`ux.test.ts` covers preview placement, static titles, decoded status messages, unchanged RPC content, and clarification answers/cancellation. `failureResults.test.ts` exercises the registered policy hook and live orchestration with fake children and isolated settings, including project-source warnings, approval-state persistence, decoded status messages, and narrow selector rendering. These checks do not exercise a real terminal's protocol negotiation or establish a global privacy guarantee. Subagent dialogs remain outside the shared dialog queue; this content separation does not resolve cross-extension dialog collisions.
+
 ## Failure results and usage accounting
 
 Pi contract: throwing from `execute()` becomes a text-only error with no `details` or `usage`; returning `isError: true` keeps data (see the installed Pi extensions guide, Tools). The local contract is:

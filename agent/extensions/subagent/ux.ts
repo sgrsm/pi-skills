@@ -65,6 +65,7 @@ export interface SubagentDetailsLike {
 export interface ParentClarifyUi {
 	select(title: string, options: string[]): Promise<string | undefined>;
 	editor(title: string, initialValue?: string): Promise<string | undefined>;
+	notify(message: string, type?: "info" | "warning" | "error"): void;
 }
 
 export type ThemeFg = (color: any, text: string) => string;
@@ -282,9 +283,13 @@ export function formatParentEscalationResolution(resolution: ParentEscalationRes
 	return `User selected: ${prefix}${resolution.answer ?? ""}`;
 }
 
+const TUI_CLARIFY_TITLE = "Subagent clarification\nSee request details above.";
+const TUI_CUSTOM_INSTRUCTIONS_TITLE = "Subagent custom instructions\nSee request details above.";
+
 export async function askParentClarification(
 	ui: ParentClarifyUi | null | undefined,
 	occurrence: ParentEscalationOccurrence,
+	mode: string,
 ): Promise<ParentEscalationResolution | null> {
 	if (!ui || occurrence.escalation.requestType !== "clarify") return null;
 	const { result, escalation, occurrenceIndex } = occurrence;
@@ -297,8 +302,17 @@ export async function askParentClarification(
 		escalation,
 	};
 
+	// Pi reports TUI dialog titles through OSC 7501. Warning notifications
+	// keep details in the transcript without exporting them as status or
+	// crowding choices out of the fullscreen input dock.
+	const details = buildParentClarifyTitle(occurrence);
+	const isTui = mode === "tui";
+	if (isTui) ui.notify(details, "warning");
+	const promptTitle = isTui ? TUI_CLARIFY_TITLE : details;
+	const customTitle = isTui ? TUI_CUSTOM_INSTRUCTIONS_TITLE : `Custom instructions\n\n${details}`;
+
 	if (escalation.options.length === 0) {
-		const customAnswer = await ui.editor(buildParentClarifyTitle(occurrence), escalation.customPrompt ?? "");
+		const customAnswer = await ui.editor(promptTitle, escalation.customPrompt ?? "");
 		const trimmed = customAnswer?.trim();
 		return {
 			...base,
@@ -312,7 +326,7 @@ export async function askParentClarification(
 		? buildEscalationChoiceLabel(escalation.options.length, "Custom instructions")
 		: undefined;
 	const selectOptions = customChoiceLabel ? [...choiceLabels, customChoiceLabel] : [...choiceLabels];
-	const selected = await ui.select(buildParentClarifyTitle(occurrence), selectOptions);
+	const selected = await ui.select(promptTitle, selectOptions);
 
 	if (selected === undefined) {
 		return {
@@ -323,7 +337,7 @@ export async function askParentClarification(
 	}
 
 	if (selected === customChoiceLabel) {
-		const customAnswer = await ui.editor(`Custom instructions\n\n${buildParentClarifyTitle(occurrence)}`, escalation.customPrompt ?? "");
+		const customAnswer = await ui.editor(customTitle, escalation.customPrompt ?? "");
 		const trimmed = customAnswer?.trim();
 		return {
 			...base,
@@ -346,11 +360,12 @@ export async function askParentClarification(
 export async function resolveInteractiveParentClarifications(
 	ui: ParentClarifyUi | null | undefined,
 	results: SingleResultLike[],
+	mode: string,
 ): Promise<ParentEscalationResolution[]> {
 	if (!ui) return [];
 	const resolutions: ParentEscalationResolution[] = [];
 	for (const occurrence of getParentEscalationOccurrences(results)) {
-		const resolution = await askParentClarification(ui, occurrence);
+		const resolution = await askParentClarification(ui, occurrence, mode);
 		if (resolution) resolutions.push(resolution);
 	}
 	return resolutions;

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { formatProgramStatus, visibleWidth } from "@earendil-works/pi-tui";
 import {
+	askParentClarification,
 	formatParentEscalationSummary,
 	formatSubagentActivityTree,
 	getMaxSubagentRelativeDepth,
@@ -602,9 +603,10 @@ test("interactive clarify resolutions use top-level select UI and feed the escal
 		async editor() {
 			throw new Error("editor should not be used for a direct option selection");
 		},
+		notify: failOnNotify,
 	};
 
-	const resolutions = await resolveInteractiveParentClarifications(ui, results);
+	const resolutions = await resolveInteractiveParentClarifications(ui, results, "rpc");
 	assert.deepEqual(selectOptions, ["1. Path A", "2. Path B", "3. Custom instructions"]);
 	assert.match(selectTitle, /Subagent reviewer requested clarification\./);
 	assert.match(selectTitle, /Which path should I take\?/);
@@ -648,9 +650,10 @@ test("interactive clarify resolutions collect custom instructions through the to
 			editorInitialValue = initialValue ?? "";
 			return "Prefer the structured option and keep the existing API.";
 		},
+		notify: failOnNotify,
 	};
 
-	const resolutions = await resolveInteractiveParentClarifications(ui, results);
+	const resolutions = await resolveInteractiveParentClarifications(ui, results, "rpc");
 	assert.match(editorTitle, /Custom instructions/);
 	assert.match(editorTitle, /How should the delegated task proceed\?/);
 	assert.equal(editorInitialValue, "Add extra guidance here");
@@ -659,4 +662,292 @@ test("interactive clarify resolutions collect custom instructions through the to
 
 	const summary = formatParentEscalationSummary(results, resolutions);
 	assert.match(summary, /Top-level clarification result: User provided custom instructions: Prefer the structured option and keep the existing API\./);
+});
+
+const failOnNotify: ParentClarifyUi["notify"] = (message, type) => {
+	throw new Error(`unexpected notify (${type ?? "default"}): ${message}`);
+};
+
+const TUI_SELECT_TITLE = "Subagent clarification\nSee request details above.";
+const TUI_CUSTOM_TITLE = "Subagent custom instructions\nSee request details above.";
+const SENTINELS = {
+	agent: "agent-sentinel-7f3",
+	question: "QUESTION-SENTINEL-91a",
+	reason: "REASON-SENTINEL-4bc",
+	task: "TASK-SENTINEL-d02",
+	descA: "DESC-A-SENTINEL-5e8",
+	descB: "DESC-B-SENTINEL-c17",
+};
+
+function makeSentinelEscalation(overrides: Partial<ParentEscalationDetails> = {}): ParentEscalationDetails {
+	return {
+		requestType: "clarify",
+		question: SENTINELS.question,
+		reason: SENTINELS.reason,
+		options: [
+			{ label: "Path A", description: SENTINELS.descA },
+			{ label: "Path B", description: SENTINELS.descB },
+		],
+		allowCustom: true,
+		...overrides,
+	};
+}
+
+function makeSentinelResult(escalation: ParentEscalationDetails): SingleResultLike {
+	return makeResult({ agent: SENTINELS.agent, task: SENTINELS.task, parentEscalations: [escalation] });
+}
+
+interface FakeUiCalls {
+	events: string[];
+	notifications: Array<{ message: string; type?: string }>;
+	selects: Array<{ title: string; options: string[] }>;
+	editors: Array<{ title: string; initialValue?: string }>;
+}
+
+function makeFakeUi(
+	selectReply: (options: string[]) => string | undefined,
+	editorReply: () => string | undefined = () => {
+		throw new Error("editor should not be used");
+	},
+): { ui: ParentClarifyUi; calls: FakeUiCalls } {
+	const calls: FakeUiCalls = { events: [], notifications: [], selects: [], editors: [] };
+	const ui: ParentClarifyUi = {
+		notify(message, type) {
+			calls.events.push("notify");
+			calls.notifications.push({ message, type });
+		},
+		async select(title, options) {
+			calls.events.push("select");
+			calls.selects.push({ title, options });
+			return selectReply(options);
+		},
+		async editor(title, initialValue) {
+			calls.events.push("editor");
+			calls.editors.push({ title, initialValue });
+			return editorReply();
+		},
+	};
+	return { ui, calls };
+}
+
+function assertDetailsSentinels(details: string): void {
+	for (const sentinel of [SENTINELS.agent, SENTINELS.question, SENTINELS.reason, SENTINELS.task, SENTINELS.descA, SENTINELS.descB]) {
+		assert.ok(details.includes(sentinel), `details should include ${sentinel}`);
+	}
+	assert.match(details, /1\. Path A/);
+	assert.match(details, /2\. Path B/);
+	assert.match(details, /3\. Custom instructions/);
+}
+
+function assertNoSentinels(text: string | undefined): void {
+	for (const sentinel of Object.values(SENTINELS)) {
+		assert.ok(!(text ?? "").includes(sentinel), `unexpected ${sentinel} in ${text}`);
+	}
+}
+
+test("TUI direct selection notifies details once as a warning before a static select title", async () => {
+	const escalation = makeSentinelEscalation();
+	const { ui, calls } = makeFakeUi(() => "2. Path B");
+
+	const resolutions = await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], "tui");
+
+	assert.deepEqual(calls.events, ["notify", "select"]);
+	assert.equal(calls.notifications.length, 1);
+	assert.equal(calls.notifications[0].type, "warning");
+	assertDetailsSentinels(calls.notifications[0].message);
+	assert.equal(calls.selects[0].title, TUI_SELECT_TITLE);
+	assert.deepEqual(calls.selects[0].options, ["1. Path A", "2. Path B", "3. Custom instructions"]);
+	assert.deepEqual(resolutions, [
+		{
+			occurrenceIndex: 0,
+			agent: SENTINELS.agent,
+			task: SENTINELS.task,
+			escalation,
+			answer: "Path B",
+			answerType: "option",
+			selectedIndex: 2,
+		},
+	]);
+	assertNoSentinels(resolutions[0].answer ?? undefined);
+});
+
+test("TUI direct custom editor notifies details once before a static editor title", async () => {
+	const escalation = makeSentinelEscalation({ options: [], customPrompt: "prefill text" });
+	const { ui, calls } = makeFakeUi(
+		() => {
+			throw new Error("select should not be used");
+		},
+		() => "  my custom answer  ",
+	);
+
+	const resolution = await askParentClarification(ui, { occurrenceIndex: 3, result: makeSentinelResult(escalation), escalation }, "tui");
+
+	assert.deepEqual(calls.events, ["notify", "editor"]);
+	assert.equal(calls.notifications[0].type, "warning");
+	for (const sentinel of [SENTINELS.agent, SENTINELS.question, SENTINELS.reason, SENTINELS.task]) {
+		assert.ok(calls.notifications[0].message.includes(sentinel));
+	}
+	assert.match(calls.notifications[0].message, /1\. Custom instructions/);
+	assert.equal(calls.editors[0].title, TUI_SELECT_TITLE);
+	assert.equal(calls.editors[0].initialValue, "prefill text");
+	assert.equal(resolution?.answerType, "custom");
+	assert.equal(resolution?.answer, "my custom answer");
+	assert.equal(resolution?.occurrenceIndex, 3);
+});
+
+test("TUI custom option notifies once, before select, then opens static custom editor", async () => {
+	const escalation = makeSentinelEscalation({ customPrompt: "prefill" });
+	const { ui, calls } = makeFakeUi(
+		() => "3. Custom instructions",
+		() => "\n  go custom \n",
+	);
+
+	const resolutions = await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], "tui");
+
+	assert.deepEqual(calls.events, ["notify", "select", "editor"]);
+	assert.equal(calls.notifications.length, 1);
+	assert.equal(calls.notifications[0].type, "warning");
+	assertDetailsSentinels(calls.notifications[0].message);
+	assert.equal(calls.selects[0].title, TUI_SELECT_TITLE);
+	assert.equal(calls.editors[0].title, TUI_CUSTOM_TITLE);
+	assert.equal(calls.editors[0].initialValue, "prefill");
+	assert.equal(resolutions[0].answerType, "custom");
+	assert.equal(resolutions[0].answer, "go custom");
+	assertNoSentinels(resolutions[0].answer ?? undefined);
+});
+
+test("TUI titles never interpolate agent names or request content", async () => {
+	const escalation = makeSentinelEscalation();
+	const { ui, calls } = makeFakeUi(() => "3. Custom instructions", () => "x");
+
+	await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], "tui");
+
+	for (const title of [calls.selects[0].title, calls.editors[0].title]) {
+		const frame = formatProgramStatus({ state: "blocked", kind: "question", message: title });
+		const encoded = /:msg=([^\x1b]+)/.exec(frame)?.[1];
+		assert.ok(encoded);
+		const message = Buffer.from(encoded, "base64").toString("utf8");
+		assertNoSentinels(message);
+		assert.equal(message, title.replace(/\n/g, " "));
+	}
+	assert.ok(!calls.selects[0].title.includes("Path A"));
+	assert.ok(!calls.editors[0].title.includes("Path A"));
+});
+
+test("TUI notification is emitted per actionable occurrence", async () => {
+	const escalation = makeSentinelEscalation();
+	const { ui, calls } = makeFakeUi(() => "1. Path A");
+
+	const resolutions = await resolveInteractiveParentClarifications(
+		ui,
+		[makeSentinelResult(escalation), makeSentinelResult(escalation)],
+		"tui",
+	);
+
+	assert.deepEqual(calls.events, ["notify", "select", "notify", "select"]);
+	assert.deepEqual(resolutions.map((resolution) => resolution.occurrenceIndex), [0, 1]);
+});
+
+test("TUI selector cancellation still shows details once and resolves as cancelled", async () => {
+	const escalation = makeSentinelEscalation();
+	const { ui, calls } = makeFakeUi(() => undefined);
+
+	const resolutions = await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], "tui");
+
+	assert.deepEqual(calls.events, ["notify", "select"]);
+	assert.equal(calls.notifications.length, 1);
+	assert.equal(resolutions[0].answerType, "cancelled");
+	assert.equal(resolutions[0].answer, null);
+	assert.equal(resolutions[0].selectedIndex, undefined);
+});
+
+test("TUI editor cancellation and blank answers resolve as cancelled", async () => {
+	for (const reply of [undefined, "   \n "]) {
+		const direct = makeSentinelEscalation({ options: [] });
+		const directUi = makeFakeUi(() => undefined, () => reply);
+		const directResolution = await askParentClarification(
+			directUi.ui,
+			{ occurrenceIndex: 0, result: makeSentinelResult(direct), escalation: direct },
+			"tui",
+		);
+		assert.deepEqual(directUi.calls.events, ["notify", "editor"]);
+		assert.equal(directResolution?.answerType, "cancelled");
+		assert.equal(directResolution?.answer, null);
+
+		const withOptions = makeSentinelEscalation();
+		const customUi = makeFakeUi(() => "3. Custom instructions", () => reply);
+		const customResolution = await askParentClarification(
+			customUi.ui,
+			{ occurrenceIndex: 0, result: makeSentinelResult(withOptions), escalation: withOptions },
+			"tui",
+		);
+		assert.deepEqual(customUi.calls.events, ["notify", "select", "editor"]);
+		assert.equal(customResolution?.answerType, "cancelled");
+		assert.equal(customResolution?.answer, null);
+	}
+});
+
+test("TUI mode asks nothing and notifies nothing without UI, for approval, or for non-actionable clarifications", async () => {
+	const { ui, calls } = makeFakeUi(() => {
+		throw new Error("select should not be used");
+	});
+	const approval = makeSentinelEscalation({ requestType: "approval" });
+	const empty = makeSentinelEscalation({ options: [], allowCustom: false });
+
+	assert.deepEqual(await resolveInteractiveParentClarifications(null, [makeSentinelResult(makeSentinelEscalation())], "tui"), []);
+	assert.deepEqual(await resolveInteractiveParentClarifications(undefined, [makeSentinelResult(makeSentinelEscalation())], "tui"), []);
+	assert.deepEqual(await resolveInteractiveParentClarifications(ui, [makeSentinelResult(approval), makeSentinelResult(empty)], "tui"), []);
+	assert.equal(await askParentClarification(null, { occurrenceIndex: 0, result: makeSentinelResult(approval), escalation: approval }, "tui"), null);
+	assert.equal(await askParentClarification(ui, { occurrenceIndex: 0, result: makeSentinelResult(approval), escalation: approval }, "tui"), null);
+	assert.equal(await askParentClarification(ui, { occurrenceIndex: 0, result: makeSentinelResult(empty), escalation: empty }, "tui"), null);
+	assert.deepEqual(calls.events, []);
+});
+
+test("non-TUI mode keeps rich titles and never notifies", async () => {
+	const escalation = makeSentinelEscalation({ customPrompt: "prefill" });
+	const calls: { select: string[]; editor: string[] } = { select: [], editor: [] };
+	const ui: ParentClarifyUi = {
+		notify: failOnNotify,
+		async select(title) {
+			calls.select.push(title);
+			return "3. Custom instructions";
+		},
+		async editor(title, initialValue) {
+			calls.editor.push(title);
+			assert.equal(initialValue, "prefill");
+			return "rpc answer";
+		},
+	};
+
+	for (const mode of ["rpc", "json", "print"]) {
+		calls.select.length = 0;
+		calls.editor.length = 0;
+		const resolutions = await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], mode);
+		assert.equal(resolutions[0].answer, "rpc answer");
+		assertDetailsSentinels(calls.select[0]);
+		assert.match(calls.select[0], new RegExp(`Subagent ${SENTINELS.agent} requested clarification\\.`));
+		assert.ok(calls.editor[0].startsWith("Custom instructions\n\n"));
+		assertDetailsSentinels(calls.editor[0]);
+	}
+});
+
+test("non-TUI direct editor keeps the rich title and never notifies", async () => {
+	const escalation = makeSentinelEscalation({ options: [] });
+	const titles: string[] = [];
+	const ui: ParentClarifyUi = {
+		notify: failOnNotify,
+		async select() {
+			throw new Error("select should not be used");
+		},
+		async editor(title) {
+			titles.push(title);
+			return "answer";
+		},
+	};
+
+	const resolutions = await resolveInteractiveParentClarifications(ui, [makeSentinelResult(escalation)], "rpc");
+
+	assert.equal(resolutions[0].answerType, "custom");
+	assert.ok(titles[0].includes(SENTINELS.question));
+	assert.ok(titles[0].includes(SENTINELS.task));
 });

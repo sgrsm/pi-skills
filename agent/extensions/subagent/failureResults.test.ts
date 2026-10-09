@@ -7,7 +7,9 @@ import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import test, { after, type TestContext } from "node:test";
 import { runToolCall } from "@earendil-works/pi-agent-core";
-import { createEventBus } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, createEventBus, ExtensionSelectorComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
+import { formatProgramStatus } from "@earendil-works/pi-tui";
 import { createTestScratchFixture } from "../permissions/testScratch.ts";
 import { createUsageStats, toBillableUsage } from "./usageAccounting.ts";
 
@@ -72,18 +74,21 @@ class FakeChild extends EventEmitter {
 function registerTool() {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
+	const entries: Array<{ type: string; customType: string; data: unknown }> = [];
 	subagentExtension({ events: createEventBus(), registerTool: (tool: any) => tools.set(tool.name, tool),
+		appendEntry(customType: string, data: unknown) { entries.push({ type: "custom", customType, data }); },
 		registerCommand() {}, on(name: string, handler: any) {
 			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
 			return () => {};
 		} } as any);
-	return { tool: tools.get("subagent"), handlers };
+	return { tool: tools.get("subagent"), handlers, entries };
 }
 
 async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 	tool: any; ctx: any; children: FakeChild[]; call: (mode?: string, signal?: AbortSignal) => Promise<any>;
 	handlers: Map<string, Array<(event: any, ctx: any) => any>>;
-	writeAgent: (fileName: string, fields: string) => Promise<string>;
+	entries: Array<{ type: string; customType: string; data: unknown }>;
+	writeAgent: (fileName: string, fields: string, source?: "user" | "project") => Promise<string>;
 }) => Promise<void>, systemPrompt = "") {
 	const fixture = await createTestScratchFixture();
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -104,7 +109,7 @@ async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 	syncBuiltinESMExports();
 	try {
 		assert.equal(esmSpawn, spawn, "ESM spawn must be mocked before executing any child path");
-		const { tool, handlers } = registerTool();
+		const { tool, handlers, entries } = registerTool();
 		const ctx = { cwd: fixture.project, hasUI: false, mode: "print", isProjectTrusted: () => false,
 			sessionManager: { getBranch: () => [] } };
 		let callId = 0;
@@ -122,12 +127,17 @@ async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 			}
 			return outcome;
 		};
-		const writeAgent = async (fileName: string, fields: string) => {
-			const filePath = path.join(agentDir, "agents", fileName);
+		const writeAgent = async (fileName: string, fields: string, source: "user" | "project" = "user") => {
+			const agentsDir = source === "project" ? path.join(fixture.project, CONFIG_DIR_NAME, "agents") : path.join(agentDir, "agents");
+			if (source === "project") {
+				await fixture.mkdir(path.dirname(agentsDir));
+				await fixture.mkdir(agentsDir);
+			}
+			const filePath = path.join(agentsDir, fileName);
 			await fixture.writeFile(filePath, `---\n${fields}\n---\nFixture prompt.`);
 			return filePath;
 		};
-		await fn({ tool, ctx, children, call, handlers, writeAgent });
+		await fn({ tool, ctx, children, call, handlers, entries, writeAgent });
 		for (const child of children) {
 			assert.equal(child.listenerCount("close"), 0, "lifecycle listeners released");
 			assert.equal(child.stdout.listenerCount("data"), 0);
@@ -445,3 +455,121 @@ test("renderer preserves valid failure diagnostics and usage in collapsed and ex
 		assert.match(text, /✗/);
 	}
 });
+
+// The interactive host forwards select/editor titles into this public serializer.
+function decodedBlockedTitle(title: string): string {
+	const frame = formatProgramStatus({ state: "blocked", kind: "question", message: title });
+	const encoded = /:msg=([^\x1b]+)/.exec(frame)?.[1];
+	assert.ok(encoded, "title must produce a status message");
+	return Buffer.from(encoded, "base64").toString("utf8");
+}
+
+for (const mode of ["tui", "rpc"]) {
+	for (const choice of ["Allow once", "Allow for current session", "Deny", undefined]) {
+		test(`${mode} policy approval keeps decisions and separates TUI status from details (${choice ?? "cancel"})`, async (t) => {
+			await withTool(t, [], async ({ ctx, handlers, entries, children, writeAgent }) => {
+				await writeAgent("worker.md", "name: worker\ndescription: Synthetic writer\ntools: write");
+				const prompt = "Inspect PROMPT-SENTINEL-91a.";
+				const task = "TASK-SENTINEL-d02: Inspect the synthetic module.";
+				const calls: string[] = [];
+				const notifications: string[] = [];
+				let title = "";
+				ctx.hasUI = true;
+				ctx.mode = mode;
+				ctx.sessionManager.getBranch = () => [{ type: "message", message: { role: "user", content: prompt } }, ...entries];
+				ctx.ui = {
+					notify(message: string, type: string) { assert.equal(type, "warning"); calls.push("notify"); notifications.push(message); },
+					async select(value: string, options: string[]) {
+						calls.push("select"); title = value;
+						assert.deepEqual(options, ["Allow once", "Allow for current session", "Deny"]);
+						if (mode === "tui") {
+							initTheme("dark", false);
+							const selector = new ExtensionSelectorComponent(value, options, () => {}, () => {});
+							try {
+								for (const width of [80, 40, 30]) {
+									const lines = selector.render(width).map(stripVTControlCharacters);
+									assert.ok(lines.length <= 21, `approval choices must fit the fullscreen dock at width ${width}`);
+									for (const text of [...options, "navigate", "select", "cancel"]) assert.ok(lines.join("\n").includes(text), text);
+								}
+							} finally { selector.dispose(); }
+						}
+						return choice;
+					},
+					setStatus() {},
+					theme: { fg(_color: string, text: string) { return text; } },
+				};
+				const outcome = await handlers.get("tool_call")![0]({ toolName: "subagent", toolCallId: "approval-status",
+					input: { mode: "single", items: [{ agent: "worker", task }] } }, ctx);
+				assert.deepEqual(calls, mode === "tui" ? ["notify", "select"] : ["select"]);
+				const details = mode === "tui" ? notifications[0] : title;
+				for (const content of [prompt, task, "Reason:", "Write-capable agents: worker", "auto-approve future non-explicit write-capable"]) {
+					assert.ok(details.includes(content), content);
+				}
+				if (mode === "tui") {
+					assert.equal(title, "Subagent delegation approval\nSee request details above.");
+					assert.equal(decodedBlockedTitle(title), "Subagent delegation approval See request details above.");
+				}
+				assert.equal(Boolean(outcome?.block), choice !== "Allow once" && choice !== "Allow for current session");
+				assert.deepEqual(entries.map((entry) => entry.data), choice === "Allow for current session"
+					? [{ askModeApproved: true, writeCapableApproved: true }] : []);
+				assert.equal(children.length, 0, "a preview never launches a child");
+			});
+		});
+	}
+}
+
+test("TUI policy preview retains project-agent source and trust warnings", async (t) => {
+	await withTool(t, [], async ({ ctx, handlers, writeAgent }) => {
+		const agentPath = await writeAgent("worker.md", "name: worker\ndescription: Synthetic project writer\ntools: write", "project");
+		let preview = "";
+		ctx.hasUI = true;
+		ctx.mode = "tui";
+		ctx.isProjectTrusted = () => true;
+		ctx.ui = {
+			notify(message: string, type: string) { assert.equal(type, "warning"); preview = message; },
+			async select(title: string) {
+				assert.equal(title, "Subagent delegation approval\nSee request details above.");
+				assert.ok(preview.includes(path.dirname(agentPath)), "source warning is visible before selecting");
+				assert.match(preview, /Project-local agent confirmation covered by this policy approval/);
+				assert.match(preview, /repo-controlled/);
+				return "Deny";
+			},
+			setStatus() {},
+			theme: { fg(_color: string, text: string) { return text; } },
+		};
+		const outcome = await handlers.get("tool_call")![0]({ toolName: "subagent", toolCallId: "project-preview",
+			input: { mode: "single", items: [{ agent: "worker", task: "Inspect project task" }], agentScope: "both" } }, ctx);
+		assert.equal(outcome.block, true);
+	});
+});
+
+for (const mode of ["tui", "rpc"]) {
+	test(`${mode} live orchestration uses the correct clarification UI mode and preserves details`, async (t) => {
+		const escalation = { role: "toolResult", toolName: "escalate_to_parent", toolCallId: "question", content: [],
+			details: { requestType: "clarify", question: "QUESTION-SENTINEL: Choose?", reason: "REASON-SENTINEL: Product direction.",
+				options: [{ label: "Continue", description: "DESCRIPTION-SENTINEL: Keep behavior." }], allowCustom: true }, isError: false, timestamp: 0 };
+		await withTool(t, [{ messages: [assistant(), escalation] }], async ({ ctx, call }) => {
+			const notifications: string[] = [];
+			let title = "";
+			ctx.hasUI = true;
+			ctx.mode = mode;
+			ctx.ui = {
+				notify(message: string, type: string) { assert.equal(type, "warning"); notifications.push(message); },
+				async select(value: string) { title = value; return "1. Continue"; },
+				async editor() { throw new Error("no editor expected"); },
+				setStatus() {},
+				theme: { fg(_color: string, text: string) { return text; } },
+			};
+			const outcome = await call();
+			const details = mode === "tui" ? notifications[0] : title;
+			for (const sentinel of ["QUESTION-SENTINEL", "REASON-SENTINEL", "DESCRIPTION-SENTINEL", "Original delegated task: Inspect"]) {
+				assert.ok(details?.includes(sentinel), sentinel);
+			}
+			assert.equal(notifications.length, mode === "tui" ? 1 : 0);
+			if (mode === "tui") assert.equal(decodedBlockedTitle(title), "Subagent clarification See request details above.");
+			assert.equal(outcome.result.details.parentEscalationResolutions[0].answer, "Continue");
+			assert.match(outcome.result.content[0].text, /User selected: 1\. Continue/);
+		});
+	});
+}
+

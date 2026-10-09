@@ -163,6 +163,14 @@ Depth and task limits always apply. Unknown agents are blocked. Project-local ag
 
 Delegation guidance is added to Pi's prompt only while `subagent` or child `escalate_to_parent` is active. If another extension forces a complete system prompt, the guidance may not reach the model; mode, approval, trust, depth and allowlist enforcement are unaffected. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
+## Approval and clarification previews
+
+In TUI mode, delegation approval and child clarification show request details in a persistent warning-style preview in the transcript. Read that preview before choosing an approval or answering; scroll the transcript if needed. Choices and the custom-answer editor use compact, generic titles that point to the details above. There is no extra acknowledgement step, and approval previews remain summaries rather than full task texts.
+
+This keeps prompt/task/question content out of Pi's OSC 7501 status messages from these dialogs. RPC clients still receive the existing detailed dialog titles and choices through the intentional RPC UI channel.
+
+This is not a global privacy mode: Pi can report session names, error messages, and other dialog titles. To disable all Pi program-status reporting, launch Pi with `PI_PROGRAM_STATUS=0`.
+
 ## Output and cancellation
 
 The TUI footer shows the policy mode and compact running/queued counts. In ask mode, its compact approval label is `subagents: ask`, `subagents: ask (approved)`, or `subagents: ask (approved write)` depending on current-session approval scope. Auto mode is always shown simply as `subagents: auto`, because eligible known user-scoped write permission is inherent to that mode. Tool results show an activity tree; `Ctrl+O` expands task, error, and usage details.
