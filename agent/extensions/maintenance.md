@@ -112,6 +112,6 @@ npm run verify
 
 `npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-20261009-1201/TDR-20261009-1202. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
 
-For the current Pi 1.1.0 runtime-check results, unresolved fake-terminal typecheck incompatibility, and independently failing host acceptance checks, see [compatibility revalidation and limits](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). Successful standalone runtime checks do not imply that `npm run verify` passes.
+For the current Pi 1.1.0 runtime-check results and independently failing host acceptance checks, see [compatibility revalidation and limits](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). A green `npm run verify` does not imply that outstanding host acceptance diagnostics pass.
 
 Run npm dependency commands from `agent/extensions/`, not from `agent/`.

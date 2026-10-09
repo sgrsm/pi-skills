@@ -33,7 +33,7 @@ function fullscreenLines(selector: ExtensionSelectorComponent, preview: string, 
     columns, rows: 24, kittyProtocolActive: false,
     start() {}, stop() {}, async drainInput() {}, write() {}, moveBy() {},
     hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
-    clearScreen() {}, setTitle() {}, setProgress() {},
+    clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
   };
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const empty = new Text("", 0, 0);

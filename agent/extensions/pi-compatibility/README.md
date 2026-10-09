@@ -80,7 +80,7 @@ Checks native/wrapped file-tool selection at startup and reload, restrictive SDK
 
 ## Pi 1.1.0 status
 
-Runtime contract checks and public loading of all local runtime extensions succeeded against Pi 1.1.0. This is not a green `npm run verify`: the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` still lack the newly required `Terminal.setProgramStatus()` method, so typechecking fails. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
+The fake-terminal fixtures support Pi 1.1.0's required `Terminal.setProgramStatus()` method. These renderer/input tests do not exercise OSC 7501 reporting. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
 
 Positive host acceptance diagnostics still fail for TDR-20261009-1201 and TDR-20261009-1202. Actual-host custom-dialog completion probes corroborate the lifecycle blocker rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
 

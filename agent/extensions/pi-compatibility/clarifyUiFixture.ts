@@ -32,7 +32,7 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 		start(onInput) { input = onInput; },
 		stop() {}, async drainInput() {}, write(data) { writes.push(data); }, moveBy() {},
 		hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
-		clearScreen() {}, setTitle() {}, setProgress() {},
+		clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
 	} satisfies Terminal;
 	const tui = mode === "fullscreen"
 		? new TuiAltScreen(terminal, false, undefined, { wheelScrollLines: 3 })

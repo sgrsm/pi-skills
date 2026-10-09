@@ -12,9 +12,9 @@ Related integration rules are in [extension maintenance](../maintenance.md): [sh
 
 ## Pi 1.1.0 revalidation
 
-Runtime contract checks and public loading of all local runtime extensions succeeded using Pi 1.1.0 host packages and isolated configuration. These observations do not establish a green combined verification gate or resolution of host debt:
+Runtime contract checks and public loading of all local runtime extensions succeeded using Pi 1.1.0 host packages and isolated configuration. Keep extension verification separate from resolution of host debt:
 
-- **Verification gate:** typechecking still fails because the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` omit the newly required `Terminal.setProgramStatus()` method. The unchanged fixtures typecheck against Pi 1.0.4. Verify host-package links before running checks so direct imports and declarations come from the host version under review.
+- **Verification gate:** the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` implement the required `Terminal.setProgramStatus()` method as a no-op. This satisfies the host interface without testing OSC 7501 reporting. Verify host-package links before running checks so direct imports and declarations come from the host version under review. `npm run verify` checks host links, TypeScript, and normal contract tests, not outstanding host acceptance diagnostics.
 - **Clarify:** working fullscreen mouse-ownership and Home/End controls remain intact; positive PageUp/PageDown/wheel, regular-mode mouse-ownership and help-visibility requirements still fail. A separate version-checked invocation of the actual Pi 1.1.0 `showExtensionCustom()` method also reproduced removal of stacked search while leaving the disposed owned overlay mounted, and removal of an unrelated overlay on completion before installation. Normal mounted completion removed the owned overlay and disposed it once. This corroborates the adapter; it does not unblock the overlay remediation.
 - **Resume:** positive SDK and actual CLI `--session` restoration checks still fail with and without local extensions. Working `/tree`, indirect-callability and local-availability controls remain separate from creation-time restoration.
 
