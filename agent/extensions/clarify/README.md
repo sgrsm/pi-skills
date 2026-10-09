@@ -42,6 +42,8 @@ Argument completion is available for `on` and `off`.
 
 Saved off mode keeps clarify unavailable at startup and `/reload`, even if a tool selection names it. When on, clarify stays model-only, and restrictive CLI tool allowlists/exclusions still win. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).
 
+To start one session without clarify, use `--exclude-tools clarify`; `--tools -clarify` modifiers do not reliably disable it. See [tool selection](../subagent/README.md#tool-selection).
+
 **Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Tool

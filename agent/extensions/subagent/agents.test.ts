@@ -84,6 +84,56 @@ test("invalid tools reject only their definitions and produce path-qualified dia
 	});
 });
 
+// Frontmatter `tools` is a plain-name allowlist. The launcher appends plain `escalate_to_parent`, so a
+// `+name`/`-name` modifier would become an invalid mixed `--tools` argument in the child.
+const modifierLists: Array<[string, string, string]> = [
+	["plus-csv", "tools: +codemode", "+codemode"],
+	["minus-csv", "tools: -bash", "-bash"],
+	["mixed-csv", "tools: read, +codemode", "+codemode"],
+	["spaced-csv", 'tools: "read,  -write , grep"', "-write"],
+	["plus-inline-array", "tools: [read, +codemode]", "+codemode"],
+	["minus-inline-array", "tools: [-bash]", "-bash"],
+	["spaced-array", 'tools: [read, " +codemode "]', "+codemode"],
+	["block-array", "tools:\n  - read\n  - '-write'", "-write"],
+];
+
+for (const [label, fields, entry] of modifierLists) {
+	test(`discovery rejects ${label} modifier tools with a path-qualified diagnostic naming the entry`, async () => {
+		await withAgentDirs(async ({ fixture, userDir, cwd }) => {
+			const filePath = path.join(userDir, "modifier.md");
+			await fixture.writeFile(filePath, agentFile("modifier", fields));
+			await fixture.writeFile(path.join(userDir, "valid.md"), agentFile("valid", "tools: [read, grep]"));
+			const discovery = discoverAgents(cwd, "user");
+			assert.deepEqual(discovery.agents.map((agent) => agent.name), ["valid"]);
+			assert.equal(discovery.diagnostics.length, 1);
+			const [message] = discovery.diagnostics;
+			assert.ok(message.includes(filePath), message);
+			assert.ok(message.includes(entry), message);
+			assert.ok(message.includes("tools"), message);
+		});
+	});
+}
+
+test("a rejected project modifier agent leaves a valid user agent as the fallback", async () => {
+	await withAgentDirs(async ({ fixture, userDir, projectDir, cwd }) => {
+		const badPath = path.join(projectDir, "scout.md");
+		await fixture.writeFile(path.join(userDir, "scout.md"), agentFile("scout", "tools: read"));
+		await fixture.writeFile(badPath, agentFile("scout", "tools: +codemode"));
+		const discovery = discoverAgents(cwd, "both");
+		assert.deepEqual(discovery.agents.map((agent) => [agent.name, agent.source, agent.tools]), [["scout", "user", ["read"]]]);
+		assert.ok(discovery.diagnostics.some((message) => message.includes(badPath) && message.includes("+codemode")));
+	});
+});
+
+test("tool names containing but not starting with + or - remain valid allowlist entries", async () => {
+	await withAgentDirs(async ({ fixture, userDir, cwd }) => {
+		await fixture.writeFile(path.join(userDir, "scout.md"), agentFile("scout", "tools: [read, mcp__srv__a-b, c+d, git_inspect]"));
+		const discovery = discoverAgents(cwd, "user");
+		assert.deepEqual(discovery.diagnostics, []);
+		assert.deepEqual(discovery.agents[0]?.tools, ["read", "mcp__srv__a-b", "c+d", "git_inspect"]);
+	});
+});
+
 test("malformed YAML and invalid required fields do not stop neighboring discovery", async () => {
 	await withAgentDirs(async ({ fixture, userDir, cwd }) => {
 		const invalidFiles = [

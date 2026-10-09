@@ -69,6 +69,15 @@ Protects optional-tool availability without losing restored tools. See [tool ava
 - Also covers manual/ask/auto policies, fresh and reloaded depth caps, changed saved state, explicit persisted toggles, active and callable sets for available and withdrawn tools, model-only nested-call rejection, direct child escalation, unrelated session tool choices, `defaultTools`, `+codemode`, allowlists/exclusions (including late restoration), and no-tools options.
 - The codemode placeholder checks selection only, not the real sandbox or loadout renderer. The constructor-restoration case deliberately omits `initialActiveToolNames`; it does not fix or claim to fix the separate SDK/CLI resume defect below.
 
+## `cli-tool-selection.test.ts`
+
+Protects the documented difference between `--tools` modifiers and `--exclude-tools` through the host's public `parseArgs()` and a real offline CLI process.
+
+- The parser checks cover modifier lists, modifier-plus-exclusion, plain allowlists, and the mixed modifier/plain-name shape that an unvalidated agent `+name` would produce after the launcher appends `escalate_to_parent`.
+- Each process case starts the installed CLI in RPC mode with isolated configuration/HOME, an allowlisted credential-free environment, `--offline`, the real local clarify/web-search/subagent extensions, built-in codemode and a probe extension. It sends one reload slash command through RPC and compares active tools at startup and reload. No model prompt, provider request or MCP server is used.
+- Pins that `-clarify,-subagent,-web_search` modifiers leave those tools active, explicit exclusions remove them, plain allowlists replace defaults, and mixed lists fail at the CLI. These are host-behavior characterizations: a host change that makes modifiers withdraw extension tools would fail the first case and require revisiting the user guidance.
+- Agent-frontmatter rejection itself is covered by `subagent/agents.test.ts`. This file does not run a delegated child.
+
 ## `model-only-codemode.test.ts`
 
 Protects the direct-only invocation boundary for `clarify`, `subagent`, and `escalate_to_parent` with the real public `createCodemodeExtension()` in `on` and `only` modes.

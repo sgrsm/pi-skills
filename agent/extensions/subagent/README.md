@@ -104,9 +104,27 @@ Agents are Markdown files with required `name` and `description` frontmatter. Mo
 
 **Omitted, `null`, or empty `tools` means no explicit allowlist—not zero tools.** For read-only delegation, declare a non-empty inspection-only list.
 
+Agent `tools` accepts plain names only. Entries beginning with `+` or `-` cause the definition to be skipped with a warning. See [Tool selection](#tool-selection).
+
 User agents are loaded by default. Project agents require `agentScope: "project"` or `"both"`, a trusted project, and usually confirmation. `confirmProjectAgents: false` skips only the extra agent-source confirmation; it does not bypass trust or policy checks.
 
 Parent project trust applies to a child cwd only when its existing real path is inside the parent session cwd. An external (or unresolvable) child cwd blocks `project` and `both` scopes before its project agents are loaded. Use `agentScope: "user"` for external work; its target project settings and approval scopes are ignored, and the child starts with target project resources disabled (`--no-approve`).
+
+## Tool selection
+
+| Goal | Use |
+| --- | --- |
+| Select a child's tools | A plain-name allowlist in its agent file, such as `tools: read, grep`. [Parent escalation](#child-escalation) remains available automatically. |
+| Add to Pi's defaults | A launch option such as `--tools +codemode`, not agent frontmatter. |
+| Disable tools for one launch | `--exclude-tools` with tool names or `*` patterns. |
+
+With Pi 1.1.0, `--tools -name` modifiers and `defaultTools` do not disable default-active local tools (`clarify`, `subagent`, `web_search`). Use explicit exclusions instead:
+
+```bash
+pi --tools +codemode --exclude-tools clarify,subagent,web_search
+```
+
+For persistent disabling, use `/subagents off`, `/clarify off` or `/web-search off`. For full CLI syntax and `defaultTools` mixing/inheritance rules, see Pi's [CLI](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md#tools) and [settings](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md#tools) references.
 
 ## Child escalation
 
@@ -187,6 +205,9 @@ Top-level children run in POSIX process groups so cancelling them also cleans up
 
 - **Codemode says `tools.subagent` or `tools.escalate_to_parent` does not exist:** ask the model to retry with a direct tool call, outside codemode. These tools are intentionally unavailable to scripts; tool discovery or changing codemode mode will not make them callable there.
 - **Unknown agent:** check the agent name, configured scope, and any skipped-definition warnings.
+- **Agent skipped with "tools must be plain tool names":** replace modifier entries with plain names; see [Tool selection](#tool-selection). A valid same-name user agent is used instead of a rejected project definition when scope allows.
+- **`--tools -clarify,...` did not turn tools off:** use explicit exclusions as shown in [Tool selection](#tool-selection).
+- **Pi rejects mixed `--tools` entries:** use either plain names or a modifier-only list, not both.
 - **Project agent blocked:** trust the project and use `agentScope: "project"` or `"both"`.
 - **Approval blocked:** use TUI mode, make the delegation request explicit, or adjust the policy mode.
 - **Too many tasks:** raise `maxParallelTasks` or reduce the `items` length for a `parallel` call.

@@ -44,6 +44,10 @@ function parseToolList(value: unknown): ToolListParseResult {
 	for (const tool of raw) {
 		if (typeof tool !== "string") return { valid: false, reason: "tools array members must all be strings" };
 		const name = tool.trim();
+		if (name.startsWith("+") || name.startsWith("-")) {
+			// The launcher appends plain `escalate_to_parent`; Pi rejects modifiers mixed with plain names.
+			return { valid: false, reason: `tools must be plain tool names; "+name"/"-name" modifiers are not supported in agent frontmatter (found "${name}")` };
+		}
 		if (name) tools.push(name);
 	}
 	return { valid: true, tools: tools.length > 0 ? tools : undefined };

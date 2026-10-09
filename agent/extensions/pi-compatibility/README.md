@@ -54,6 +54,10 @@ Protects shared scheduling across permissions and clarify, including separately 
 
 Protects additive structured prompt contributions from clarify, permissions, and subagent through the public loader and real prompt renderer. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
+### `cli-tool-selection.test.ts`
+
+Protects the documented `--tools` modifier versus `--exclude-tools` behavior with the host's CLI parser and a real offline CLI process (startup and `/reload`). See [coverage notes](./host-contract-coverage.md#cli-tool-selectiontestts).
+
 ### `tool-activation.test.ts`
 
 Protects optional-tool availability and preservation of restored tools across startup, reload, `/tree`, and SDK selection. See [tool availability at startup](../maintenance.md#tool-availability-at-startup).

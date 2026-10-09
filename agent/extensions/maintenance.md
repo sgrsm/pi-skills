@@ -81,9 +81,10 @@ Contract:
 - `registerToolAvailability()` re-registers the tool with `exposure: "hidden"` and `defaultActive: false` when unavailable (Pi's documented way to withdraw a tool). Available tools keep their own exposure (`model-only` for the workflow tools) and activation default.
 - Host CLI allowlists/exclusions still filter registration on every refresh; local code does not bypass them.
 - Intentional user loadout changes (`/clarify`, `/web-search`, `/subagents` toggles) stay in command handlers and may replace a restored loadout.
+- `--tools +name/-name` modifiers only adjust the default selection and do not withdraw default-active local tools; explicit `--exclude-tools` does. Agent frontmatter `tools` stays a plain-name allowlist (modifiers are rejected at discovery). User guidance: [tool selection](./subagent/README.md#tool-selection).
 - Availability follows saved modes, policy, depth caps, and child relay on fresh start and reload. `clarify`, `subagent`, and `escalate_to_parent` stay model-only, so nested `ctx.executeTool()` calls are rejected.
 
-Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
+Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts), [`pi-compatibility/cli-tool-selection.test.ts`](./pi-compatibility/host-contract-coverage.md#cli-tool-selectiontestts) (actual CLI parser/process) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
 Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 

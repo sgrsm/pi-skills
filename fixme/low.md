@@ -10,18 +10,17 @@
 
 **Regression coverage:** The loader fixture explicitly supplies `outputPad`. Tests independently assert indentation for both values on the first render, changes in both directions, and native → hidden → native transitions with component identity preserved.
 
-### 5. Low — document and test the new CLI modifier syntax at local integration boundaries
+### 5. Low — document and test the new CLI modifier syntax at local integration boundaries (resolved)
 
-**Files:** `agent/extensions/subagent/agents.ts:37–50`, `agent/extensions/subagent/index.ts:1922–1936`, `agent/extensions/pi-compatibility/tool-activation.test.ts:252–276`
+**Status:** Resolved.
 
-Two confirmed limitations:
+**Files:** `agent/extensions/subagent/agents.ts`, `agent/extensions/subagent/agents.test.ts`, `agent/extensions/pi-compatibility/cli-tool-selection.test.ts`
 
-- Agent frontmatter such as `tools: +codemode` is accepted by discovery, but the launcher appends plain `escalate_to_parent`. Pi v1.1.0 rejects the resulting mixed modifier/allowlist argument.
-- `--tools -clarify,-subagent,-web_search,+codemode` does **not** withdraw those default-active local tools. Explicit `--exclude-tools` does.
+**Original finding:** Discovery accepted modifier frontmatter that became an invalid mixed CLI argument when the launcher appended plain `escalate_to_parent`. CLI modifiers also did not withdraw default-active local extension tools, unlike explicit exclusions.
 
-All four existing agent definitions use plain allowlists and are unaffected. Your `defaultTools: ["+codemode"]` configuration also works.
+**Resolution:** Reject trimmed `+`/`-` frontmatter entries early with a path-qualified diagnostic naming the offending entry. Existing plain allowlists and agent definitions remain unchanged. User guidance distinguishes agent allowlists, CLI modifiers, and explicit `--exclude-tools`; Pi's modifier behavior itself is unchanged.
 
-**Action:** Preserve the frontmatter allowlist contract by rejecting modifier entries early with a path-qualified diagnostic. Document the distinction between modifier selection and explicit exclusions, and add focused coverage for the new CLI path.
+**Regression coverage:** Discovery tests cover string/array modifiers, valid neighboring definitions, and project-to-user fallback. Public-parser and real offline CLI tests cover modifier selection, explicit exclusions, plain allowlists, mixed-list rejection, and startup/reload behavior.
 
 ### 6. Low / informational — Clarify is not reported as `blocked`
 
