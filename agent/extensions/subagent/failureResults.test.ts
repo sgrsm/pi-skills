@@ -44,6 +44,8 @@ interface ChildScript {
 	exitCode?: number;
 	abort?: AbortController;
 	abortAfterClose?: AbortController;
+	waitForKill?: boolean;
+	compactionUsage?: unknown;
 }
 
 // No real PID, executable, model request or process-group signal is used.
@@ -53,8 +55,10 @@ class FakeChild extends EventEmitter {
 	readonly signals: NodeJS.Signals[] = [];
 	readonly stdin: EventEmitter & { end(prompt: string): void };
 	prompt = "";
+	private readonly closeOnKill: boolean;
 	constructor(script: ChildScript) {
 		super();
+		this.closeOnKill = Boolean(script.waitForKill);
 		this.stdin = Object.assign(new EventEmitter(), { end: (prompt: string) => {
 			this.prompt = prompt;
 			queueMicrotask(() => {
@@ -62,13 +66,20 @@ class FakeChild extends EventEmitter {
 					this.stdout.emit("data", Buffer.from(`${JSON.stringify({ type: "message_end", message })}\n`));
 				}
 				if (script.stderr) this.stderr.emit("data", Buffer.from(script.stderr));
+				if (script.compactionUsage) this.stdout.emit("data", Buffer.from(`${JSON.stringify({
+					type: "compaction_end", result: { usage: script.compactionUsage },
+				})}\n`));
 				script.abort?.abort();
-				this.emit("close", script.exitCode ?? 0, script.abort ? "SIGTERM" : null);
+				if (!script.waitForKill) this.emit("close", script.exitCode ?? 0, script.abort ? "SIGTERM" : null);
 				script.abortAfterClose?.abort();
 			});
 		} });
 	}
-	kill(signal: NodeJS.Signals) { this.signals.push(signal); return true; }
+	kill(signal: NodeJS.Signals) {
+		this.signals.push(signal);
+		if (this.closeOnKill) queueMicrotask(() => this.emit("close", null, signal));
+		return true;
+	}
 }
 
 function registerTool() {
@@ -85,18 +96,19 @@ function registerTool() {
 }
 
 async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
-	tool: any; ctx: any; children: FakeChild[]; call: (mode?: string, signal?: AbortSignal) => Promise<any>;
+	tool: any; ctx: any; children: FakeChild[];
+	call: (mode?: string, signal?: AbortSignal, onUpdate?: (partial: any) => void) => Promise<any>;
 	handlers: Map<string, Array<(event: any, ctx: any) => any>>;
 	entries: Array<{ type: string; customType: string; data: unknown }>;
 	writeAgent: (fileName: string, fields: string, source?: "user" | "project") => Promise<string>;
-}) => Promise<void>, systemPrompt = "") {
+}) => Promise<void>, systemPrompt = "", settings: Record<string, unknown> = {}) {
 	const fixture = await createTestScratchFixture();
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const agentDir = path.join(fixture.root, "agent");
 	await fixture.mkdir(agentDir);
 	await fixture.mkdir(path.join(agentDir, "agents"));
 	await fixture.writeFile(path.join(agentDir, "agents/scout.md"), `---\nname: scout\ndescription: Fixture scout\ntools: read\n---\n${systemPrompt}`);
-	await fixture.writeFile(path.join(agentDir, "settings.json"), "{}\n");
+	await fixture.writeFile(path.join(agentDir, "settings.json"), `${JSON.stringify(settings)}\n`);
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	const children: FakeChild[] = [];
 	const spawn = t.mock.method(childProcess, "spawn", () => {
@@ -113,14 +125,14 @@ async function withTool(t: TestContext, scripts: ChildScript[], fn: (h: {
 		const ctx = { cwd: fixture.project, hasUI: false, mode: "print", isProjectTrusted: () => false,
 			sessionManager: { getBranch: () => [] } };
 		let callId = 0;
-		const call = async (mode = "single", signal?: AbortSignal) => {
+		const call = async (mode = "single", signal?: AbortSignal, onUpdate?: (partial: any) => void) => {
 			const items = Array.from({ length: mode === "single" ? 1 : scripts.length }, (_, i) =>
 				({ agent: "scout", task: i === 0 ? "Inspect" : "Review {previous}" }));
 			// Public host seam exercises the exact thrown-error fallback and returned error contract.
 			const id = `failure-fixture-${++callId}`;
 			const outcome = await runToolCall({ type: "toolCall", id, name: "subagent", arguments: { mode, items } }, {
 				tools: [{ ...tool, execute: (...args: any[]) => tool.execute(...args, ctx) }],
-				assistantMessage: assistant() as any, context: { messages: [], tools: [] }, signal,
+				assistantMessage: assistant() as any, context: { messages: [], tools: [] }, signal, onUpdate,
 			});
 			for (const handler of handlers.get("tool_execution_end") ?? []) {
 				await handler({ toolName: "subagent", toolCallId: id }, ctx);
@@ -247,17 +259,145 @@ test("chain abort during next-child prompt preparation retains earlier results a
 	}, "Fixture system prompt");
 });
 
-test("parallel cancellation keeps its existing abort-only contract", async (t) => {
+test("parallel cancellation retains active-child results and usage after cleanup", { timeout: 5_000 }, async (t) => {
 	const abort = new AbortController();
-	await withTool(t, [{ abort }, {}], async ({ call, children }) => {
+	await withTool(t, [{ waitForKill: true, messages: [assistant(20)] }, { abort, stderr: "cancelled child diagnostic" }], async ({ call, children }) => {
 		const outcome = await call("parallel", abort.signal);
 		assert.equal(outcome.isError, true);
-		assert.deepEqual(outcome.result.details, {});
-		assert.equal(outcome.result.usage, undefined);
-		assert.match(outcome.result.content[0].text, /abort/i);
-		assert.ok(children.length > 0);
+		assert.equal(outcome.result.isError, true);
+		assert.equal(children.length, 2);
+		assert.equal(outcome.result.details.results.length, 2);
+		assert.ok(outcome.result.details.results.every((r: any) => r.stopReason === "aborted" && r.exitCode !== -1));
+		assert.equal(outcome.result.details.results[1].stderr, "cancelled child diagnostic");
+		assert.equal(outcome.result.usage.input, 30);
+		assert.equal(outcome.result.usage.output, 4);
+		assert.equal(outcome.result.usage.totalTokens, 34);
+		assert.equal(outcome.result.usage.cost.total, 0.034);
+		assert.match(outcome.result.content[0].text, /Parallel aborted: retained 2\/2 task results/);
+		assert.match(outcome.result.content[0].text, /cancelled child diagnostic/);
+		for (const child of children) assert.deepEqual(child.signals, ["SIGTERM"]);
 	});
 });
+
+test("parallel cancellation retains completed and aborted work once, without starting queued work", { timeout: 5_000 }, async (t) => {
+	const abort = new AbortController();
+	const nested = { role: "toolResult", toolName: "subagent", toolCallId: "nested", content: [], isError: false,
+		usage: toBillableUsage(usage(30)), details: { mode: "single", results: [{ usage: usage(30) }] }, timestamp: 0 };
+	await withTool(t, [
+		{ messages: [nested, assistant(20, { content: [{ type: "text", text: "completed finding" }] })], compactionUsage: toBillableUsage(usage(5)) },
+		{ abort, stderr: "aborted diagnostic" },
+		{ messages: [assistant(1000)] },
+	], async ({ call, children, tool }) => {
+		const outcome = await call("parallel", abort.signal);
+		assert.equal(outcome.isError, true);
+		assert.equal(outcome.result.isError, true);
+		const results = outcome.result.details.results;
+		assert.equal(results.length, 2);
+		assert.equal(children.length, 2, "queued third child must not start");
+		assert.equal(results[0].exitCode, 0);
+		assert.equal(results[1].stopReason, "aborted");
+		assert.equal(results[1].stderr, "aborted diagnostic");
+		assert.equal(outcome.result.usage.input, 65, "direct, nested and compaction usage counted once");
+		assert.equal(outcome.result.usage.output, 8);
+		assert.equal(outcome.result.usage.totalTokens, 73);
+		assert.ok(Math.abs(outcome.result.usage.cost.total - 0.073) < 1e-12);
+		assert.match(outcome.result.content[0].text, /Parallel aborted: retained 2\/3 task results/);
+		assert.match(outcome.result.content[0].text, /completed finding/);
+		assert.match(outcome.result.content[0].text, /aborted diagnostic/);
+		assert.deepEqual(children[1].signals, ["SIGTERM"]);
+		for (const expanded of [false, true]) {
+			const text = render(tool, { content: outcome.result.content, details: outcome.result.details }, expanded, outcome.toolCall.arguments);
+			assert.match(text, /Parallel aborted/);
+			assert.match(text, /✗/);
+			assert.doesNotMatch(text, /waiting|running|queued/);
+		}
+	}, "", { subagents: { maxConcurrency: 1 } });
+});
+
+test("parallel abort during next-child preparation retains only completed results and renders an error", async (t) => {
+	const abort = new AbortController();
+	await withTool(t, [{}, {}, {}], async ({ call, children, tool }) => {
+		const originalWrite = fsPromises.writeFile;
+		const promptPaths: string[] = [];
+		const write = t.mock.method(fsPromises, "writeFile", async (...args: Parameters<typeof originalWrite>) => {
+			const result = await originalWrite(...args);
+			if (String(args[0]).endsWith("prompt-scout.md")) {
+				promptPaths.push(String(args[0]));
+				if (promptPaths.length === 2) abort.abort();
+			}
+			return result;
+		});
+		try {
+			const outcome = await call("parallel", abort.signal);
+			assert.equal(outcome.isError, true);
+			assert.equal(outcome.result.details.results.length, 1);
+			assert.equal(outcome.result.details.results[0].exitCode, 0);
+			assert.equal(outcome.result.usage.input, 10);
+			assert.equal(children.length, 1);
+			assert.equal(promptPaths.length, 2);
+			for (const expanded of [false, true]) {
+				const text = render(tool, { content: outcome.result.content, details: outcome.result.details }, expanded, outcome.toolCall.arguments);
+				assert.match(text, /Parallel aborted: retained 1\/3 task results/);
+				assert.match(text, /✗/);
+				assert.doesNotMatch(text, /waiting|running|queued/);
+			}
+			for (const promptPath of promptPaths) await assert.rejects(fsPromises.access(promptPath), { code: "ENOENT" });
+		} finally { write.mock.restore(); }
+	}, "Fixture system prompt", { subagents: { maxConcurrency: 1 } });
+});
+
+test("parallel cancellation keeps retained parent requests diagnostic without prompting again", async (t) => {
+	const abort = new AbortController();
+	const escalation = { role: "toolResult", toolName: "escalate_to_parent", toolCallId: "question", content: [],
+		details: { requestType: "clarify", question: "Choose retained option?", options: [], allowCustom: true }, isError: false, timestamp: 0 };
+	await withTool(t, [{ messages: [assistant(), escalation], exitCode: 1 }, { abort }], async ({ call, tool }) => {
+		const outcome = await call("parallel", abort.signal);
+		assert.equal(outcome.isError, true);
+		assert.equal(outcome.result.details.results[0].parentEscalations.length, 1);
+		assert.equal(outcome.result.usage.input, 20);
+		assert.match(outcome.result.content[0].text, /Choose retained option\?/);
+		for (const expanded of [false, true]) {
+			const text = render(tool, { content: outcome.result.content, details: outcome.result.details }, expanded, outcome.toolCall.arguments);
+			assert.match(text, /Parallel aborted/);
+			assert.match(text, /✗/);
+			assert.match(text, /Choose retained option\?/);
+		}
+	}, "", { subagents: { maxConcurrency: 1 } });
+});
+
+test("parallel abort during initial prompt preparation fabricates no results or usage", async (t) => {
+	const abort = new AbortController();
+	await withTool(t, [{}], async ({ call, children }) => {
+		const originalWrite = fsPromises.writeFile;
+		const write = t.mock.method(fsPromises, "writeFile", async (...args: Parameters<typeof originalWrite>) => {
+			const result = await originalWrite(...args);
+			if (String(args[0]).endsWith("prompt-scout.md")) abort.abort();
+			return result;
+		});
+		try {
+			const outcome = await call("parallel", abort.signal);
+			assert.ok(abort.signal.aborted);
+			assert.equal(outcome.isError, true);
+			assert.deepEqual(outcome.result.details, {});
+			assert.equal(outcome.result.usage, undefined);
+			assert.equal(children.length, 0);
+		} finally { write.mock.restore(); }
+	}, "Fixture system prompt");
+});
+
+for (const name of ["Error", "AbortError"]) {
+	test(`parallel unexpected ${name} without cancellation still reaches the host fallback`, async (t) => {
+		const error = new Error("sentinel update failure"); error.name = name;
+		await withTool(t, [{}], async ({ call }) => {
+			const outcome = await call("parallel", undefined, () => { throw error; });
+			assert.equal(outcome.isError, true);
+			assert.deepEqual(outcome.result.details, {});
+			assert.equal(outcome.result.usage, undefined);
+			assert.match(outcome.result.content[0].text, /sentinel update failure/);
+			assert.doesNotMatch(outcome.result.content[0].text, /Parallel aborted/);
+		});
+	});
+}
 
 test("stderr-only child with no usage is still a structured error", async (t) => {
 	await withTool(t, [{ messages: [], exitCode: 1, stderr: "startup failed" }], async ({ call }) => {
@@ -321,7 +461,9 @@ test("pre-child parameter errors and pre-abort still throw without usage", async
 	await withTool(t, [], async ({ tool, ctx, children }) => {
 		await assert.rejects(tool.execute("invalid", { mode: "single", items: [] }, undefined, undefined, ctx), /items/);
 		const abort = new AbortController(); abort.abort();
-		await assert.rejects(tool.execute("pre-abort", { mode: "single", items: [{ agent: "scout", task: "Inspect" }] }, abort.signal, undefined, ctx), /abort/i);
+		for (const mode of ["single", "chain", "parallel"]) {
+			await assert.rejects(tool.execute("pre-abort", { mode, items: [{ agent: "scout", task: "Inspect" }] }, abort.signal, undefined, ctx), /abort/i);
+		}
 		assert.equal(children.length, 0);
 	});
 });
@@ -337,6 +479,26 @@ test("failure output stays truncated with a full-output file", async (t) => {
 		const outputPath = text.match(/Full output saved to: ([^\]]+)\]/)?.[1];
 		assert.ok(outputPath);
 		assert.equal(await readFile(outputPath, "utf8"), stderr);
+	});
+});
+
+test("parallel cancellation diagnostics retain truncation and full-output guidance", async (t) => {
+	const abort = new AbortController();
+	const stderr = Array.from({ length: 2200 }, (_, i) => `cancel diagnostic ${i}`).join("\n");
+	await withTool(t, [{ abort, stderr }], async ({ call }) => {
+		const outcome = await call("parallel", abort.signal);
+		assert.equal(outcome.isError, true);
+		assert.equal(outcome.result.details.results[0].stderr, stderr);
+		const text = outcome.result.content[0].text;
+		assert.match(text, /Parallel aborted/);
+		assert.match(text, /Output truncated/);
+		const outputPath = text.match(/Full output saved to: ([^\]]+)\]/)?.[1];
+		assert.ok(outputPath);
+		t.after(async () => {
+			await fsPromises.unlink(outputPath);
+			await fsPromises.rmdir(path.dirname(outputPath));
+		});
+		assert.match(await readFile(outputPath, "utf8"), /cancel diagnostic 2199/);
 	});
 });
 

@@ -3326,8 +3326,10 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (requestMode === "parallel") {
-				// Track all results for streaming updates
+				// Streaming placeholders are not evidence of started or billable work.
 				const allResults: SingleResult[] = new Array(params.items.length);
+				const settledResults: (SingleResult | undefined)[] = new Array(params.items.length);
+				let aborted = false;
 
 				// Initialize placeholder results
 				for (let i = 0; i < params.items.length; i++) {
@@ -3393,38 +3395,50 @@ export default function (pi: ExtensionAPI) {
 								makeDetails("parallel"),
 							),
 						);
+						settledResults[index] = result;
 						allResults[index] = result;
 						emitParallelUpdate();
 						return result;
 					},
 					signal,
-				);
+				).catch((error: unknown) => {
+					// The scheduler has settled active workers; recover only real returned results.
+					if (!signal?.aborted || !(error instanceof Error) || error.name !== "AbortError") throw error;
+					const retained = settledResults.filter((result): result is SingleResult => result !== undefined);
+					if (retained.length === 0) throw error;
+					aborted = true;
+					return retained;
+				});
 
 				const escalatedResults = results.filter(hasParentEscalations);
-				if (escalatedResults.length > 0) {
+				if (!aborted && escalatedResults.length > 0) {
 					return await buildParentEscalationResult("parallel", results);
 				}
 
 				const successCount = results.filter((r) => !isFailedResult(r)).length;
 				const summaries = await Promise.all(
 					results.map(async (r) => {
-						const output = await truncateSubagentVisibleOutput(getResultOutput(r));
+						const retainedRequest = aborted && hasParentEscalations(r)
+							? `\n\n${formatParentEscalationSummaryFromUx([r], [])}` : "";
+						const output = await truncateSubagentVisibleOutput(getResultOutput(r) + retainedRequest);
 						const status = isFailedResult(r)
 							? `failed${r.stopReason && r.stopReason !== "end" ? ` (${r.stopReason})` : ""}`
 							: "completed";
 						return `### [${r.agent}] ${status}\n\n${output.text}`;
 					}),
 				);
+				const errorMessage = aborted ? `Parallel aborted: retained ${results.length}/${params.items.length} task results.` : undefined;
 				const usage = aggregateBillableUsage(results);
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n---\n\n")}`,
+							text: `${errorMessage ?? `Parallel: ${successCount}/${results.length} succeeded`}\n\n${summaries.join("\n\n---\n\n")}`,
 						},
 					],
-					details: makeDetails("parallel")(results),
+					details: errorMessage ? { ...makeDetails("parallel")(results), errorMessage } : makeDetails("parallel")(results),
 					...(usage ? { usage } : {}),
+					...(aborted ? { isError: true } : {}),
 				};
 			}
 
@@ -3565,7 +3579,8 @@ export default function (pi: ExtensionAPI) {
 			const escalatedResults = details.results.filter(hasParentEscalations);
 			if (escalatedResults.length > 0) {
 				const summary = formatParentEscalationSummaryFromUx(details.results, details.parentEscalationResolutions ?? []);
-				return createActivityTreeWithText(summary);
+				const error = details.errorMessage ? `${theme.fg("error", `✗ ${details.errorMessage}`)}\n\n` : "";
+				return createActivityTreeWithText(error + summary);
 			}
 
 			const formatFailureSummary = (r: SingleResult): string => {
@@ -3672,9 +3687,11 @@ export default function (pi: ExtensionAPI) {
 				const isRunning = running > 0;
 				const icon = isRunning
 					? theme.fg("warning", "⏳")
-					: failCount > 0
-						? theme.fg("warning", "◐")
-						: theme.fg("success", "✓");
+					: details.errorMessage
+						? theme.fg("error", "✗")
+						: failCount > 0
+							? theme.fg("warning", "◐")
+							: theme.fg("success", "✓");
 				const status = isRunning
 					? `${successCount + failCount}/${details.results.length} done, ${running} running`
 					: `${successCount}/${details.results.length} tasks`;
@@ -3685,6 +3702,7 @@ export default function (pi: ExtensionAPI) {
 				if (expanded) {
 					const container = new Container();
 					container.addChild(new Text(header, 0, 0));
+					if (details.errorMessage) container.addChild(new Text(theme.fg("error", details.errorMessage), 0, 0));
 					container.addChild(new Spacer(1));
 					container.addChild(createActivityTree());
 					for (const r of details.results) {
@@ -3703,6 +3721,7 @@ export default function (pi: ExtensionAPI) {
 					const failure = formatFailureSummary(r);
 					if (failure) text += `\n${theme.fg("error", `${r.agent}: ${failure}`)}`;
 				}
+				if (details.errorMessage) text += `\n${theme.fg("error", details.errorMessage)}`;
 				const usage = formatUsageStats(aggregateUsage(details.results));
 				if (usage) text += `\n${theme.fg("dim", `Total: ${usage}`)}`;
 				return createActivityTreeWithText(text);
