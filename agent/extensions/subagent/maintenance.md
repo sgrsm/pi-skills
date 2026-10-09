@@ -21,7 +21,7 @@ Maintainer notes for [`subagent`](./README.md). User-facing commands, settings a
 
 ## Startup tool availability
 
-`subagent` and child `escalate_to_parent` are registered through `registerToolAvailability()` (`../shared/toolAvailability.ts`). `session_start` and `syncSubagentSessionState()` call the availability setters, so saved off mode, a delegation depth cap, and top-level (no relay) escalation withdrawal use hidden re-registration rather than subtractive `setActiveTools()`. See [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only an explicit `/subagents off` (`setPolicyMode()`) removes `subagent` from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and open: [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
+`subagent` and child `escalate_to_parent` are registered through `registerToolAvailability()` (`../shared/toolAvailability.ts`). `session_start` and `syncSubagentSessionState()` call the availability setters, so saved off mode, a delegation depth cap, and top-level (no relay) escalation withdrawal use hidden re-registration rather than subtractive `setActiveTools()`. See [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only an explicit `/subagents off` (`setPolicyMode()`) removes `subagent` from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and open: [TDR-20261009-1202](../../../tdr/blocked/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Child MCP startup limitation
 

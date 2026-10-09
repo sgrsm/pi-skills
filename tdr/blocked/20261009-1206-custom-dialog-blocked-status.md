@@ -1,6 +1,6 @@
 # TDR-20261009-1206: Report custom TUI dialogs as blocked in program status
 
-- **Status:** Open — source-verified on installed Pi 1.1.0; no live dashboard reproduction
+- **Status:** Blocked — public host API limitation on Pi 1.1.0; no live dashboard reproduction
 - **Priority:** Low; affects status-dashboard accuracy only. Clarify still waits for the user.
 - **Created:** 2026-10-09
 - **Area:** Pi host program-status reporting (`ExtensionUIContext.custom()`); `agent/extensions/clarify`

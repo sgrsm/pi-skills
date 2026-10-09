@@ -86,7 +86,7 @@ Contract:
 
 Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts), [`pi-compatibility/cli-tool-selection.test.ts`](./pi-compatibility/host-contract-coverage.md#cli-tool-selectiontestts) (actual CLI parser/process) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
-Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
+Known limitation: this protects pending names that the host established. The omission was reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0: SDK and CLI resume do not establish them at session creation, with or without local extensions. That open host defect is independent of this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/blocked/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 
 ## Extension retirement
 

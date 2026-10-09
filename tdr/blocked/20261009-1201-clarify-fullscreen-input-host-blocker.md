@@ -1,6 +1,6 @@
 # TDR-20261009-1201: Restore safe fullscreen clarify input
 
-- **Status:** Open — fullscreen mouse ownership corrected; other input/layout and host lifecycle defects remain
+- **Status:** Open — broader remediation is blocked by the host lifecycle defect; input/layout issues also remain
 - **Priority:** Medium
 - **Created:** 2026-10-03
 - **Area:** `agent/extensions/clarify`; Pi custom-dialog integration

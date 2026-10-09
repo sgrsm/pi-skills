@@ -1,6 +1,6 @@
 # TDR-20261009-1204: Expose physical model identity to provider-request extensions
 
-- **Status:** Open — source-verified API limitation; host enhancement deferred
+- **Status:** Blocked — source-verified API limitation; host enhancement deferred upstream
 - **Priority:** Low; direct legacy Codex verbosity remains supported
 - **Created:** 2026-10-03
 - **Area:** Pi host request-hook contract (`sdk` / `ExtensionRunner` / extension declarations)
@@ -71,6 +71,6 @@ In an authorized Pi source checkout, add focused failing tests through public SD
 - Multiple request handlers still compose payload replacements in registration order. Existing payload-only extensions continue working.
 - No new credential fields are added. Virtual models never masquerade as physical request identities.
 
-Use approved scratch for any filesystem fixtures; see the [safe test scratch guidance](../agent/extensions/permissions/README.md#safe-test-scratch-setup). Prefer public retained test seams; any private probe must be isolated and version-checked, and must not become a production import.
+Use approved scratch for any filesystem fixtures; see the [safe test scratch guidance](../../agent/extensions/permissions/README.md#safe-test-scratch-setup). Prefer public retained test seams; any private probe must be isolated and version-checked, and must not become a production import.
 
 Close this record only after a supported public contract is implemented and validated. Separately authorize any Codex verbosity expansion, test physical identity and verified capability together, and keep unsupported requests untouched. Passing the local extension's conservative-selection tests does not satisfy these host acceptance criteria.

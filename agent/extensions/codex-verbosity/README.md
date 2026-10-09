@@ -27,7 +27,7 @@ Pi's model selection can differ from the provider actually receiving a routed re
 
 Malformed request payloads or malformed existing text settings are left untouched. There are no repeated per-request warnings and no persistent footer/status indicator.
 
-The separate [technical follow-up](../../../tdr/20261009-1204-provider-request-physical-model-identity.md) tracks the proposed Pi API improvement; it does not enable additional provider support today.
+The separate [technical follow-up](../../../tdr/blocked/20261009-1204-provider-request-physical-model-identity.md) tracks the proposed Pi API improvement; it does not enable additional provider support today.
 
 ## Slash command
 

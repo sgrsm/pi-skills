@@ -1,6 +1,6 @@
 # TDR-20261009-1202: Restore the transcript tool loadout on SDK/CLI resume
 
-- **Status:** Open — reproduced on Pi 1.0.3; correction requires Pi source/upstream work
+- **Status:** Blocked — reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0; correction requires Pi source/upstream work
 - **Priority:** Medium; MCP-specific impact latent while servers are disabled
 - **Created:** 2026-10-03
 - **Area:** Pi host session construction (`sdk` / `AgentSession`), not local extension startup
@@ -112,12 +112,12 @@ Use `sdk-resume.test.ts`'s bounded child fixture rather than relying on an SDK-o
 
 ## Safety and implementation boundaries
 
-- Use an explicitly approved, real, non-symlink, canonical, current-user-owned, non-group/world-writable scratch root outside HOME, repository and cwd; prefer `0700`. It must neither equal, contain nor be contained by those protected paths, and must contain the caller-created, real current-user-owned `.step1-test-root-ready` sentinel. Filesystem `/` is rejected. Generated fixture roots must be exactly `0700`. Set both variables shown above; the pinned fixture helper checks the required root/sentinel safety and identities. See the durable [safe scratch setup](../agent/extensions/permissions/README.md#safe-test-scratch-setup).
+- Use an explicitly approved, real, non-symlink, canonical, current-user-owned, non-group/world-writable scratch root outside HOME, repository and cwd; prefer `0700`. It must neither equal, contain nor be contained by those protected paths, and must contain the caller-created, real current-user-owned `.step1-test-root-ready` sentinel. Filesystem `/` is rejected. Generated fixture roots must be exactly `0700`. Set both variables shown above; the pinned fixture helper checks the required root/sentinel safety and identities. See the durable [safe scratch setup](../../agent/extensions/permissions/README.md#safe-test-scratch-setup).
 - Keep sessions, configuration, auth/catalog paths, fake HOME, observers and reports under disposable fixture roots. Use the existing pinned fixture helpers; revalidate mutation targets before direct writes or host operations where practical. Do not use personal session/MCP data as fixtures.
 - Do not run paid model calls, dependency installations, enabled external MCP servers, real Trash operations or other guarded mutations to reproduce this issue. Do not change personal configuration.
 - Prefer public host APIs for retained tests; isolate any genuinely necessary private probe in approved scratch, version-check it and record skipped/missing seams explicitly. Do not import private host internals in production extensions.
 - Add positive failing restoration regressions before executable host changes. Do not simply omit `initialActiveToolNames` unconditionally: explicit `--tools`, exclusions, no-tools options, default-tool precedence, project trust and existing reload semantics must remain correct.
-- Do not emulate private pending state in local extensions, patch the installed host, or add a local workaround without separate authorization. The existing hidden-withdrawal fix and model-only/allowlist/safety contracts must remain intact. Read the durable [extension maintenance guide](../agent/extensions/maintenance.md) before any separately authorized host-link/dependency change in this repository.
+- Do not emulate private pending state in local extensions, patch the installed host, or add a local workaround without separate authorization. The existing hidden-withdrawal fix and model-only/allowlist/safety contracts must remain intact. Read the durable [extension maintenance guide](../../agent/extensions/maintenance.md) before any separately authorized host-link/dependency change in this repository.
 
 ## Future host remediation and acceptance criteria
 

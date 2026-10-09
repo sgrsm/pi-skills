@@ -1,22 +1,22 @@
 # Technical Debt Records
 
-This directory tracks known technical debt that is intentionally not being addressed immediately.
+This directory tracks known technical debt that is intentionally not being addressed immediately. Records blocked on Pi upstream host behavior or API support are grouped in [`blocked/`](./blocked/).
 
 | ID | Title | Status | Priority |
 |---|---|---|---|
 | [TDR-20261009-1200](./20261009-1200-propagate-transient-project-trust-to-subagents.md) | Preserve transient project trust for contained subagent children | Open | Low |
-| [TDR-20261009-1201](./20261009-1201-clarify-fullscreen-input-host-blocker.md) | Restore safe fullscreen clarify input | Open — revalidated on Pi 1.1.0; lifecycle blocker remains | Medium |
-| [TDR-20261009-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Open — reproduced on Pi 1.1.0 | Medium |
+| [TDR-20261009-1201](./blocked/20261009-1201-clarify-fullscreen-input-host-blocker.md) | Restore safe fullscreen clarify input | Open — broader remediation host-blocked; input/layout issues remain | Medium |
+| [TDR-20261009-1202](./blocked/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Blocked — Pi host resume-construction defect; reproduced on Pi 1.1.0 | Medium |
 | [TDR-20261009-1203](./20261009-1203-subagent-orchestration-failure-accounting.md) | Retain subagent results and usage on orchestration cancellation and exceptions | Open — parallel cancellation confirmed; exceptions verify first | Medium |
-| [TDR-20261009-1204](./20261009-1204-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Open — host API enhancement deferred | Low |
+| [TDR-20261009-1204](./blocked/20261009-1204-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Blocked — Pi host API enhancement deferred upstream | Low |
 | [TDR-20261009-1205](./20261009-1205-trash-history-all-projects-storage-policy.md) | Decide the Trash-history all-projects storage policy | Open — policy decision pending | Medium |
-| [TDR-20261009-1206](./20261009-1206-custom-dialog-blocked-status.md) | Report custom TUI dialogs as blocked in program status | Open — host API limitation documented | Low |
+| [TDR-20261009-1206](./blocked/20261009-1206-custom-dialog-blocked-status.md) | Report custom TUI dialogs as blocked in program status | Blocked — no public Pi host API for custom-dialog status | Low |
 
 The owning records explain the evidence, scope and acceptance criteria for each item. Read the relevant record before changing behavior or status; follow its safety boundaries when reproducing an issue.
 
 ## Pi 1.1.0 revalidation
 
-No remaining record became redundant or unblocked. The original investigation versions and evidence in the owning records remain historical baselines; the following observations supplement them:
+No record became redundant or unblocked during this revalidation. The original investigation versions and evidence in the owning records remain historical baselines; the following observations supplement them:
 
 - **TDR-20261009-1200:** source comparison with Pi 1.0.4 found no change that propagates process-local parent trust to contained child processes. It remains open.
 - **TDR-20261009-1201:** positive input/layout diagnostics still fail. A separate version-checked invocation of the actual host custom-dialog method reproduced stacked-search and pre-install completion failures; normal mounted completion remains a positive control. Fullscreen mouse ownership and Home/End controls still work. The broader remediation remains blocked.
