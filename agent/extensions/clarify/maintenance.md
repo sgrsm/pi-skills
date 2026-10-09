@@ -31,6 +31,10 @@ Fullscreen mouse-mode ownership is corrected locally: Clarify no longer enables 
 
 `showClarifySelector()` snapshots `tui.mode === "regular"` at creation and uses that same ownership decision for legacy mouse setup and disposal. Fullscreen emits neither toggle. The non-overlay presentation, raw key/wheel parsing, and terminal-row rendering budget are unchanged. `pi-compatibility/clarify-input.test.ts` protects fullscreen ownership across selection, Escape, and abort, post-dialog wheel routing, working routes, and regular-mode setup/cleanup. `clarify-input.diagnostic.ts` retains the outstanding positive requirements, including removal of regular-mode toggles. Its custom-dialog lifecycle adapter is not an actual host-method invocation; reconstruct the TDR's scratch-only real-host probe after upgrades. Fake-terminal tests do not emulate Ghostty's wheel-to-arrow fallback or establish live-terminal behavior after the correction.
 
+## Program-status limitation
+
+TUI Clarify selection and custom-answer UI use `ctx.ui.custom()`, which Pi 1.1.0 does not report as `blocked` in program status. The evidence, local decision and closure criteria are in [TDR-20261009-1206](../../../tdr/20261009-1206-custom-dialog-blocked-status.md); do not duplicate them here.
+
 ## Startup availability and resume
 
 Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only explicit `/clarify off` removes the tool from the active set. Host SDK/CLI resume omission of selected tool declarations is separate and still open: [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).

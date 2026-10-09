@@ -10,6 +10,7 @@ This directory tracks known technical debt that is intentionally not being addre
 | [TDR-20261009-1203](./20261009-1203-subagent-orchestration-failure-accounting.md) | Retain subagent results and usage on orchestration cancellation and exceptions | Open — parallel cancellation confirmed; exceptions verify first | Medium |
 | [TDR-20261009-1204](./20261009-1204-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Open — host API enhancement deferred | Low |
 | [TDR-20261009-1205](./20261009-1205-trash-history-all-projects-storage-policy.md) | Decide the Trash-history all-projects storage policy | Open — policy decision pending | Medium |
+| [TDR-20261009-1206](./20261009-1206-custom-dialog-blocked-status.md) | Report custom TUI dialogs as blocked in program status | Open — host API limitation documented | Low |
 
 The owning records explain the evidence, scope and acceptance criteria for each item. Read the relevant record before changing behavior or status; follow its safety boundaries when reproducing an issue.
 

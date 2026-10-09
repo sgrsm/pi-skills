@@ -110,6 +110,8 @@ When the terminal UI is available, possible footer states are:
 
 The status is refreshed on session start and when `/clarify on|off` changes the state.
 
+**Program-status limitation (open):** on Pi 1.1.0, while Clarify waits for a TUI selection or custom answer, a connected program-status dashboard may show `working` instead of `blocked`. Clarify still waits for your answer. The footer `clarify: on •` reflects the enabled mode, not whether a question is waiting. See [maintainer details](./maintenance.md#program-status-limitation).
+
 Interactive selector in TUI mode:
 
 - title: `Clarify`
