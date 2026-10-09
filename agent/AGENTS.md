@@ -8,7 +8,10 @@
 ## Subagents
 - Within current policy, delegate non-trivial focused or splittable inspection/review/analysis for parallelism/context hygiene; skip simple or high-overhead cases.
 - Use read-only `scout`/`reviewer`/`planner` for focused or parallel angles; chain dependent flows; use write-capable agents only when explicit/approved.
-- Keep child prompts narrow; require path/line evidence; synthesize one deduped final answer.
+- Give each child a focused task with a clear goal, scope and exclusions, relevant context and reference criteria, and completion expectations. Children have isolated contexts; do not assume they know the parent conversation. Include only the context needed for the assignment.
+- Specify output overrides only when the agent's defaults are unsuitable.
+- For findings, require supporting evidence and useful locations when applicable: file paths with symbols, headings, configuration keys, excerpts, or verified line numbers. Exact line numbers are optional.
+- Reconcile and deduplicate child results; synthesize one final answer.
 
 ## Git
 - Never perform destructive or history-altering Git operations: do not rewrite/delete existing history or refs, or discard working-tree, index, or stash data. This includes amend, rebase, reset, history-filtering tools, direct ref/tag changes, force/mirror pushes, clean, restore, and stash drop/clear. Commit atop `HEAD` only on explicit request; push only when asked. For tests requiring branch/history changes, use a temporary agent-owned branch.
