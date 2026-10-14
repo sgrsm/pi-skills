@@ -1,13 +1,18 @@
-# Expected SOLID review
+# Expected: java-clean-solid on valid-application-service
 
-No material SOLID findings in scope.
+Tests: a cohesive application service is not flagged for SRP because it has several collaborators.
 
-Do **not** flag `CheckoutService` for SRP solely because it has several collaborators. The class appears to orchestrate one cohesive use case: checkout.
+## Must report
 
-Do not recommend adding extra interfaces or strategy layers unless surrounding evidence shows concrete change pressure, hard-to-test boundaries, or unstable infrastructure details.
+None. `CheckoutService` orchestrates one use case, checkout, through role-named collaborators.
 
-Acceptable follow-up only if evidence exists:
+## May report
 
-- add behavior tests for checkout flow
-- extract a collaborator if payment, receipt creation, or event publication varies independently
-- introduce a port if `PaymentGateway` is a concrete vendor/framework detail rather than a domain-facing abstraction
+- A Context-dependent correctness note: if `receipts.create` or `events.checkedOut` fails after `paymentGateway.charge`, the customer is charged without a receipt, unless transaction, idempotency, or compensation handling exists outside the fixture.
+- A Hypothesis to verify whether `PaymentGateway` is a domain-owned port or a vendor type.
+
+## Must not report
+
+- SRP, Divergent Change, or God Class because of the five collaborators.
+- New strategy layers or interfaces without evidence of change pressure.
+- Long Parameter List for the constructor.

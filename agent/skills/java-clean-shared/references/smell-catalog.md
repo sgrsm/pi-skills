@@ -1,0 +1,92 @@
+# Java Smell Catalog
+
+Canonical smells from *Refactoring*, *Clean Code*, *Effective Java*, and *A Philosophy of Software Design*, with the calibration these skills apply. The general definitions are well known; each entry says when the smell is worth reporting in Java code, which look-alikes to skip, and the usual first fix (not the end state).
+
+Owners: `java-clean-code` reports the Local smells; `java-clean-solid` reports the Design and Architecture smells. Any skill may name a smell from another section when it is the root cause.
+
+## Local (java-clean-code)
+
+### Names and comments
+
+- **Mysterious Name.** Flag: a name that hides or misstates meaning (`d`, `data`, `process`, `handle`, `Manager`), cryptic abbreviations, encoded types (`strName`, `userList`). Skip: established domain or API terms, loop indices, short lambda parameters, Java conventions. Fix: Rename.
+- **Inconsistent vocabulary.** Flag: one concept under several words (`fetch`, `get`, `load`) or one word with several meanings in the same module. Skip: words that carry a deliberate contract (`find` returns `Optional`, `get` throws). Fix: Rename to the module's term.
+- **Comments.** Flag: comments that restate the code, contradict it, or stand in for a better name; commented-out code. Skip: comments on why, trade-offs, invariants, or external constraints; Javadoc on public API. Fix: Rename or Extract Function and drop the comment. When code and comment disagree, check intent before deciding which one is wrong.
+
+### Functions
+
+- **Long Function / mixed abstraction levels.** Flag: readers must step over low-level detail (loops, string building, SQL, parsing) to see the steps, or phases (parse, validate, compute, persist, notify) interleave. Skip: a method that calls several collaborators at one level (orchestration); long but linear code such as field mapping. Fix: Extract Function into private methods named for the steps; Split Phase when phases pass data along. Extract Class only when the part has its own state or changes independently.
+- **Flag Argument.** Flag: a `boolean` or enum parameter that selects between behaviors (`send(report, true)`). Skip: a boolean that is data (`setEnabled(boolean)`). Fix: Remove Flag Argument by splitting into named methods.
+- **Long Parameter List / Data Clumps.** Flag: same-typed parameters that are easy to swap, or the same group of values passed together through several signatures. Skip: a one-off call; constructor injection (the collaborator count is a design signal, see Large Class). Fix: Introduce Parameter Object or a value object for the recurring group; a builder for many optional construction parameters.
+- **Hidden side effect (Command-Query Separation).** Flag: a query-looking method (`get`, `find`, `is`, `has`, `calculate`, `validate`) that writes state, persists, or sends something. Skip: commands that also return a result; names that announce the effect (`getOrCreate`); caching that callers can't observe. Fix: Separate Query from Modifier, or rename to state the command.
+- **Temporal coupling.** Flag: calls that must happen in an order the API doesn't enforce (setters before `run()`, `init()` after construction). Skip: builders whose setters are all optional. Fix: pass each step's output into the next step, or take the inputs as constructor or method arguments. A fluent builder alone enforces neither order nor completeness.
+- **Deep nesting / complex conditionals.** Flag: nesting that buries the main path, or boolean expressions readers must decode. Fix: guard clauses, Decompose Conditional, a named predicate on the owning type. A no-op branch stays a no-op unless you mark a behavior change.
+- **Loops.** Flag: a loop that filters, maps, and accumulates through mutable locals that obscure the intent. Skip: loops with early exit, checked exceptions, or index arithmetic; a stream chain isn't automatically clearer. Fix: Replace Loop with Pipeline, or extract a named method.
+- **Duplicated Code.** Flag: a rule, validation, mapping, or literal set copied to places that must change together. Skip: incidental similarity without a named concept; test setup repeated to keep each test readable. Fix: Extract Function, then move it to the type that owns the concept.
+
+### Data and state
+
+- **Primitive Obsession.** Flag: a domain concept held as `String`, `long`, or `BigDecimal` with validation repeated or values easy to mix up (several `long` ids in one signature, money without a currency). Skip: DTO, persistence, and API boundary fields; values with no rules. Fix: a value object (a `record` on Java 16+) that validates in its constructor.
+- **Magic literal.** Flag: an unexplained number or string with business meaning (rates, limits, status codes), especially when repeated. Skip: `0`, `1`, obvious unit conversions, test data. Fix: a named constant, an enum, or configuration.
+- **Mutable Data / exposed internals.** Flag: public mutable fields, getters that return internal mutable collections, setters that let callers break invariants. Skip: JPA entities and DTOs that frameworks populate; check their creation and update paths instead. Fix: Encapsulate Collection or Variable; intention-revealing mutators (`markPaid(...)`); `List.copyOf` on the way out.
+- **Temporary Field.** Flag: a field set only for some operations or used by one method. Fix: a local variable, or Extract Class for that operation.
+- **Dead Code.** Flag: unused private members, unreachable branches, parameters nobody reads, commented-out code. Verify with a usage search. Skip: reflection and framework entry points; public API used by other modules or clients. Fix: Remove Dead Code.
+
+### Nulls and Optional
+
+- **Unclear null contract.** Flag: methods that may return `null` without saying so, the same defensive null checks repeated across callers, `null` silently accepted as "do nothing". Skip: framework-bound nullable fields; code that follows the project's nullness annotations. Fix: `Optional` for an absent single result; an empty collection instead of `null`; `Objects.requireNonNull` for required arguments (a behavior change when `null` used to be tolerated).
+- **Optional misuse.** Flag: `get()` without a presence check, `isPresent()` followed by `get()`, `Optional` fields, parameters, or collection elements. Fix: `orElseThrow`, `map`, `ifPresentOrElse`; a nullable parameter or an overload instead of an `Optional` parameter.
+
+### Errors
+
+- **Swallowed exception.** Flag: an empty catch, catch-and-continue where later code assumes success, or a catch that returns `null`, `false`, or a default. Skip: documented best-effort work that logs with identifying context. Fix: propagate or translate; when best-effort is intended, log with context and say why in a comment. Usually Critical when later code acts as if the operation succeeded.
+- **Generic or contextless exception.** Flag: `throw new RuntimeException("failed")`, catching `Exception` or `Throwable` away from a boundary, dropping the cause. Fix: a specific exception with identifying context, keeping the cause.
+- **Error handling hides the happy path.** Flag: a try/catch around a whole method that mixes the work with recovery. Fix: Extract Function on the try body so one method handles errors and the other does the work (`refactoring`). Narrowing the catch is a separate behavior change.
+- **Exceptions as control flow / codes as errors.** Flag: an expected business outcome (a declined payment, a failed validation) thrown and caught by the immediate caller to pick a branch, or failures returned as codes or `null`. Fix: a result type for expected outcomes (a sealed interface with records on 17+); exceptions for failures.
+- **Leaking checked or vendor exceptions.** Flag: `SQLException`, `IOException`, or SDK exceptions in service or domain signatures. Skip: Spring data access, which already translates to `DataAccessException`. Fix: translate at the boundary into an exception the caller's layer understands.
+
+### Tests
+
+Trimming a test suite is `trim-tests`' job. Here, check whether tests protect and allow the refactorings you suggest.
+
+- **Tests that block refactoring.** Flag: assertions on private or internal state, `verify` on every interaction, mocks of value objects or third-party types, reflection into fields. Fix: assert observable outcomes; fakes for your own ports; wrap third-party types and cover the wrapper with an integration test.
+- **Nondeterminism.** Flag: `Thread.sleep`, `Instant.now()` or `LocalDate.now()`, `UUID.randomUUID()`, or `new Random()` inside logic that tests need to control; order-dependent tests or shared mutable fixtures. Fix: inject a `Clock` or a supplier; poll with a timeout (Awaitility) instead of sleeping; build fresh fixtures per test.
+- **Unclear tests.** Flag: names that don't state the behavior, several unrelated behaviors in one test, `assertTrue(a.equals(b))` instead of an assertion that reports the difference. Skip: naming styles that match the project's convention. Fix: rename, split, use specific assertions.
+- **Missing safety net.** Flag: a refactoring you recommend on risky or unclear code that no test would catch going wrong. Fix: characterization tests first.
+
+### Concurrency
+
+- **Mutable state in a shared instance.** Flag: instance or static fields written per call in Spring singletons, servlets, or static holders. Fix: local variables and parameters, an immutable value, or a request-scoped object.
+- **Unsafe compound operation.** Flag: check-then-act or read-modify-write on shared state (`if (!map.containsKey(k)) map.put(...)`, `count++` on a shared field), or on database rows without locking or versioning. Skip: state confined to one thread; verify the sharing first. Fix: atomic operations (`computeIfAbsent`, `AtomicLong`), optimistic locking (`@Version`), or a narrow lock.
+- **Blocking work under a lock.** Flag: I/O or remote calls inside `synchronized` or while holding a lock. On JDK 21 to 23 with virtual threads, `synchronized` around blocking calls also pins the carrier thread (fixed in JDK 24). Fix: narrow the critical section; use `ReentrantLock` where pinning matters.
+- **Threading mixed into domain logic.** Flag: `new Thread`, ad-hoc executors, or hand-written retry loops inside business methods. Fix: inject an `Executor` or retry policy; keep the domain logic synchronous and testable.
+- **Undocumented thread-safety.** Flag: a class shared across threads with no stated contract. Fix: document the contract (or use the project's annotations), or make the class immutable.
+
+## Design (java-clean-solid)
+
+- **Divergent Change (SRP).** Flag: one class edited for unrelated reasons: different actors (finance rules, report layout, schema), method groups that use disjoint fields and collaborators, unrelated commit messages in its history. Skip: an application service that runs one use case through several collaborators. Fix: Extract Class per actor, starting with the part under change.
+- **Large Class / God Class.** Flag: many responsibilities and collaborators, and most changes in the area touch it. Fix: characterization tests, then extract one responsibility at a time. Never a rewrite as the first step.
+- **Shotgun Surgery.** Flag: one change needs coordinated edits across many classes, seen in history or in parallel code paths. Fix: Move Function and Move Field to gather the concept; Combine Functions into Class.
+- **Feature Envy.** Flag: a method that works mostly on another object's data, especially when several callers repeat it. Skip: presentation, serialization, and persistence mapping, which belong at the boundary even though they read domain data. Fix: Move Function to the data's owner.
+- **Message Chains.** Flag: clients navigating through objects (`order.getCustomer().getAccount().getRiskProfile()`) so they break when the structure changes, repeated in several places. Skip: chains over records, value objects, and DTOs; fluent builders, streams, and `Optional`. Fix: move the question to the owner (`customer.isHighRisk()`); don't add a delegate per hop.
+- **Middle Man / pass-through layer.** Flag: a class or method that only forwards (controller to facade to service to manager, each delegating). Skip: deliberate boundaries such as ports and adapters, a module facade, or a transaction boundary. Fix: Remove Middle Man or Inline Class, one layer at a time.
+- **Shallow abstraction.** Flag: an interface or class as complex as what it hides; many tiny classes that each wrap one call (Ousterhout's "classitis"). Fix: Inline Class or Inline Function into a deeper module.
+- **Speculative Generality / Lazy Element.** Flag: an interface with one implementation and no boundary or test need, an abstract base with one subclass, unused hooks, parameters, or type parameters. Skip: published API, module ports, interfaces a framework requires (Spring Data, Feign, `@HttpExchange`), test doubles in actual use. Fix: Inline or Collapse Hierarchy. Usually Minor.
+- **Insider Trading.** Flag: classes that read or change each other's internals, two-way dependencies between classes, visibility widened or reflection used just to reach state. Fix: Move Function, Hide Delegate, or a mediator owned by one side.
+- **Data Class / anemic model.** Flag: getter-and-setter types whose invariants nothing enforces, or whose rules are duplicated across services. Skip: transaction-script style in simple CRUD code; DTOs, records, and entities used as plain data. Fix: move the invariant-enforcing behavior into the type.
+- **Utility bucket.** Flag: `*Utils` or `*Helper` classes that collect unrelated static methods. Skip: small, cohesive helpers. Fix: move each method to the type it serves.
+- **Repeated Switches (OCP).** Flag: the same type code switched on in several places, so a new variant needs an edit at each; `default` branches that would silently absorb a new variant. Skip: a single switch; exhaustive `switch` expressions over an enum or sealed type with no `default`, where the compiler finds every site. Fix: move the behavior onto the enum or into polymorphic types when variants are open-ended; exhaustive switches over a sealed hierarchy for a closed set with many operations.
+- **Refused Bequest (LSP).** Flag: overrides that throw `UnsupportedOperationException`, do nothing, tighten preconditions, or weaken guarantees; callers that check `instanceof` before calling. Skip: operations the base contract documents as optional (`java.util.Collection` mutators). Fix: split the interface by role; replace inheritance with delegation.
+- **Fragile inheritance.** Flag: inheritance used only for code reuse, protected mutable fields, template methods that break unless subclasses call `super`, non-final classes not designed for extension. Fix: composition and delegation; make classes `final` or document self-use.
+- **Fat interface (ISP).** Flag: clients that use disjoint subsets of an interface, tests that stub methods the client never calls, implementations that throw for part of it. Skip: interfaces whose real clients use the full role; Spring Data repository interfaces, whose inherited methods are a framework convention. Fix: Extract Interface per client role and migrate one client at a time.
+- **Dependency on volatile details (DIP).** Flag: core or domain logic that constructs or imports infrastructure: vendor SDKs, HTTP clients, SQL, the filesystem, `System.getenv`, static singletons. Skip: stable JDK and library APIs; injecting a concrete in-process class; simple CRUD paths. Fix: a port interface in the core, shaped by the core's needs, with an adapter in infrastructure.
+- **Abstraction owned by the wrong side (DIP).** Flag: an interface packaged with its only implementation in infrastructure, or shaped after a vendor API (SDK types in its signatures), so the core still imports infrastructure. Fix: move the interface to the core and change its signatures to domain types.
+- **Hidden dependencies.** Flag: service locators, `ApplicationContext.getBean`, static access to configured singletons, field injection that hides required collaborators. Fix: constructor injection.
+
+## Architecture (java-clean-solid at package scope, java-clean-audit)
+
+- **Package or module cycle.** Flag: packages that import each other, directly or through a chain; Spring `@Lazy` or setter injection used to get around a bean cycle. Evidence: `jdeps -verbose:package` on compiled classes, or an import search. Fix: break one edge at a time, by moving the shared concept down or by having one side own an interface the other implements.
+- **Dependency rule violation.** Flag: domain or core packages that import web, persistence, messaging, or vendor packages; business rules in controllers, listeners, or repositories. Skip: a pragmatic layering the project applies consistently, unless it causes a concrete cost. Fix: move the rule inward and put a port at the crossing.
+- **Leaking persistence model.** Flag: JPA entities returned from REST endpoints or sent as message payloads, when that couples the API to the schema or causes lazy-loading or serialization defects. Skip: small CRUD services where the coupling is accepted and causes no defects. Fix: response DTOs or records mapped at the boundary.
+- **Unstable dependency.** Flag: a widely used, rarely changing package that depends on a frequently changing one (fan-in, fan-out, churn). Fix: invert the dependency through an interface owned by the stable side.
+- **Scattered feature (Common Closure).** Flag: history shows a typical feature change touching many packages because the feature's code is split by technical layer. Skip: small codebases; a convention the team chose and applies consistently. Fix: no big move; place new code by feature and move classes when they change anyway.
+- **Over-exposed API.** Flag: everything `public`, module internals used from outside the module, no package-private types. Fix: reduce visibility; add module `exports` or an ArchUnit rule to hold the boundary.

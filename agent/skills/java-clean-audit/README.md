@@ -1,17 +1,17 @@
 # java-clean-audit quickstart
 
-Quick guide for asking Pi for a broad Java clean-code and SOLID/design audit.
+Quick guide for asking the agent (Pi or Claude Code) for a broad Java audit that covers clean code, SOLID and class design, and package architecture.
 
-Use this when you want a repo, module, package, or multi-class review that turns many possible smells into a short list of material risks and refactoring priorities. If the request is narrow, use `java-clean-code` for local method/class cleanliness or `java-clean-solid` for class/interface design.
+Use it for a repository, a module, or several packages, when you want many possible smells turned into a short list of root causes and a refactoring order. For a single file, class, or diff, use `java-clean-code` for code inside methods or `java-clean-solid` for class and interface design.
 
 ## Useful inputs
 
-Have these ready, or ask Pi to discover them:
+Have these ready, or ask the agent to discover them:
 
-- target scope: repository, module, package, files, or diff
-- Java version and build tool: Maven, Gradle, profiles, generated sources, or framework constraints
-- main goal: maintainability, testability, coupling, readability, refactoring plan, or risk review
-- output depth: top findings, exhaustive audit, or step-by-step refactoring order
+- target scope: repository, module, or packages
+- Java version and build tool, if the build files don't make them clear (profiles, generated sources)
+- main goal: maintainability, testability, coupling, a refactoring plan, or a risk review
+- output depth: top findings, an exhaustive audit, or a step-by-step refactoring order
 - constraints: public APIs, legacy behavior, release risk, migration limits, or areas to avoid
 
 ## Example prompts
@@ -29,7 +29,7 @@ Audit this repo at a high level. Prioritize root causes over individual naming o
 ```
 
 ```text
-Review the changed Java files in this branch and call out only material design or clean-code risks introduced by the diff.
+Audit the order and payment modules. Use git history to find the hotspots first.
 ```
 
 ```text
@@ -38,20 +38,25 @@ Create a concise onboarding-quality refactoring plan for the order-processing pa
 
 ## What to expect
 
-Expect a concise report with:
+The agent reads the build files, maps package dependencies, ranks hotspots by change frequency and size from git history, and then reviews those hotspots. The report contains:
 
-- scope and assumptions
-- material risks, not a complete nit list
-- findings ranked by severity and refactoring payoff
-- evidence, impact, and the smallest safe next step
-- an incremental refactoring order when the scope is broad enough
+- one or two lines of scope, including the Java version and whether history was available
+- a Material risks summary of up to 5 bullets
+- findings ranked by severity, each with evidence, impact, a fix labeled `refactoring` or `behavior change`, and a confidence level
+- at most 10 findings for a module or 15 for a repository, plus a one-line count of what was left out
+- a refactoring order that starts with tests and seams and keeps each step shippable on its own
 
-Expect Pi to avoid pattern-for-pattern's-sake advice and to treat framework mechanics as issues only when there is concrete coupling, lifecycle, invariant, or testing cost.
+Expect root causes rather than a list of nits, and no pattern-for-pattern's-sake advice. Framework mechanics are reported only when they cause a concrete coupling, lifecycle, invariant, or testing problem.
+
+## Troubleshooting
+
+- **No hotspot ranking:** the repository has no git history (for example a shallow clone or an exported folder). The agent says so and treats change-frequency claims as hypotheses. Fetch full history for better ranking.
+- **No package dependency graph from `jdeps`:** it needs compiled classes. Build the project first, or the agent falls back to searching imports.
 
 ## Related files
 
-- `SKILL.md` - activation and agent workflow details
-- `../java-clean-shared/references/audit-playbook.md` - deeper audit workflow
-- `../java-clean-shared/references/taxonomy.md` - severity, evidence, labels, and finding schema
-- `../java-clean-code/references/clean-code-checklist.md` - compact clean-code checklist
-- `../java-clean-solid/references/solid-checklist.md` - compact SOLID checklist
+- `SKILL.md` - activation and audit workflow
+- `examples/README.md` - calibration fixtures for future skill edits
+- `../java-clean-shared/references/review-contract.md` - scope, evidence, severity, and finding format
+- `../java-clean-shared/references/smell-catalog.md` - smells, look-alikes to skip, and first fixes
+- `../java-clean-code/references/calibration.md` and `../java-clean-solid/references/calibration.md` - borderline cases with code examples

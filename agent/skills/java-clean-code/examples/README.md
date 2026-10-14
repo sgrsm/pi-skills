@@ -1,9 +1,17 @@
 # java-clean-code evaluation fixtures
 
-These examples are calibration data for future skill edits. They are not required runtime references. See `../../java-clean-shared/examples/RUNBOOK.md` for the manual evaluation loop.
+Calibration data for future skill edits, not runtime references. See `../../java-clean-shared/examples/RUNBOOK.md` for the expected-file format and the evaluation loop.
 
-- `long-method.input.java` / `long-method.expected.md`: should report phase mixing and suggest incremental extraction.
-- `false-positive-orchestration.input.java` / `false-positive-orchestration.expected.md`: should not flag a clear orchestration method solely because it has several collaborator calls.
-- `diff-review-unrelated-smells.input.diff` / `diff-review-unrelated-smells.expected.md`: should ignore unrelated pre-existing smells during diff review.
-- `framework-dto-entity.input.java` / `framework-dto-entity.expected.md`: should not flag Spring/JPA/Lombok/DTO mechanics without concrete cost.
-- `no-material-findings.input.java` / `no-material-findings.expected.md`: should return no material findings and avoid invented low-value comments.
+Findings expected:
+
+- `long-method`: phase mixing reported once; Extract Function first, orchestration kept visible.
+- `hidden-side-effect`: a query-looking method that spends points, with its caller as evidence; the fix is a labeled behavior change.
+- `swallowed-exception`: a discarded payment failure followed by "mark paid" is Critical; documented best-effort handling is left alone.
+- `god-class-root-cause`: many local smells reported as one design root cause, with the local smells as evidence.
+
+Restraint expected:
+
+- `false-positive-orchestration`: a clear orchestration method isn't flagged for calling several collaborators.
+- `diff-review-unrelated-smells`: a diff review ignores pre-existing smells the change doesn't touch.
+- `framework-dto-entity`: Spring, JPA, Lombok, and DTO mechanics aren't flagged without a concrete cost.
+- `no-material-findings`: clean code gets a short answer without invented findings.

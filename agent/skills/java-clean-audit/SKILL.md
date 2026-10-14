@@ -1,68 +1,35 @@
 ---
 name: java-clean-audit
-description: Broad Java audit across clean code and SOLID. Use when the user wants an end-to-end review of a Java repo, module, or package for readability, maintenance, testability, coupling, and class-level design.
-compatibility: Best for Java 11+ codebases using Maven or Gradle. Works with plain Java and Spring-style applications.
+description: Broad Java audit that combines clean code, SOLID and class design, and package architecture into a ranked list of root causes with a refactoring order. Use for an end-to-end review of a Java repository, module, or several packages, or when the user asks for overall code quality, refactoring priorities, or clean code and SOLID together. For a single file, method, class, or diff use java-clean-code or java-clean-solid.
+compatibility: Java 8+ with Maven or Gradle; plain Java or Spring. Suggestions follow the Java version found in the build files.
 ---
 
 # java-clean-audit
 
-Use this umbrella skill when the user wants a broad Java audit.
+Find the few root causes that make this codebase expensive or risky to change, and the order in which to fix them.
 
-## When to use this skill
+## Load before concluding
 
-Use it for broad-scope reviews, for example:
+- [Review contract](../java-clean-shared/references/review-contract.md): scope, evidence, severity, and finding format. Required.
+- [Smell catalog](../java-clean-shared/references/smell-catalog.md), all sections. Required.
+- Calibration examples for the [local](../java-clean-code/references/calibration.md) and [design](../java-clean-solid/references/calibration.md) lenses: when a hotspot finding is borderline.
 
-- clean code and SOLID
-- repo- or module-level Java audit
-- overall code quality and refactoring priorities
-- design review across multiple classes
+## Workflow
 
-If the request is narrow, prefer a focused skill instead:
+1. **Constraints.** Read the build files for the Java version, modules, framework versions, generated sources, and existing guardrails (formatter, Checkstyle, Error Prone, ArchUnit). Note what the user rules out: public APIs, release risk, areas to avoid.
+2. **Structure.** Map modules and packages and the package dependency graph. Use `jdeps -verbose:package` on compiled classes when they exist; otherwise search imports per source package (`grep -rn '^import <base.package>\.' --include='*.java' src/main/java`). Note the test layout and which kinds of tests exist.
+3. **Hotspots.** Rank files by change frequency and size, for example `git log --since=12.months --name-only --format= -- '*.java' | sort | uniq -c | sort -rn | head -20` next to line counts. If `crap4java` is available and the user wants it, use its complexity-and-coverage ranking too. Pick 3 to 5 hotspots and one or two representative flows from an entry point (controller, listener, scheduled job).
+4. **Architecture pass** over the dependency graph: cycles, dependency-rule violations, leaking models, over-exposed APIs.
+5. **Design pass** on the hotspots and flows with the `java-clean-solid` principle checks.
+6. **Local pass** on the same code with the `java-clean-code` checks. Keep only smells that are root causes, correctness hazards, or high-payoff.
+7. **Tests.** Check whether tests protect the hotspots, and whether the design forces heavy setup (a full application context, external services) to test pure logic.
+8. **Rank.** Merge symptoms into root causes, then apply the contract's severity and caps.
 
-- `java-clean-code`
-- `java-clean-solid`
-
-## References to load
-
-For a full audit, read these before concluding:
-
-- [Shared audit playbook](../java-clean-shared/references/audit-playbook.md)
-- [Shared taxonomy](../java-clean-shared/references/taxonomy.md)
-- [Clean code checklist](../java-clean-code/references/clean-code-checklist.md)
-- [SOLID checklist](../java-clean-solid/references/solid-checklist.md)
-
-Load detailed topic references only for hotspot areas where the compact checklists are insufficient, the user asks for examples, or the audit is broad/exhaustive:
-
-- [Clean code and refactoring rule index](../java-clean-code/references/clean-code-and-refactoring-rules.md)
-- [SOLID principles](../java-clean-solid/references/solid-principles.md)
-
-## Audit workflow
-
-1. Map the project and identify code and design hotspots.
-2. Review SOLID and class design in the hotspot areas.
-3. Review local clean-code smells and refactoring opportunities.
-4. Prioritize findings by correctness, coupling, cohesion, maintenance, and testability impact.
-5. Recommend an incremental refactoring order.
-
-## Review stance
-
-- Prefer root-cause findings over symptom lists; do not report local symptoms separately when one design root cause explains them.
-- Do not recommend patterns, abstractions, wrappers, or value objects without concrete correctness, change-safety, or testability cost.
-- If evidence is incomplete, phrase the point as a risk or question, not a definite violation.
-- Do not treat framework annotations, Lombok, records, builders, mutable DTOs, JPA mechanics, or serialization hooks as issues without concrete coupling, lifecycle, invariant, or testing cost.
+If history isn't available (no repository, shallow clone), say so in the scope line and treat change-frequency claims as hypotheses.
 
 ## Output
 
-Use the shortest report that fits the scope. Default to at most 10 findings for package/module audits and 15 for repo-wide audits unless the user asks for exhaustive output.
+Use the contract's report shape with two differences:
 
-Default structure:
-
-1. scope and assumptions
-2. summary of material risks
-3. findings ordered by severity and refactoring payoff
-4. suggested refactoring order
-
-Use neutral, professional language and focus on findings, impact, and next steps.
-Do not add praise-only sections or subjective compliments.
-If there are no material issues in scope, say so briefly and stop.
-Use severity, evidence strength, labels, and finding schema from the shared taxonomy.
+- After the scope line, add **Material risks**: at most 5 bullets for module or repository scope, one line each.
+- The refactoring order is required. Start with the safety net, then seams, then moves, with each step shippable alone and behavior changes kept apart from structural ones.

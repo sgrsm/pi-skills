@@ -1,18 +1,18 @@
 # java-clean-code quickstart
 
-Quick guide for asking Pi to review Java methods, classes, and small packages for readability and safe refactoring opportunities.
+Quick guide for asking the agent (Pi or Claude Code) to review Java methods, classes, files, or diffs for readability and safe refactoring.
 
-Use this for files, diffs, methods, classes, or small packages where the main questions are readability, naming, method size/cohesion, duplication, null/error handling, comments, or test support. Use `java-clean-solid` instead when the root question is responsibility boundaries, interfaces, inheritance, dependency direction, or class-level change cost.
+Use it when the main questions are inside the code: naming, method shape, duplication, comments, null and `Optional` contracts, exception handling, hidden side effects, shared mutable state, or tests that get in the way of refactoring. Use `java-clean-solid` for class, interface, or package design, `java-clean-audit` for a broad module or repository audit, and `trim-tests` to slim down a test suite.
 
 ## Useful inputs
 
-Have these ready, or ask Pi to discover them:
+Have these ready, or ask the agent to discover them:
 
-- target files, package, or diff
-- review mode: narrow review, changed-lines-only review, or package-level scan
-- Java/framework constraints that affect refactoring suggestions
-- pain point: long methods, duplication, unclear naming, null contracts, exceptions, brittle tests, or general readability
-- desired output depth: top findings only, exact refactoring steps, or a patch-ready plan
+- target files, method, class, or diff
+- review mode: changed lines only, whole file, or a small package
+- Java version and framework constraints, if the build files don't show them
+- pain point: long methods, duplication, unclear names, null contracts, exceptions, brittle tests, or general readability
+- desired depth: top findings, everything, or a step-by-step refactoring plan
 
 ## Example prompts
 
@@ -29,7 +29,7 @@ Check the billing package for long methods, duplication, and unclear names. Give
 ```
 
 ```text
-Review these tests for maintainability and whether they support safe refactoring of the production code.
+Review the error handling in PaymentService. Which catch blocks hide failures?
 ```
 
 ```text
@@ -38,20 +38,22 @@ Look at OrderService.placeOrder and suggest an incremental cleanup plan without 
 
 ## What to expect
 
-Expect a short, evidence-based review with:
+A short report:
 
-- scope and assumptions
-- the top material findings, ordered by severity and payoff
-- concrete locations and observable evidence
-- impact on readability, maintenance, correctness, diagnostics, or testability
-- the smallest safe refactor for each finding
+- one or two lines of scope: what was read, the Java version, what was left out
+- findings ordered by severity, each with a smell name from *Refactoring* or *Clean Code*, a `path:line` location, evidence, impact, a fix, and a confidence level
+- each fix labeled `refactoring` (behavior stays the same) or `behavior change` (a decision for you, such as throwing where the code used to ignore `null`)
+- at most 5 findings for a file or diff, plus a one-line count of lower-severity items left out
+- a refactoring order when findings depend on each other
 
-Expect Pi not to invent low-value findings when the code is acceptable. It should avoid blanket advice such as “extract everything,” “wrap everything,” or “replace every nullable value with Optional.”
+When the code is fine, you get one or two sentences saying so. Several local smells caused by one design problem show up as a single design finding. Layout issues your formatter would fix aren't reported.
+
+Claims about usage or duplication are checked with a code search first. Points that depend on runtime or domain knowledge the agent can't see are marked as context-dependent or as something for you to verify.
 
 ## Related files
 
-- `SKILL.md` - activation and agent workflow details
-- `references/clean-code-checklist.md` - compact checklist used for most reviews
-- `references/clean-code-and-refactoring-rules.md` - detailed rule index for deeper audits
+- `SKILL.md` - activation and lens
+- `references/calibration.md` - borderline cases with code examples
 - `examples/README.md` - calibration fixtures for future skill edits
-- `../java-clean-shared/references/taxonomy.md` - severity, evidence, labels, and finding schema
+- `../java-clean-shared/references/review-contract.md` - scope, evidence, severity, and finding format
+- `../java-clean-shared/references/smell-catalog.md` - smells, look-alikes to skip, and first fixes

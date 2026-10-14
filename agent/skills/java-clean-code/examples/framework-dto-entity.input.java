@@ -56,7 +56,8 @@ class CustomerLookupService {
     }
 
     CustomerResponseDto get(Long id) {
-        CustomerEntity customer = customers.getById(id);
+        CustomerEntity customer = customers.findById(id)
+                .orElseThrow(() -> new CustomerNotFoundException(id));
         return new CustomerResponseDto(customer.id(), customer.email(), customer.displayName());
     }
 }

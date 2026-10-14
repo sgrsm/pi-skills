@@ -1,5 +1,19 @@
-# Expected clean-code review
+# Expected: java-clean-code on no-material-findings
 
-No material clean-code findings in scope.
+Tests: clean code gets a short "no material findings" answer instead of invented low-value comments.
 
-Do not invent low-value findings. In this narrow fixture, the method is short, names are clear, null contracts are explicit, constants are named, and the simple conditional does not need polymorphism without evidence of repeated stable variation.
+## Must report
+
+None. The method is short, names are clear, required arguments are checked, the rates are named constants, and the single conditional is readable.
+
+## May report
+
+None.
+
+## Must not report
+
+- Repeated Switches, OCP, or a strategy for the VIP and standard branch; one two-way branch is not repeated variation.
+- Value objects for the discount rates.
+- `Optional` or other changes to the `Objects.requireNonNull` checks.
+- Magic literal for the rates; they are already named.
+- A findings section padded with Minor items, or praise for the code.

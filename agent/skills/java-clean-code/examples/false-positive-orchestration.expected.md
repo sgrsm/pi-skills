@@ -1,11 +1,18 @@
-# Expected clean-code review
+# Expected: java-clean-code on false-positive-orchestration
 
-No material clean-code findings in scope.
+Tests: a clear orchestration method is not flagged for calling several collaborators.
 
-Do **not** flag `SubscriptionRenewalService.renew` solely because it calls several collaborators. The method is a clear orchestration of one use case: validate, quote, renew, publish, notify, return receipt.
+## Must report
 
-Acceptable minor suggestions only if the surrounding code provides evidence:
+None. `SubscriptionRenewalService.renew` orchestrates one use case at one level of abstraction: validate, quote, renew, publish, notify, return a receipt.
 
-- extract notification/event publishing if those side effects vary independently or create test pain
-- rename collaborators only if project vocabulary is inconsistent
-- add tests if the behavior is unprotected
+## May report
+
+- A one-line note that no tests were visible to confirm the flow is covered.
+
+## Must not report
+
+- Long Function, Divergent Change, or SRP for `renew` because it calls five collaborators.
+- Long Parameter List for the constructor; constructor injection of collaborators is not a parameter-list smell.
+- New interfaces, wrappers, or a separate class for event publishing and mail without evidence that they vary independently.
+- A findings section padded with Minor items, or praise for the code.

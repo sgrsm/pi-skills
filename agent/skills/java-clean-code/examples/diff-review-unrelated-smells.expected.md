@@ -1,11 +1,18 @@
-# Expected clean-code diff review
+# Expected: java-clean-code on diff-review-unrelated-smells
 
-No material clean-code findings in changed lines.
+Tests: a diff review stays on the changed lines and ignores pre-existing smells the change doesn't touch.
 
-The change improves locale safety by using `Locale.ROOT`. Do **not** report unrelated pre-existing smells in `LegacyReportService.processEverything` or the broader class unless the user asks for a full-file review or those smells directly affect the changed line.
+## Must report
 
-Acceptable response shape:
+None. The change makes `normalizeEmail` locale-safe with `Locale.ROOT`.
 
-- state the diff-scope assumption
-- mention no material issues in the changed line
-- optionally note that broader legacy smells are out of scope for this diff review
+## May report
+
+- A one-line note that `LegacyReportService` has pre-existing issues outside the diff's scope.
+- A suggestion to apply the same `Locale.ROOT` fix to other case conversions in the class, if the agent searched the file and found some.
+
+## Must not report
+
+- Findings about `processEverything` or the class's responsibilities.
+- Refactoring plans for code the diff doesn't change.
+- The `Locale.ROOT` change itself as a problem.

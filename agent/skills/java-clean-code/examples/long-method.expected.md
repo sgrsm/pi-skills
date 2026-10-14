@@ -1,17 +1,20 @@
-# Expected clean-code review
+# Expected: java-clean-code on long-method
 
-## Findings
+Tests: phase mixing is reported once, with Extract Function as the first step and the orchestration kept visible.
 
-- **Severity:** Moderate
-  **Rule or smell:** Mixed abstraction levels / phase mixing
-  **Location:** `CheckoutService.checkout`
-  **Evidence:** The method validates input, calculates totals and tax, mutates order state, persists, formats email text, sends mail, and publishes an event in one flow.
-  **Impact:** Pricing, persistence, notification, and event changes all compete inside one method, making behavior harder to test and refactor safely.
-  **Smallest safe refactor:** Extract pricing into a `CheckoutPricing` or `OrderPricer`, then extract receipt notification/event publishing only if tests show those phases are independently changing.
-  **Labels:** `readability`, `testability`, `maintenance`
+## Must report
 
-## Refactoring order
+- **Moderate** · Long Function / mixed abstraction levels · `CheckoutService.checkout`. Evidence: validation, the subtotal loop, tax, the state change, persistence, mail text, and event publishing sit at different levels of abstraction in one method. Acceptable first fix: Extract Function for pricing (subtotal and tax), optionally also for validation, labeled `refactoring`; `save`, mail, and event calls stay visible in `checkout`.
 
-1. Add behavior tests for subtotal/tax and checkout side effects.
-2. Extract price calculation behind a small method or collaborator.
-3. Keep orchestration visible; do not hide persistence, mail, and event side effects behind a vague `afterCheckout` helper.
+## May report
+
+- Hidden clock (Minor or Moderate): `Instant.now()` makes the checkout timestamp hard to test; inject a `Clock`.
+- Magic literal (Minor): tax rate `0.20` as a named constant or a tax policy.
+- Tax rounding (Context-dependent): `BigDecimal` tax without scale or rounding, depending on the currency rules.
+
+## Must not report
+
+- New collaborator classes (validator, pricer, mailer wrapper) as the first step.
+- Hiding persistence, mail, and event publishing behind a vague helper such as `afterCheckout`.
+- Replacing the `IllegalArgumentException` null check with `Objects.requireNonNull` labeled as a `refactoring`. It changes the exception type, so it may appear only as a `behavior change`.
+- More than 5 findings.

@@ -1,69 +1,33 @@
 ---
 name: java-clean-solid
-description: Audits Java class and interface design using SOLID principles. Use when reviewing responsibilities, abstractions, polymorphism, inheritance, interface size, dependency inversion, and testability.
-compatibility: Best for Java 11+ codebases using Maven or Gradle. Works with plain Java and Spring-style applications.
+description: Reviews Java class, interface, and package design through SOLID, coupling, and cohesion, covering responsibility boundaries, inheritance and substitutability, interface shape, dependency direction, package cycles and layering, and abstractions that cost more than they give. Use when the question is how types and packages relate, why changes ripple, or what makes code hard to test. For code inside methods use java-clean-code. For a broad repository or module audit use java-clean-audit.
+compatibility: Java 8+ with Maven or Gradle; plain Java or Spring. Suggestions follow the Java version found in the build files.
 ---
 
 # java-clean-solid
 
-Use this skill when the user wants a Java review focused on SOLID and class-level design.
+Design lens: how responsibilities and dependencies are spread across types and packages, in the terms of *Clean Architecture*, *Refactoring*, and *Effective Java*. Use SOLID to explain a cost you can show, never as a goal in itself.
 
-## Primary focus
+## Load before concluding
 
-- single responsibility and coherent reasons to change
-- extension without repeated ripple edits
-- safe substitution in inheritance hierarchies
-- small role-focused interfaces
-- dependency direction and abstractions at useful boundaries
-- pragmatic use or removal of indirection
+- [Review contract](../java-clean-shared/references/review-contract.md): scope, evidence, severity, and finding format. Required.
+- [Smell catalog](../java-clean-shared/references/smell-catalog.md): smell names, look-alikes to skip, first fixes. Required. Report from the Design section, and from the Architecture section at package scope or wider.
+- [Calibration examples](references/calibration.md): when applying a principle is borderline, or when the user asks for examples.
 
-## Boundary
+## Principle checks
 
-- Use this skill for responsibility boundaries, inheritance contracts, interface shape, dependency direction, coupling, and class-level change cost.
-- Use `java-clean-code` for local readability, method design, null/error handling, duplication, and refactoring mechanics.
-- If both apply, report the root design issue once and list local code smells as evidence, not duplicate findings.
+| Principle | Question | Evidence to collect |
+|---|---|---|
+| SRP | Do different actors (the people or systems that request changes) force edits to this class? | method groups that use disjoint fields and collaborators; unrelated commits in `git log -- <file>` |
+| OCP | Does adding the next variant of a recurring concept need edits in several places? | switch or `if` sites on the same type code; `default` branches that would absorb a new variant |
+| LSP | Can callers use every subtype through the base type without checking which one they have? | overrides that throw, do nothing, or tighten preconditions; `instanceof` at call sites; the base type's documented contract |
+| ISP | Do clients depend on operations they never call? | the methods each client calls (call-site search); test stubs for methods the client doesn't use |
+| DIP | Does policy depend on details, and does the policy side own the abstraction it uses? | infrastructure, framework, or vendor imports in core packages; the package that declares the interface; `new` of infrastructure in core code |
 
-## References to load
+## Design advice
 
-- Always load [SOLID checklist](references/solid-checklist.md) and [Shared taxonomy](../java-clean-shared/references/taxonomy.md) before concluding.
-- For package/module/repo audits or actionable refactoring plans, also load [Shared audit playbook](../java-clean-shared/references/audit-playbook.md).
-- Load [SOLID principles](references/solid-principles.md) only when the checklist is insufficient, the user asks for examples, or the audit is broad/exhaustive.
-- Do not load the sibling clean-code reference by default. Load `../java-clean-code/references/clean-code-checklist.md` only when local smells are needed to support a design finding.
-
-## Scope and brevity
-
-- For diff reviews, prioritize changed lines and directly affected collaborators. Do not report pre-existing unrelated design issues unless they materially affect the changed code or refactoring safety.
-- Prefer root-cause findings over symptom lists. If many local smells stem from one responsibility or dependency boundary, report the root design issue once and cite representative symptoms.
-- Default to at most 5 findings for narrow reviews and 10 findings for package/module reviews unless the user asks for exhaustive output.
-- If there are no material issues in scope, say so briefly and stop. Do not invent low-value findings.
-
-## Review stance
-
-- Use neutral, professional language.
-- Use SOLID as a diagnostic lens, not a reason to add ceremony.
-- Show concrete design cost: ripple edits, brittle tests, tight coupling, unclear ownership, or contract risk.
-- Prefer simpler designs when they are already clear, stable, and easy to test.
-- Do not add praise-only sections or subjective compliments.
-- Do not recommend abstraction unless it improves clarity, replaceability, testability, or change safety.
-- Do not call something a SOLID violation without evidence of cost or risk.
-- If evidence is incomplete, phrase the point as a risk or question, not a definite violation.
-
-## Java/framework caveats
-
-- Respect the project Java version and framework constraints before suggesting records, sealed hierarchies, modules, or newer language features.
-- Do not treat Spring, JPA, serialization, or framework annotations as design problems unless they create concrete coupling, lifecycle, or testing cost.
-- Be careful with JPA entities, proxies, transactions, reflection, serialization, and framework-required constructors.
-- Do not flag Lombok, records, builders, or mutable DTOs by default. Flag them only when they obscure invariants, create framework/lifecycle risk, or make tests/refactoring harder.
-
-## Typical output
-
-Use the shortest report that fits the scope. Omit empty sections.
-
-1. Scope and assumptions
-2. SOLID/design findings, ordered by severity and refactoring payoff
-3. Impact on coupling, extensibility, and testability
-4. Smallest safe design refactoring order
-
-For each finding, use the shared taxonomy schema: severity, principle/design smell, location, evidence, impact, smallest safe refactor, and 1-3 labels.
-
-Limit to the top material findings unless the user asks for an exhaustive review.
+- Removing indirection is a valid finding. Shallow, pass-through, and speculative abstractions cost as much as missing ones.
+- Put abstractions at volatile, external, cross-module, or test-sensitive boundaries, not around every class.
+- Prefer composition and role interfaces over inheritance for reuse.
+- Migrate one client or one responsibility at a time. Before changing a hierarchy or a public API, add characterization or contract tests.
+- Cite local smells as evidence for the design finding instead of listing them separately.

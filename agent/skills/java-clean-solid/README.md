@@ -1,18 +1,18 @@
 # java-clean-solid quickstart
 
-Quick guide for asking Pi to review Java class and interface design through a pragmatic SOLID lens.
+Quick guide for asking the agent (Pi or Claude Code) to review Java class, interface, and package design through a pragmatic SOLID lens.
 
-Use this when the main questions are responsibility boundaries, coupling, inheritance contracts, interface size, dependency direction, extensibility, or testability. Use `java-clean-code` instead for local readability, method shape, naming, duplication, null/error handling, or comments.
+Use it when the main questions are how types and packages relate: responsibility boundaries, inheritance and substitutability, interface size, dependency direction, package cycles, coupling, or code that is hard to test. Use `java-clean-code` for what happens inside methods, and `java-clean-audit` for a broad module or repository audit.
 
 ## Useful inputs
 
-Have these ready, or ask Pi to discover them:
+Have these ready, or ask the agent to discover them:
 
 - target classes, interfaces, package, module, or diff
-- design concern: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, or Dependency Inversion principles, coupling, cohesion, or hard-to-test code
-- collaborators or representative flow to trace
-- Java/framework constraints, especially Spring, JPA, serialization, or generated code
-- desired output depth: top findings, design trade-off review, or incremental refactoring plan
+- design concern: a SOLID principle, coupling, cohesion, a package cycle, or hard-to-test code
+- collaborators or a representative flow to trace
+- Java and framework constraints, especially Spring, JPA, serialization, or generated code
+- desired depth: top findings, a design trade-off review, or an incremental refactoring plan
 
 ## Example prompts
 
@@ -33,25 +33,24 @@ Review this inheritance hierarchy for substitution risks and brittle extension p
 ```
 
 ```text
-Look at the new branch diff and report only material class-design issues introduced or exposed by the change.
+Does the domain package depend on infrastructure anywhere? Check imports and who owns each interface.
 ```
 
 ## What to expect
 
-Expect a concise design review with:
+A concise design review:
 
-- scope and assumptions
-- SOLID/design findings ranked by severity and refactoring payoff
-- evidence of concrete cost: ripple edits, brittle tests, unclear ownership, tight coupling, or contract risk
-- impact on coupling, extensibility, cohesion, or testability
-- the smallest safe design refactor, not a full rewrite
+- one or two lines of scope: what was read, the Java version, what was left out
+- design findings ordered by severity, each with the principle and smell name, a `path:line` location, evidence of a concrete cost (ripple edits, brittle tests, unclear ownership, tight coupling, contract risk), a fix, and a confidence level
+- each fix labeled `refactoring` or `behavior change`, starting with the smallest safe step rather than a rewrite
+- at most 5 findings for a few classes or a diff, 10 for a package or module
 
-Expect Pi to use SOLID as a diagnostic tool, not as a reason to add abstractions. It should not flag framework annotations, Lombok, DTOs, records, or builders unless they create a specific lifecycle, invariant, coupling, or testing problem.
+SOLID is used to explain costs, not as a reason to add abstractions. Expect the agent to also point out abstractions worth removing (pass-through layers, single-implementation interfaces with no purpose), and to leave framework annotations, Lombok, DTOs, records, and Spring Data repositories alone unless they cause a specific problem. On Java 17 and later, exhaustive switches over enums or sealed types aren't treated as OCP violations.
 
 ## Related files
 
-- `SKILL.md` - activation and agent workflow details
-- `references/solid-checklist.md` - compact checklist used for most reviews
-- `references/solid-principles.md` - deeper SOLID notes for broad or tricky audits
+- `SKILL.md` - activation, lens, and principle checks
+- `references/calibration.md` - borderline cases with code examples
 - `examples/README.md` - calibration fixtures for future skill edits
-- `../java-clean-shared/references/taxonomy.md` - severity, evidence, labels, and finding schema
+- `../java-clean-shared/references/review-contract.md` - scope, evidence, severity, and finding format
+- `../java-clean-shared/references/smell-catalog.md` - smells, look-alikes to skip, and first fixes

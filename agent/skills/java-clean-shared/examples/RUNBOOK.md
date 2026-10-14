@@ -1,47 +1,42 @@
 # Java clean-skill fixture runbook
 
-These fixtures calibrate `java-clean-code`, `java-clean-solid`, and `java-clean-audit`. They are regression data for prompt edits, not required runtime references.
+Fixtures calibrate `java-clean-code`, `java-clean-solid`, and `java-clean-audit`. They are regression data for skill edits, not runtime references.
 
-## Quick check
+## Layout
 
-Run the structural fixture check from `~/.pi`:
+- `<skill>/examples/<name>.input.<ext>`: a single-file input, either Java source or a diff.
+- `<skill>/examples/<name>.input/`: a multi-file input (a small project tree), used for audits.
+- `<skill>/examples/<name>.expected.md`: the expected semantics, in three required sections:
+  - `## Must report`: findings that must appear, with severity (a range when either is defensible), smell, location, evidence, and acceptable fixes. `None.` for restraint fixtures.
+  - `## May report`: correct but optional observations. They don't count as false positives.
+  - `## Must not report`: false positives, wrong fixes, and format violations that fail the run.
+
+Each skill's `examples/README.md` lists its fixtures and what each one tests.
+
+## Structural check
+
+From `~/.pi`:
 
 ```bash
 agent/skills/java-clean-shared/examples/check-fixtures.sh
 ```
 
-The script verifies every `*.input.*` fixture under `java-clean-code/examples` and `java-clean-solid/examples` has a matching `*.expected.md` file.
+It checks that every input has an expected file with the three sections and that no expected file has lost its input. After changing the script, run its tests:
 
-## Manual evaluation loop
+```bash
+agent/skills/java-clean-shared/examples/check-fixtures.test.sh
+```
 
-For each fixture pair:
+## Evaluation loop
 
-1. Invoke the relevant skill on the `*.input.*` file.
-2. Compare the response to the matching `*.expected.md` file.
-3. Check especially:
-   - no false-positive finding is invented
-   - severity is reasonable
-   - evidence is observable in the fixture
-   - impact is concrete, not preference-based
-   - recommended refactor is the smallest safe next step
-   - unrelated pre-existing issues are ignored for diff fixtures
-   - framework mechanics are not flagged without concrete cost
+1. Copy the input outside the skills tree so the agent can't read the expected file next to it, for example `dir=$(mktemp -d) && cp -R agent/skills/java-clean-code/examples/long-method.input.java "$dir" && echo "$dir"`.
+2. In a fresh session, invoke the fixture's skill on the copy. Ask for a diff review for `.diff` inputs and a module audit for directory inputs.
+3. Compare the response with the expected file:
+   - every Must report item appears, with severity in the stated range;
+   - nothing from Must not report appears;
+   - every other finding is listed under May report, or is clearly correct;
+   - each fix is labeled `refactoring` or `behavior change`, and the first step is the smallest safe one;
+   - the report follows the review contract's shape and caps.
+4. When a run produces a correct finding the expected file doesn't list, add it to May report instead of changing the skill.
 
-## Fixture map
-
-Clean-code fixtures:
-
-- `java-clean-code/examples/long-method.input.java`: positive long/mixed method case.
-- `java-clean-code/examples/false-positive-orchestration.input.java`: clear orchestration method; should not be flagged solely for several collaborator calls.
-- `java-clean-code/examples/diff-review-unrelated-smells.input.diff`: diff-scope restraint; should ignore unrelated pre-existing smells.
-- `java-clean-code/examples/framework-dto-entity.input.java`: Spring/JPA/Lombok/DTO false-positive guard.
-- `java-clean-code/examples/no-material-findings.input.java`: clean narrow-scope case; should return no material findings.
-
-SOLID fixtures:
-
-- `java-clean-solid/examples/fat-interface.input.java`: positive ISP case.
-- `java-clean-solid/examples/valid-application-service.input.java`: cohesive application service; should not be flagged solely for several collaborators.
-
-## Expected-output tolerance
-
-Exact wording can vary. Treat a run as acceptable when it preserves the expected semantics: same material findings, no forbidden false positives, similar severity, evidence-based impact, and incremental refactoring advice.
+Fixtures use domain types they don't define (`Order`, `Money`, `Customer`). Treat them as ordinary domain types unless the fixture says otherwise. Multi-file fixtures have no git history; the agent should say so and treat change-frequency claims as hypotheses.

@@ -1,18 +1,20 @@
-# Expected clean-code review
+# Expected: java-clean-code on framework-dto-entity
 
-No material clean-code findings in scope.
+Tests: Spring, JPA, Lombok, and DTO mechanics are not flagged without a concrete cost.
 
-Do **not** flag these framework mechanics by default:
+## Must report
 
-- JPA no-arg constructor
-- mutable JPA fields required by persistence
-- Lombok DTO annotations
-- mutable response DTO fields
-- Spring `@Service`
+None.
 
-Only flag them if surrounding evidence shows concrete cost, such as broken invariants, lifecycle bugs, serialization problems, hidden coupling, or tests that require unnecessary framework startup.
+## May report
 
-Acceptable minor follow-up only if evidence exists:
+- A Context-dependent or Hypothesis note that `CustomerEntity` doesn't validate `email` at creation, if the agent points to where invalid data could enter.
+- A Minor suggestion to use a `record` for `CustomerResponseDto`, only if the build targets Java 16+ and the project doesn't standardize on Lombok DTOs.
 
-- validate `CustomerEntity` invariants at creation boundaries
-- prefer immutable DTOs if the project supports them and mutation has caused bugs
+## Must not report
+
+- The JPA no-arg constructor or the non-final entity fields.
+- `@Data`, `@NoArgsConstructor`, or `@AllArgsConstructor` on the DTO. The `@Data` pitfall with lazy relations and `equals` applies to entities, and this one is on the DTO.
+- Mutable DTO fields.
+- `@Service`, or a missing interface for `CustomerLookupService` or `CustomerRepository`.
+- `Optional` for entity or DTO fields.
