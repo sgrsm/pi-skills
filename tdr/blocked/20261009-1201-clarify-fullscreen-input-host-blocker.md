@@ -10,7 +10,7 @@
 
 Clarify's fullscreen selector still loses question PageUp/PageDown/wheel input to the transcript on the tested Pi 1.0.3. Home/End scroll the question in the tested cases, but long dialogs can still have their bottom help clipped. A scoped local correction now leaves fullscreen mouse modes under Pi's ownership; regular-mode mouse setup/cleanup remains unchanged. The remaining defects are not intentional behavior or evidence of resolution.
 
-The earlier focused custom overlay repaired input routing in isolation, but Pi 1.0.0's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer that broader runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. That attempted runtime/helper implementation was withdrawn; its tests and documentation were retained. The mouse-ownership-only correction below does not introduce overlays or change the completion contract.
+The earlier focused custom overlay repaired input routing in isolation on Pi 1.0.0, but that version's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer that broader runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. That attempted runtime/helper implementation was withdrawn; its tests and documentation were retained. The mouse-ownership-only correction below does not introduce overlays or change the completion contract.
 
 This record is self-contained. It does not require the original audit/work-package files or ephemeral probe artifacts to understand or resume the work.
 
@@ -63,6 +63,14 @@ These are executed actual-method probes, not conclusions drawn from the adapter 
 
 Working routes and controls belong in `clarify-input.test.ts`. Outstanding positive requirements belong in `clarify-input.diagnostic.ts`; `npm run diagnose:pi-host` exits nonzero while they remain broken. The shared `clarifyUiFixture.ts` adapter still models the observed close path and cannot independently detect a future host correction.
 
+## Wheel routing in Pi 1.2.0
+
+The earlier raw-overlay-wheel control was version-specific. Pi 1.1.0 deferred an unhandled wheel to a focused overlay's raw `handleInput()`; Pi 1.2.0 instead routes it to the nearest eligible `ScrollView`, including the transcript. The four focused-overlay keyboard routes remain intact. Normalized `handleMouse()` consumption is supported on both releases and suppresses that fallback; it is not a newly introduced API.
+
+Current contract tests use independent public-renderer components to distinguish consumed normalized wheel input from transcript fallback when a handler declines the event or is absent. Pointer coordinates come from the rendered overlay bounds, and raw wheel delivery is not expected. These probes do not use the copied custom-dialog completion adapter, migrate production Clarify to overlays, or establish lifecycle safety. Any future fullscreen overlay remedy needs normalized mouse handling as well as identity-safe completion.
+
+Production Clarify remains in the non-overlay dock. Its positive PageUp/PageDown/wheel, regular-mode mouse-ownership, help-visibility, and adapter lifecycle acceptance checks still fail on Pi 1.2.0. The broader remediation remains blocked; the earlier version-bound routing observations are not evidence of resolution.
+
 ## Scoped fullscreen mouse-mode correction
 
 The reported macOS/Ghostty symptom is trackpad gestures recalling prompt history after a Clarify dialog closes. The selector's disable sequences can leave the terminal translating wheel gestures into arrow keys instead of reporting mouse events to Pi.
@@ -88,9 +96,9 @@ npm run verify
 node --test pi-compatibility/clarify-input.diagnostic.ts
 ```
 
-The contract tests and explicit diagnostics capture the actual clarify component through its registered tool with injected enabled state; they never use personal clarify configuration. `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures and a test-only custom-dialog installation/completion adapter.
+Clarify-specific contract tests and explicit diagnostics capture the actual clarify component through its registered tool with injected enabled state; they never use personal clarify configuration. Renderer-only wheel controls use independent public components as described above. `clarifyUiFixture.ts` shares public `TuiAltScreen`/`TuiMainScreen` fake-terminal fixtures and a test-only custom-dialog installation/completion adapter.
 
-Contract tests protect working behavior. Diagnostics assert the remaining **positive acceptance requirements** and intentionally fail on the tested Pi 1.0.3; they do not assert that defects should persist and are not silently skipped or marked TODO. The overlay wheel control exercises raw-SGR fallback, not normalized mouse support in the unchanged extension. The adapter hard-codes the observed completion contract and will **not automatically detect** an identity-safe change in the actual host method. Reconstruct the actual-method probe below after upgrades; promote verified corrections into the normal suite.
+Contract tests protect working behavior. Diagnostics assert the remaining **positive acceptance requirements** and intentionally fail on the tested Pi 1.0.3; they do not assert that defects should persist and are not silently skipped or marked TODO. Focused-overlay keyboard controls and independent normalized-wheel/fallback probes protect the current renderer contract; the historical raw-wheel workaround does not apply to Pi 1.2.0 (see [wheel routing](#wheel-routing-in-pi-120)). The adapter hard-codes the observed completion contract and will **not automatically detect** an identity-safe change in the actual host method. Reconstruct the actual-method probe below after upgrades; promote verified corrections into the normal suite.
 
 ### Reconstruct the actual-host lifecycle probe
 

@@ -10,7 +10,7 @@
 - **Category status:** assessed across all discovered runtime extensions and shared infrastructure; two confirmed validation-adapter incompatibilities require follow-up. No production-extension regression demonstrated within the checked scope.
 - **Sibling reports:** [Simplification and debt](02-simplification-and-debt.md) · [API opportunities](03-api-opportunities.md).
 
-> **Post-audit follow-up:** C1 has been verified and addressed in the repository; see [C1 follow-up resolution](#c1-follow-up-resolution). C2 remains open. The original assessment and validation record below describe the audit run and are retained as historical evidence.
+> **Post-audit follow-up:** C1 and C2 have been verified and addressed in the repository; see [C1 follow-up resolution](#c1-follow-up-resolution) and [C2 follow-up resolution](#c2-follow-up-resolution). The normal verification gate now passes; outstanding host diagnostics still fail. The original assessment and validation record below describe the audit run and are retained as historical evidence.
 
 ## Executive result
 
@@ -78,6 +78,14 @@ The production Clarify selector uses the non-overlay dock, not this proposed-ove
 **Alternatives:** dropping only the stale wheel control is smaller but loses useful routing coverage. A test-only wrapper forwarding normalized events into Clarify's raw handler can work, but risks implying a production design or safe overlay remedy. Prefer independent probe components. Do not change the copied close adapter, add version-pinned success expectations, or migrate production Clarify to overlays as part of this validation repair.
 
 **Validation/confidence:** high, confirmed by target failure, version-specific host source, baseline/target renderer measurements, and focused independent read-only review. Normalized `handleMouse()` already existed at baseline; it is not a newly introduced 1.2 API. The lifecycle blocker remains; see [TDR-1201](02-simplification-and-debt.md#every-tdr-disposition).
+
+#### C2 follow-up resolution
+
+**Status: addressed.** The obsolete wheel member was replaced with three independent public-renderer probes: a normalized handler consumes wheel input without moving the transcript; a handler that declines the event falls through to transcript scrolling; and a raw-only overlay also falls through without receiving raw wheel input. Each probe uses the rendered overlay bounds for synthetic SGR coordinates and checks the applicable normalized coordinates/delta. All four focused-overlay keyboard controls remain. The shared wheel input used by the production-dock acceptance diagnostic, the custom-dialog completion adapter, and production Clarify are unchanged.
+
+Compatibility and Clarify maintenance notes now distinguish keyboard ownership, normalized wheel consumption, and transcript fallback. TDR-1201 qualifies the historical raw-wheel workaround and retains its open/blocked status: these renderer controls do not establish a safe production overlay remedy or resolve dock, layout, mouse-ownership, or lifecycle debt.
+
+**Follow-up validation on Pi 1.2.0:** the original focused suite reproduced C2 as its sole failure; the replacement probes passed before the obsolete assertion was removed. The repaired focused suite passed **13/13**. `npm run verify` passed verified 1.2.0 host links, TypeScript, and the complete normal runtime suite: **723/723**, with no failures/cancellations/skips/TODOs. Unchanged positive host diagnostics were rerun and retain the same **11** failures under TDR-1201/TDR-1202. No live-terminal, provider, or MCP acceptance is claimed.
 
 ## Scope and activation inventory
 

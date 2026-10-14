@@ -10,7 +10,7 @@
 - **Category status:** released API/capability relevance screen complete for current local consumers; one already-active schema-presentation benefit retained. No additional API migration merits implementation now on the evidence available.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).
 
-> **Post-audit follow-up:** [C1 has been addressed](01-compatibility.md#c1-follow-up-resolution) with direct-runner coverage for both event variants. End-to-end custom-run scheduling remains unverified, and C2 remains open. The recommendations below retain their audit-time context.
+> **Post-audit follow-up:** [C1](01-compatibility.md#c1-follow-up-resolution) and [C2](01-compatibility.md#c2-follow-up-resolution) have been addressed, and the normal verification gate passes. End-to-end custom-run scheduling remains unverified; existing host diagnostics still fail. The recommendations below retain their audit-time context.
 
 ## Recommendation summary
 
