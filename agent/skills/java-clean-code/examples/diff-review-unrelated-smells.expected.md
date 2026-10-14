@@ -10,9 +10,11 @@ None. The change makes `normalizeEmail` locale-safe with `Locale.ROOT`.
 
 - A one-line note that `LegacyReportService` has pre-existing issues outside the diff's scope.
 - A suggestion to apply the same `Locale.ROOT` fix to other case conversions in the class, if the agent searched the file and found some.
+- A To verify line: emails stored earlier under a non-root default locale (for example Turkish) may no longer match the new normalization.
 
 ## Must not report
 
+- Praise, or a bulleted list of what the change does well.
 - Findings about `processEverything` or the class's responsibilities.
 - Refactoring plans for code the diff doesn't change.
 - The `Locale.ROOT` change itself as a problem.

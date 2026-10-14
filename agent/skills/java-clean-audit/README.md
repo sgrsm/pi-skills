@@ -50,7 +50,7 @@ Expect root causes rather than a list of nits, and no pattern-for-pattern's-sake
 
 ## Troubleshooting
 
-- **No hotspot ranking:** the repository has no git history (for example a shallow clone or an exported folder). The agent says so and treats change-frequency claims as hypotheses. Fetch full history for better ranking.
+- **No hotspot ranking:** the repository has no git history (for example a shallow clone or an exported folder). The agent says so and picks hotspots by size and structure instead. Fetch full history for better ranking.
 - **No package dependency graph from `jdeps`:** it needs compiled classes. Build the project first, or the agent falls back to searching imports.
 
 ## Related files

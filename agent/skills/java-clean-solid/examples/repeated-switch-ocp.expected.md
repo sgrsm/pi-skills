@@ -8,7 +8,8 @@ Tests: the same type code handled in several places is reported once as OCP, wit
 
 ## May report
 
-- Magic literal (Minor): prices and limits as literals, if they are moved onto the enum anyway.
+- Magic literal: prices and limits as literals, if they are moved onto the enum anyway.
+- A To verify line on whether callers do arithmetic on `Integer.MAX_VALUE` as "unlimited".
 
 ## Must not report
 

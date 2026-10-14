@@ -8,13 +8,15 @@ Tests: phase mixing is reported once, with Extract Function as the first step an
 
 ## May report
 
-- Hidden clock (Minor or Moderate): `Instant.now()` makes the checkout timestamp hard to test; inject a `Clock`.
-- Magic literal (Minor): tax rate `0.20` as a named constant or a tax policy.
+- Hidden clock: `Instant.now()` makes the checkout timestamp hard to test; inject a `Clock`.
+- Magic literal: tax rate `0.20` as a named constant or a tax policy.
 - Tax rounding (Context-dependent): `BigDecimal` tax without scale or rounding, depending on the currency rules.
+- Non-atomic side effects, as a To verify line: a mail or publish failure after `repository.save` leaves a checked-out order without its `OrderCheckedOut` event.
 
 ## Must not report
 
 - New collaborator classes (validator, pricer, mailer wrapper) as the first step.
 - Hiding persistence, mail, and event publishing behind a vague helper such as `afterCheckout`.
 - Replacing the `IllegalArgumentException` null check with `Objects.requireNonNull` labeled as a `refactoring`. It changes the exception type, so it may appear only as a `behavior change`.
+- The save-then-notify ordering rated Critical, or called a swallowed exception; nothing is swallowed and nothing in scope shows what consumes the event.
 - More than 5 findings.

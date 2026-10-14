@@ -9,7 +9,8 @@ Tests: domain code that constructs and imports a vendor client is reported as DI
 ## May report
 
 - The cents conversion and the hard-coded `"eur"` as adapter concerns, within the main finding.
-- A Context-dependent ordering note: if `subscriptions.save` fails after the charge, the subscription is charged but not marked billed.
+- Non-atomic side effects (Context-dependent), as a finding or a To verify line: if `subscriptions.save` fails after the charge, the subscription is charged but not marked billed.
+- Primitive Obsession: `monthlyPrice()` as an amount without a currency.
 
 ## Must not report
 

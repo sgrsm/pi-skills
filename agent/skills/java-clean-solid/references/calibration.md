@@ -75,20 +75,20 @@ Finding (Moderate or Major, Fat interface): a hand-written interface where each 
 Finding (Major, Abstraction owned by the wrong side):
 
 ```java
-// com/acme/billing/infra/stripe/StripePayments.java
-package com.acme.billing.infra.stripe;
+// com/example/shipping/infra/dhl/DhlBookings.java
+package com.example.shipping.infra.dhl;
 
-public interface StripePayments {
-    Charge createCharge(ChargeCreateParams params); // Stripe SDK types
+public interface DhlBookings {
+    DhlShipmentResponse book(DhlShipmentRequest request); // DHL SDK types
 }
 
-// com/acme/billing/domain/RenewalService.java
-package com.acme.billing.domain;
+// com/example/shipping/core/DispatchService.java
+package com.example.shipping.core;
 
-import com.acme.billing.infra.stripe.StripePayments;
+import com.example.shipping.infra.dhl.DhlBookings;
 ```
 
-The domain still imports infrastructure and, through it, Stripe types. Fix: declare `PaymentGateway` in `com.acme.billing.domain` with domain types (`PaymentId charge(CustomerRef customer, Money amount)`), and let the Stripe adapter implement it and map the types.
+The core still imports infrastructure and, through it, DHL types. Fix: declare a `CarrierBooking` interface in `com.example.shipping.core` with core types (`TrackingNumber book(Parcel parcel, Address destination)`), and let the DHL adapter implement it and map the types.
 
 Not a finding: a Spring service that injects a concrete `PriceFormatter` from the same module. It is in-process, stable, and easy to construct in a test.
 
@@ -112,6 +112,6 @@ Finding (Moderate, Data Class): the rule "a paid invoice can't change its lines"
 
 ## Package scope
 
-Finding (Major, Package cycle): `billing` imports `customer.CustomerService` for addresses, and `customer` imports `billing.InvoiceService` for credit checks; a `@Lazy` constructor parameter hides the bean cycle. Fix: break one edge. For example, `customer` declares a `CreditCheck` interface that `billing` implements, or the credit check moves into `billing`.
+Finding (Major, Package cycle): `orders` imports `inventory.StockService` to reserve stock, and `inventory` imports `orders.OrderQueries` to forecast demand from open orders; setter injection on one side keeps the bean cycle from failing at startup. Fix: break one edge. For example, `inventory` declares an `OpenDemand` interface that `orders` implements, or the forecast moves into `orders`.
 
 Context-dependent (Leaking persistence model): REST controllers return JPA entities. Report it when lazy loading fails during serialization or when schema changes break the API. In a small internal CRUD service with neither problem, leave it.

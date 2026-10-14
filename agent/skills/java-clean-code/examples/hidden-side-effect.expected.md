@@ -8,12 +8,13 @@ Tests: a query-looking method that mutates state is reported with its caller as 
 
 ## May report
 
-- Magic literal (Minor): `1_000` appears twice; a named constant keeps the check and the deduction in step.
+- Magic literal: `1_000` appears twice; a named constant keeps the check and the deduction in step.
 - Unsafe compound operation (Context-dependent): check-then-deduct without locking or versioning can double-claim under concurrent requests.
+- A To verify line on what `members.get` does for an unknown id.
 
 ## Must not report
 
 - The injected `Clock`, which is already the testable choice.
-- `pointsBalance`.
-- `Optional` for `members.get` without evidence that it can return `null`.
+- `pointsBalance` as a problem on its own.
+- `Optional` for `members.get` stated as a defect, or offered as the fix without first checking what `get` returns.
 - The banner's ternary or strings.

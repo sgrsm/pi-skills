@@ -8,7 +8,8 @@ None. The method is short, names are clear, required arguments are checked, the 
 
 ## May report
 
-None.
+- A short paragraph on the look-alikes that were checked (the VIP and standard branch, the repeated return expression).
+- A To verify line on how `Money` rounds a percentage discount.
 
 ## Must not report
 
@@ -16,4 +17,5 @@ None.
 - Value objects for the discount rates.
 - `Optional` or other changes to the `Objects.requireNonNull` checks.
 - Magic literal for the rates; they are already named.
-- A findings section padded with Minor items, or praise for the code.
+- `Money` rounding as a numbered finding; the code that rounds isn't in scope.
+- A findings section padded with Minor items, praise, or a list of what the code does well (small, `final`, stateless, null-checked).

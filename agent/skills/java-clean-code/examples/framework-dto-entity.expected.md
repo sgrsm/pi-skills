@@ -8,8 +8,9 @@ None.
 
 ## May report
 
-- A Context-dependent or Hypothesis note that `CustomerEntity` doesn't validate `email` at creation, if the agent points to where invalid data could enter.
-- A Minor suggestion to use a `record` for `CustomerResponseDto`, only if the build targets Java 16+ and the project doesn't standardize on Lombok DTOs.
+- A short paragraph on the look-alikes that were checked (JPA constructor, Lombok, mutable DTO).
+- A To verify line that `CustomerEntity` doesn't validate `email` at creation, if the agent points to where invalid data could enter.
+- A suggestion to use a `record` for `CustomerResponseDto`, only if the build targets Java 16+ and the project doesn't standardize on Lombok DTOs.
 
 ## Must not report
 
@@ -18,3 +19,4 @@ None.
 - Mutable DTO fields.
 - `@Service`, or a missing interface for `CustomerLookupService` or `CustomerRepository`.
 - `Optional` for entity or DTO fields.
+- A bulleted list of why each framework mechanic is fine, or praise for the code.

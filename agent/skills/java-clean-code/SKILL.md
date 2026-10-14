@@ -28,7 +28,7 @@ Leave layout to the project's formatter or linter. Mention formatting only when 
 
 ## Design root causes
 
-When several local smells come from one design problem (a god class, a misplaced responsibility, a dependency on infrastructure), report one finding under the design smell's name and use the local smells as its evidence. Mention that `java-clean-solid` can go deeper if the user wants a design review.
+When several local smells come from one design problem (a god class, a misplaced responsibility, a dependency on infrastructure), report one finding under the design smell's name and use the local smells as its evidence. Rate it with the contract's severity for the design problem; reviewing through the local lens doesn't lower it. Mention that `java-clean-solid` can go deeper if the user wants a design review.
 
 ## Fix advice
 

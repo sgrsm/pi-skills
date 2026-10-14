@@ -25,7 +25,7 @@ Find the few root causes that make this codebase expensive or risky to change, a
 7. **Tests.** Check whether tests protect the hotspots, and whether the design forces heavy setup (a full application context, external services) to test pure logic.
 8. **Rank.** Merge symptoms into root causes, then apply the contract's severity and caps.
 
-If history isn't available (no repository, shallow clone), say so in the scope line and treat change-frequency claims as hypotheses.
+If history isn't available (no repository, shallow clone), say so in the scope line and pick hotspots by size and structure instead of change frequency.
 
 ## Output
 

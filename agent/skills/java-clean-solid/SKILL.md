@@ -19,9 +19,9 @@ Design lens: how responsibilities and dependencies are spread across types and p
 | Principle | Question | Evidence to collect |
 |---|---|---|
 | SRP | Do different actors (the people or systems that request changes) force edits to this class? | method groups that use disjoint fields and collaborators; unrelated commits in `git log -- <file>` |
-| OCP | Does adding the next variant of a recurring concept need edits in several places? | switch or `if` sites on the same type code; `default` branches that would absorb a new variant |
+| OCP | Does adding the next variant of a recurring concept need edits in several places? | two or more switch or `if` sites on the same type code; `default` branches at those sites |
 | LSP | Can callers use every subtype through the base type without checking which one they have? | overrides that throw, do nothing, or tighten preconditions; `instanceof` at call sites; the base type's documented contract |
-| ISP | Do clients depend on operations they never call? | the methods each client calls (call-site search); test stubs for methods the client doesn't use |
+| ISP | Do clients depend on operations they never call? | the methods each visible client calls (call-site search); test stubs for methods the client doesn't use |
 | DIP | Does policy depend on details, and does the policy side own the abstraction it uses? | infrastructure, framework, or vendor imports in core packages; the package that declares the interface; `new` of infrastructure in core code |
 
 ## Design advice
