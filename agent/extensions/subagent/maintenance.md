@@ -49,7 +49,7 @@ If impact is material and no safe control exists, record the measured evidence a
 
 ## Structured prompt section
 
-`before_agent_start` writes or deletes `systemPromptOptions.sections.subagent_policy` (via `buildSubagentPolicyPrompt()`), once per submitted prompt, only while `subagent` or `escalate_to_parent` is active. Tool metadata and the policy share direct-call-only guidance. The policy includes delegation invocation guidance only when `subagent` is active and neither off nor depth-capped; escalation guidance requires an active child relay tool. It does not return `systemPrompt`. Follow [Structured prompt contributions](../maintenance.md#structured-prompt-contributions). Policy, approval, trust, depth and allowlist enforcement do not depend on this text.
+`before_agent_start` writes or deletes `systemPromptOptions.sections.subagent_policy` (via `buildSubagentPolicyPrompt()`), once per run start (a user prompt or a custom message with `triggerTurn`), only while `subagent` or `escalate_to_parent` is active. Tool metadata and the policy share direct-call-only guidance. The policy includes delegation invocation guidance only when `subagent` is active and neither off nor depth-capped; escalation guidance requires an active child relay tool. It does not return `systemPrompt`. Follow [Structured prompt contributions](../maintenance.md#structured-prompt-contributions). Policy, approval, trust, depth and allowlist enforcement do not depend on this text.
 
 ## Dialog content and program status
 

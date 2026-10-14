@@ -10,6 +10,8 @@
 - **Category status:** assessed across all discovered runtime extensions and shared infrastructure; two confirmed validation-adapter incompatibilities require follow-up. No production-extension regression demonstrated within the checked scope.
 - **Sibling reports:** [Simplification and debt](02-simplification-and-debt.md) · [API opportunities](03-api-opportunities.md).
 
+> **Post-audit follow-up:** C1 has been verified and addressed in the repository; see [C1 follow-up resolution](#c1-follow-up-resolution). C2 remains open. The original assessment and validation record below describe the audit run and are retained as historical evidence.
+
 ## Executive result
 
 Two upgrade-related compatibility findings affect the **validation code**, not a demonstrated production workflow regression:
@@ -47,6 +49,14 @@ Parameterize the helper with a typed trigger and add a synthetic custom-message 
 **Validation:** source comparison and both TypeScript/runtime failures confirm causality. A separate scratch-only public-runner probe successfully invoked the actual local handlers with both target event variants and retained all three owned sections plus an unrelated section, with no handler errors or forced replacement. That smaller probe does **not** replace the failed durable matrix or demonstrate `pi.sendMessage(..., { triggerTurn: true })` scheduling through `AgentSession`.
 
 **Confidence:** high. This is test-call-site drift; no required change was identified in the three production handlers, which consume `systemPromptOptions`, not `prompt`/`images`.
+
+#### C1 follow-up resolution
+
+**Status: addressed.** Both call sites now use Pi 1.2.0's two-argument API, with the trigger type derived from `Parameters<ExtensionRunner["emitBeforeAgentStart"]>[0]`. The existing matrix runs for both user and synthetic custom-message triggers, with an observed-event assertion that custom triggers carry their message and no user-only fields. Alternating triggers on one runner preserve reused sections. Scratch preparation failure and shutdown cancellation are checked for both variants; the existing section ownership, late contributions, reload, policy, and deliberate full-prompt replacement assertions remain intact. Production extension handlers and installed host code were not changed.
+
+The direct-runner repair was selected over a cross-version adapter or SDK scheduling fixture: this repository validates its selected host, and the existing matrix tests event/section composition rather than end-to-end run scheduling. Owning coverage and maintenance notes now describe both variants and explicitly exclude `AgentSession` scheduling, busy-start races, and queued delivery.
+
+**Follow-up validation on Pi 1.2.0:** the original two TS2554 errors and all 15 structured-prompt failures were reproduced before the repair. Afterward, the focused suite passed **34/34**, and `npm run typecheck` passed against verified 1.2.0 host links. `npm run verify` reached the full runtime suite: **721 tests, 720 pass, one failure**, exclusively the unchanged C2 focused-overlay wheel control. Unchanged positive host diagnostics were also rerun: all **11** still fail under TDR-1201/TDR-1202. No skipped/cancelled/TODO tests, green full-gate claim, or host-debt resolution is implied.
 
 ### C2 — P2: replace the obsolete overlay raw-wheel control
 

@@ -3,13 +3,20 @@ import { realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import {
 	createEventBus, discoverAndLoadExtensions, ExtensionRunner, SessionManager,
-	type BuildSystemPromptOptions, type ExtensionUIContext, type ModelRegistry,
+	type BuildSystemPromptOptions, type ExtensionError, type ExtensionUIContext, type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import { withTestScratchFixture } from "../permissions/testScratch.ts";
 
+type RunTrigger = Parameters<ExtensionRunner["emitBeforeAgentStart"]>[0];
+const runTriggers: RunTrigger[] = [
+	{ messageType: "user", prompt: "Synthetic prompt" },
+	{ messageType: "custom", message: {
+		role: "custom", customType: "synthetic-trigger", content: "Synthetic custom run", display: false, timestamp: 0,
+	} },
+];
 const ownedKeys = ["clarify_policy", "permissions_scratch", "subagent_policy"] as const;
 const scratchHint = (path: string) => `Session scratch (already created): ${path}\nWrite files or create subdirectories below it instead of /tmp. Pi manages the root; do not mkdir, chmod, rename, or delete it. Use explicit destination filenames.`;
 const clarificationPolicy = `Clarification policy:
@@ -24,11 +31,20 @@ const clarificationNote = `Clarification note:
 - The clarify tool requires interactive UI and is not usable in this mode.
 - If user input is required, ask in plain text instead of calling clarify.`;
 
-test("host reports scratch initialization failure without retaining a stale prompt section", async () => {
+for (const trigger of runTriggers) {
+	test(`host reports scratch initialization failure without a stale section (${trigger.messageType})`, () =>
+		checkScratchCleanup(trigger, "failure"));
+	test(`shutdown during scratch preparation cannot advertise a late hint (${trigger.messageType})`, () =>
+		checkScratchCleanup(trigger, "shutdown"));
+	test(`additive prompt contributors preserve the structured host contract (${trigger.messageType})`, (t) =>
+		checkPromptContributions(t, trigger));
+}
+
+async function checkScratchCleanup(trigger: RunTrigger, interruption: "failure" | "shutdown") {
 	await withTestScratchFixture(async (fixture) => {
 		const agentDir = join(fixture.root, "agent");
 		await fixture.mkdir(agentDir);
-		await fixture.symlink(fixture.protectedDir, join(fixture.sessionTemp, "pi"));
+		if (interruption === "failure") await fixture.symlink(fixture.protectedDir, join(fixture.sessionTemp, "pi"));
 		const savedTmpDir = process.env.TMPDIR;
 		const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 		let runner: ExtensionRunner | undefined;
@@ -39,16 +55,22 @@ test("host reports scratch initialization failure without retaining a stale prom
 			const loaded = await discoverAndLoadExtensions([path], fixture.project, agentDir, createEventBus());
 			assert.deepEqual(loaded.errors, []);
 			runner = new ExtensionRunner(loaded.extensions, loaded.runtime, fixture.project, SessionManager.inMemory(fixture.project), {} as ModelRegistry);
-			const errors: unknown[] = [];
+			const errors: ExtensionError[] = [];
 			runner.onError((error) => errors.push(error));
 			await runner.emit({ type: "session_start", reason: "startup" });
-			const result = await runner.emitBeforeAgentStart("Synthetic prompt", undefined, {
+			const starting = runner.emitBeforeAgentStart(trigger, {
 				cwd: fixture.project, sections: { unrelated: "Keep me", permissions_scratch: "stale scratch path" },
 			});
+			// The permissions handler has captured its signal and yielded to filesystem preflight.
+			if (interruption === "shutdown") await runner.emit({ type: "session_shutdown", reason: "reload" });
+			const result = await starting;
+			assert.deepEqual(result.messages, []);
 			assert.deepEqual(result.systemPromptOptions.sections, { unrelated: "Keep me" });
 			assert.equal(result.systemPromptOptions.forceSystemPrompt, undefined);
 			assert.equal(errors.length, 1);
-			assert.match(JSON.stringify(errors), /before_agent_start.*Refusing to use Pi temp workspace directory/);
+			assert.equal(errors[0].event, "before_agent_start");
+			assert.equal(errors[0].extensionPath, path);
+			assert.match(errors[0].error, interruption === "failure" ? /Refusing to use Pi temp workspace directory/ : /abort/i);
 		} finally {
 			try {
 				if (runner) {
@@ -63,12 +85,12 @@ test("host reports scratch initialization failure without retaining a stale prom
 			}
 		}
 	});
-});
+}
 
 // Public loader/runner, real in-memory SessionManager, synthetic late MCP guidance.
 // Reading event.systemPrompt in the last handler uses the host's actual renderer;
 // no private builder import or live MCP/model request is needed.
-test("additive prompt contributors preserve the structured host contract", async (t) => {
+async function checkPromptContributions(t: TestContext, trigger: RunTrigger) {
 	await withTestScratchFixture(async (fixture) => {
 		assert.equal(await realpath(tmpdir()), fixture.approvedRoot, "TMPDIR must point at the approved scratch root before loading extensions");
 		const agentDir = join(fixture.root, "agent");
@@ -79,13 +101,17 @@ test("additive prompt contributors preserve the structured host contract", async
 		const savedTmpDir = process.env.TMPDIR;
 		const events = createEventBus();
 		let rendered = "";
+		let observedTrigger: unknown;
 		const unsubscribe = events.on("structured-prompt-snapshot", (value) => { rendered = String(value); });
+		const unsubscribeTrigger = events.on("structured-prompt-trigger", (value) => { observedTrigger = value; });
 		const latePath = join(fixture.root, "late.ts");
 		const forcedPath = join(fixture.root, "forced.ts");
 		await fixture.writeFile(latePath, `export default (pi) => pi.on("before_agent_start", (event) => {
 			event.systemPromptOptions.sections.mcp_servers = "Synthetic late MCP guidance";
 			event.systemPromptOptions.sections.other_extension = "Synthetic late extension guidance";
-			pi.events.emit("structured-prompt-snapshot", event.systemPrompt);
+			const { type, systemPrompt, systemPromptOptions, ...trigger } = event;
+			pi.events.emit("structured-prompt-trigger", trigger);
+			pi.events.emit("structured-prompt-snapshot", systemPrompt);
 		});`);
 		await fixture.writeFile(forcedPath, `export default (pi) => pi.on("before_agent_start", () => ({ systemPrompt: "Deliberate full replacement" }));`);
 		const localPaths = ["clarify", "permissions", "subagent"].map((name) =>
@@ -114,9 +140,15 @@ test("additive prompt contributors preserve the structured host contract", async
 					await runner.emit({ type: "session_start", reason: "reload" });
 					assert.deepEqual(errors, []);
 				},
-				async turn(options: BuildSystemPromptOptions = { cwd: fixture.project, sections: { unrelated: "Keep me" } }) {
+				async turn(
+					options: BuildSystemPromptOptions = { cwd: fixture.project, sections: { unrelated: "Keep me" } },
+					startTrigger: RunTrigger = trigger,
+				) {
 					rendered = "";
-					const result = await runner.emitBeforeAgentStart("Synthetic prompt", undefined, options);
+					observedTrigger = undefined;
+					const result = await runner.emitBeforeAgentStart(startTrigger, options);
+					// Custom events must carry their message without a user prompt or images.
+					assert.deepEqual(observedTrigger, startTrigger);
 					assert.deepEqual(errors, []);
 					assert.deepEqual(result.messages, []);
 					assert.notEqual(rendered, "", "the late contributor must run on every turn");
@@ -157,6 +189,16 @@ test("additive prompt contributors preserve the structured host contract", async
 				const second = await h.turn(first);
 				assert.equal(second.forceSystemPrompt, undefined);
 				assert.deepEqual(second.sections, first.sections);
+				for (const key of ownedKeys) assert.equal(rendered.split(`<${key}>`).length - 1, 1, key);
+			});
+			await t.test("alternating user and custom triggers preserve reused sections", async () => {
+				const otherTrigger = runTriggers.find((candidate) => candidate.messageType !== trigger.messageType)!;
+				const first = await h.turn();
+				const second = await h.turn(first, otherTrigger);
+				const third = await h.turn(second);
+				assert.deepEqual(second.sections, first.sections);
+				assert.deepEqual(third.sections, first.sections);
+				assert.equal(third.forceSystemPrompt, undefined);
 				for (const key of ownedKeys) assert.equal(rendered.split(`<${key}>`).length - 1, 1, key);
 			});
 			await t.test("no-UI guidance replaces the interactive policy without duplication", async () => {
@@ -294,6 +336,7 @@ test("additive prompt contributors preserve the structured host contract", async
 				}
 			} finally {
 				unsubscribe();
+				unsubscribeTrigger();
 				if (savedTmpDir === undefined) delete process.env.TMPDIR;
 				else process.env.TMPDIR = savedTmpDir;
 				for (const key of envKeys) {
@@ -303,4 +346,4 @@ test("additive prompt contributors preserve the structured host contract", async
 			}
 		}
 	});
-});
+}

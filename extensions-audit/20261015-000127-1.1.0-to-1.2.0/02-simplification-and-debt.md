@@ -10,6 +10,8 @@
 - **Category status:** all 12 runtime extensions, documented limitations/workarounds, and all six TDR records assessed; dispositions established within the stated source/offline scope, not full debt-closure acceptance.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [API opportunities](03-api-opportunities.md).
 
+> **Post-audit follow-up:** [C1 has been addressed](01-compatibility.md#c1-follow-up-resolution) with a target-only runner-fixture repair and user/custom-trigger coverage. C2 and the tracked host debt remain open; the assessment below retains its audit-time findings.
+
 ## Result and priorities
 
 - **No complete shipped-and-enabled built-in replacement was found.** No extension is recommended for retirement because of this upgrade.

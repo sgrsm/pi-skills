@@ -52,7 +52,7 @@ Protects shared scheduling across permissions and clarify, including separately 
 
 ### `structured-prompt.test.ts`
 
-Protects additive structured prompt contributions from clarify, permissions, and subagent through the public loader and real prompt renderer. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
+Protects additive structured prompt contributions from clarify, permissions, and subagent for both user and custom-message run starts through the public loader and real prompt renderer. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions) and [coverage limits](./host-contract-coverage.md#structured-prompttestts).
 
 ### `cli-tool-selection.test.ts`
 

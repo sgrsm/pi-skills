@@ -64,7 +64,7 @@ Use the [approved scratch setup](#safe-test-scratch-setup) before running tests 
 - `permissions.test.ts`: component-aware lexical containment, preservation/deduplication of unnormalized filesystem targets, multiline mutation attribution, and source/log-redirection separation.
 - `git.test.ts` and `package.test.ts`: later guarded commands after newlines, assignment-only commands, directory changes, comments, and continued subcommand words.
 - `index.test.ts`: readiness before advertising, failure and cancellation without stale hints, revalidation, scratch approval through tool events (including multiline Bash), actual guarded destinations, root guards, and Priority 0 ordering.
-- `pi-compatibility/structured-prompt.test.ts`: public-host prompt composition, ready directories on session changes/reload, and host-reported preparation failure without a stale section. It scopes test `TMPDIR` to a disposable fixture and restores it afterward.
+- `pi-compatibility/structured-prompt.test.ts`: public-host prompt composition for user and custom-message run starts, ready directories on session changes/reload, and host-reported preparation failure or shutdown cancellation without a stale section. It scopes test `TMPDIR` to a disposable fixture and restores it afterward.
 - `shared/dialogTestHarness.test.ts`: bounded condition-based waiting for asynchronous permission preflight. Dialog tests must not assume filesystem analysis finishes within a fixed number of event-loop turns.
 
 Run `npm run test:permissions`, the structured-prompt test, and `npm run typecheck`; use `npm run verify` for the combined gate. These tests use disposable files and synthetic host interactions, not live providers or real guarded mutations outside approved scratch.

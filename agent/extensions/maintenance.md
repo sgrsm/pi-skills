@@ -65,12 +65,13 @@ Local extensions contribute additively, each through one stable section key that
 When adding or changing a contribution:
 
 - Set or delete only your own section on `sections`; do not return `systemPrompt`, set `forceSystemPrompt`, or edit another extension's section. Pi runs handlers in registration order, so later handlers still see the rendered prompt.
+- Apply section setup to both user- and custom-message run starts. On Pi 1.2, `event.messageType` discriminates user events (`prompt`, optional `images`) from custom events (`message`, no `prompt` or `images`). Narrow by `messageType` before using user-only fields; section-only handlers need not read either payload.
 - Assign the full text each run from current state instead of appending, so reused options, reload, and repeated turns cannot duplicate guidance.
 - Delete the section when its tool is unavailable or inactive (clarify disabled/inactive, neither `subagent` nor `escalate_to_parent` active). Do not leave stale guidance for a tool the model cannot call.
 - Keep tool-specific lines explicit about the tool they describe, as for `promptSnippet`/`promptGuidelines`.
 - A deliberate whole-prompt override by another extension is that extension's choice; local sections stay structured and are not copied into it.
 
-Regression coverage is in [`pi-compatibility/structured-prompt.test.ts`](./pi-compatibility/host-contract-coverage.md#structured-prompttestts). It renders through the actual host with synthetic late contributors; it does not measure provider cache behavior.
+Regression coverage is in [`pi-compatibility/structured-prompt.test.ts`](./pi-compatibility/host-contract-coverage.md#structured-prompttestts). It renders both trigger variants through the actual host with synthetic late contributors; it does not test `AgentSession` run scheduling or provider cache behavior.
 
 ## Tool availability at startup
 
