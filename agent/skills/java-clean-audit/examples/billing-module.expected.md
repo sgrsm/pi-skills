@@ -17,6 +17,7 @@ Tests: a module audit ranks root causes across files, finds the package cycle fr
 - Primitive Obsession: `long customerId`, `String` country codes, and `BigDecimal` amounts without a currency.
 - `Customer.stripeCustomerId` puts a vendor identifier on the customer model, within the DIP finding.
 - Silent fallback for the zero-VAT `default`, within the Repeated Switches finding or separately.
+- Missing safety net as its own finding: the only VAT test is disabled, with characterization tests (a fake gateway or `mockStatic(Charge.class)`) as the first step.
 - A To verify line: IT, ES, and NL are listed in `EU_COUNTRIES` but get 0% VAT.
 
 ## Must not report

@@ -4,7 +4,7 @@ Tests: many local smells caused by one design problem are reported as one root-c
 
 ## Must report
 
-- **Major** · Divergent Change / Large Class (SRP) · `CustomerManager`. Evidence: registration, SQL persistence, JSON export, VAT rates, and newsletter sending live in one class, and each method group uses a different subset of the collaborators. The vague class name `CustomerManager`, inline mail building, and literal VAT rates appear as supporting evidence, not as separate findings. Acceptable fix: characterization tests, then Extract Class one responsibility at a time, starting with whichever is under change (for example VAT rates into their own type, then export), labeled `refactoring`.
+- **Major** (Moderate is acceptable under `java-clean-code`; `java-clean-solid` must rate it Major) · Divergent Change / Large Class (SRP) · `CustomerManager`. Evidence: registration, SQL persistence, JSON export, VAT rates, and newsletter sending live in one class, and each method group uses a different subset of the collaborators. The vague class name `CustomerManager`, inline mail building, and literal VAT rates appear as supporting evidence, not as separate findings. Acceptable fix: characterization tests, then Extract Class one responsibility at a time, starting with whichever is under change (for example VAT rates into their own type, then export), labeled `refactoring`.
 
 ## May report
 
