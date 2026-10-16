@@ -60,7 +60,9 @@ The timestamp uses datetime format `YYYYMMDD-HHMMSS` with a 24-hour clock; the t
 - **Simplification and debt:** built-in replacement candidates, workaround/limitation improvements, and every TDR's disposition, including non-blocked records.
 - **API opportunities:** worthwhile optional uses of new host APIs, concrete benefits, adoption trade-offs, and recommendations.
 
-Each finding has one primary home, with cross-references rather than duplicates. Every document includes a shared context header, sibling links, and relevant gaps. All three are written even when a category has no findings or could not be fully checked. No fourth overview document is required, and historical reports are left in place. The three documents together form one assessment for future baseline use.
+Each finding has one primary home, with cross-references rather than duplicates. All three documents are written even when a category has no findings or incomplete checks; no fourth overview is needed.
+
+Only the newest timestamped report set is retained as the current source of truth. It carries forward relevant open findings, current dispositions and essential comparison evidence. Older sets are removed after the replacement is saved and checked; committed snapshots remain in Git history.
 
 ## Requirements and limits
 

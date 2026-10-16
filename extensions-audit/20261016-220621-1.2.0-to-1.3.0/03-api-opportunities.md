@@ -4,8 +4,9 @@
 
 - **Run:** `20261016-220621`, 2026-10-16 22:06:21 CEST (UTC+02:00).
 - **Versions:** requested baseline **1.2.0**, requested target **1.3.0**; managed selector, executed CLI, running-process evidence and target package identify **1.3.0**.
-- **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the previous three-report assessment provide bounded comparison evidence, not an inferred upgrade history.
-- **Repository:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
+- **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
+- **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
+- **Current disposition:** this is the consolidated retained assessment for Pi 1.3.0. Documentation follow-up `00a5366` is reflected below; no executable fixes or new runtime validation are claimed by this consolidation.
 - **Overall status:** **Partial assurance:** the full documented gate and positive diagnostics were executed, but the retained gate is red and extended/live acceptance remains incomplete. All three report categories were assessed and saved.
 - **Category status:** released API/capability relevance screen complete for current consumers; one substantive optional adoption recommended. Demonstrated helper/renderer behavior is separate from unimplemented adoption and live acceptance.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).
@@ -20,6 +21,10 @@
 | `ToolCall.argumentsError` / local tool-call display and child JSON consumers | **Skip custom parsing/integration now** | Host validation already rejects malformed final arguments; no local parser workaround or current lost-error workflow was established. |
 | `supportsMidConvoEffort` / provider options | **Skip local integration** | Native transport capability, not text verbosity or physical request identity; no local transport/cache shim to replace. |
 | `sessionShareDestination` / Handoff or Trash | **Skip** | Upload destination does not match local handoff, archive or deletion workflows. No sharing-policy change authorized. |
+
+## Retained baseline recommendation
+
+Pi 1.2.0 began presenting schema constraints in codemode declarations. [Git Inspect](../../agent/extensions/git-inspect/index.ts) already supplies integer/range bounds for `maxCount` and a maximum `paths` length; the earlier passive catalog probe demonstrated those tags. Keep schemas as the source of truth rather than duplicating a declaration formatter. A small catalog regression remains optional, not a migration requirement or new 1.3 finding. Earlier `reachesTools`/namespace-alias candidates still have no concrete local adoption need; blocked-status integration remains in the debt report.
 
 ## A1 — Adopt now: use the public read-range formatter
 
