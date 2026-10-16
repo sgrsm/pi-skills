@@ -1,9 +1,9 @@
 # TDR-20261009-1206: Report custom TUI dialogs as blocked in program status
 
-- **Status:** Blocked — public host API limitation on Pi 1.1.0; no live dashboard reproduction
+- **Status:** Blocked — no supported scoped/arbitrated custom-dialog status integration on Pi 1.3.0; source-only revalidation
 - **Priority:** Low; affects status-dashboard accuracy only. Clarify still waits for the user.
 - **Created:** 2026-10-09
-- **Area:** Pi host program-status reporting (`ExtensionUIContext.custom()`); `agent/extensions/clarify`
+- **Area:** Pi host program-status reporting (`ExtensionUIContext.custom()`); Clarify and shared cancellable custom-answer UI
 
 ## Summary and decision
 
@@ -20,10 +20,18 @@ Here, **HOST** is the installed `@earendil-works/pi-coding-agent` package. Locat
 1. `agent/extensions/clarify/index.ts`, `showClarifySelector()`, uses `showCancellableCustom()` from `agent/extensions/shared/dialogUi.ts` for the TUI selector. The TUI custom answer uses the shared `showCancellableEditor()`, which also goes through `ctx.ui.custom()`. Non-TUI modes use `select()` and `input()`.
 2. `HOST/dist/modes/interactive/interactive-mode.js`: the standard extension selector, input and editor paths call `programStatus.setBlocked("extension-dialog", …)` when displayed and clear it when hidden. `showExtensionCustom()` does not.
 3. `HOST/dist/modes/interactive/program-status-reporter.js` reports the most recent blocked entry; otherwise an active run reports `working`.
-4. `HOST/dist/core/extensions/types.d.ts`: `ExtensionUIContext.custom()` and its options expose overlay settings and a handle only. No program-status setter or blocked metadata is public.
+4. `HOST/dist/core/extensions/types.d.ts`: `ExtensionUIContext.custom()` and its options expose overlay settings and a handle only. No scoped/arbitrated blocked-status facility is exposed for custom interactions. The public low-level `TUI.terminal.setProgramStatus()` setter does not coordinate with the host reporter or restore another wait's state.
 5. `HOST/docs/terminal-setup.md#program-status` documents `blocked` as "An extension dialog or login waits for you," with the dialog title as the message. It does not address custom components.
 
 These are source observations. A live terminal or dashboard status reproduction was **not** performed.
+
+## Pi 1.3.0 revalidation
+
+The blocker remains: standard selectors, inputs and editors call `ProgramStatusReporter.setBlocked()`, but `showExtensionCustom()` does not, and public custom-UI options still provide no scoped blocked metadata. The 1.3 overlay-ownership correction does not address status reporting. This is source evidence; no live dashboard reproduction was performed.
+
+The low-level terminal setter already existed before this upgrade. It writes a shared latest-status slot without reporter ownership/arbitration, so it is not a safe competing status writer. The missing prerequisite is supported scoped integration, not the existence of any public setter.
+
+Clarify's selector and shared custom-answer editor are current consumers. Permissions also uses that shared editor and must be covered when integrating a supported facility. Other custom UIs, including settings screens and passive overlays, must be assessed explicitly rather than automatically marked blocked. Preserve generic privacy-safe labels, displayed-not-queued lifetime and independent-wait cleanup.
 
 ## Narrow upstream direction
 

@@ -44,7 +44,7 @@ Saved off mode keeps clarify unavailable at startup and `/reload`, even if a too
 
 To start one session without clarify, use `--exclude-tools clarify`; `--tools -clarify` modifiers do not reliably disable it. See [tool selection](../subagent/README.md#tool-selection).
 
-**Separate Pi 1.0 resume limitation (open):** SDK/CLI resume may omit previously selected tool declarations even without these local extensions. Startup availability does not repair that host behavior; see [TDR-20261009-1202](../../../tdr/blocked/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
+**Pi 1.3.0 resume:** ordinary SDK/CLI resume restores previously selected tool declarations. Broader resume/loadout validation remains open; see [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
 
 ## Tool
 

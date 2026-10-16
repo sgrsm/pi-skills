@@ -1,6 +1,6 @@
 # TDR-20261009-1202: Restore the transcript tool loadout on SDK/CLI resume
 
-- **Status:** Blocked — reproduced on Pi 1.0.3 and revalidated on Pi 1.1.0; correction requires Pi source/upstream work
+- **Status:** Open — core SDK/CLI restoration fixed in Pi 1.3.0; remaining validation and documentation pending
 - **Priority:** Medium; MCP-specific impact latent while servers are disabled
 - **Created:** 2026-10-03
 - **Area:** Pi host session construction (`sdk` / `AgentSession`), not local extension startup
@@ -12,9 +12,24 @@ On Pi **1.0.0**, and independently revalidated on **1.0.3**, creating a resumed 
 
 The local clarify, web-search and subagent startup defect was independently fixed: `agent/extensions/shared/toolAvailability.ts` uses public hidden re-registration for unavailable tools instead of subtractive `setActiveTools()` calls that discard unrelated pending restoration. That correction preserves **existing pending names**, but cannot fix a host construction path that never establishes them. The user approved closing that local fix and deferring this separate host-owned correction.
 
-**End-to-end SDK/CLI resumed-tool restoration remains broken on the tested host.** No host fix, local workaround, installed-package patch, dependency change or personal configuration change has been made. A runtime fix belongs in a separately authorized Pi source checkout/upstream change.
+**Pi 1.3.0 fixes the core construction defect on the checked SDK and actual CLI `--session` paths**, with and without local extensions. Remaining selection/lifecycle acceptance, fixture corrections and documentation prevent closure. No local pending-state workaround or installed-host patch is needed; the earlier source/upstream deferral below is historical.
 
 This record is self-contained. Temporary work-package documents and ephemeral probe artifacts are not required to understand, reproduce or resume the work.
+
+## Pi 1.3.0 revalidation and remaining work
+
+[Pi 1.3.0](https://github.com/earendil-works/pi/releases/tag/v1.3.0), [issue 10785](https://github.com/earendil-works/pi/issues/10785), restores recorded tool declarations during ordinary/default-selection resume. `AgentSession` now restores when `usesDefaultTools` is true; the public SDK supplies that flag for default selection and modifier-only options. CLI `+name`/`-name` modifiers apply to the restored loadout; explicit allowlists, exclusions and no-tools options retain their documented precedence.
+
+All four positive `sdk-resume.diagnostic.ts` cases pass on 1.3: reopened SDK construction and actual bundled CLI `--session`, each host-only and with local extensions saved off. After late registration, the active set equals recorded `read` plus the inactive direct/deferred/codemode synthetic tools. Their `defaultActive: false` prevents ordinary registration from masking restoration. Fixtures use isolated configuration, offline runtimes and disposable transcripts, not personal state, live MCP or provider requests.
+
+The normal resume/activation tests need two bounded corrections rather than a host workaround:
+
+- The direct-constructor restoration fixture omits `usesDefaultTools: true`. A scratch-only copy with that flag restored passes its complete activation matrix; durable code remains unchanged.
+- The SDK fixture expects eligible local declarations even before startup, although its transcript selects only `read` and late synthetic tools. Actual 1.3 phase probes show that enabled clarify/search/subagent are deliberately added by existing startup handlers; an unselected relay tool is not. Make expectations phase-specific and retain separate selected-local and unselected-local controls. Do not silently change the saved-on startup policy or conflate eligibility, active declaration and callability.
+
+Eight additional host-only reopened-SDK cases pass for ordinary restoration, modifier addition/removal, explicit allowlist, exclusion, no-tools, no-builtins and changed `defaultTools` precedence. These are narrower evidence than actual CLI restrictive-option acceptance. The full retained gate remained red at this revalidation because of the outdated fixture assumptions, not a demonstrated continuation of the core host defect.
+
+Before closure, correct retained fixtures, rerun local off/depth/relay and pending-name controls, promote the verified positive restoration checks into the normal gate, and cover resumed CLI selection precedence plus relevant continue/resume/runtime-switch/fork seams. Keep tree/reload and indirect-callability controls distinct. Complete the focused/full gates and independent review below; update current limitation notices without erasing earlier version-bound evidence. No host fix or runtime extension change was applied during revalidation.
 
 ## Confirmed defect, contract and source evidence
 
@@ -29,7 +44,7 @@ The documented contract includes:
 
 The documented contracts, no-local-extension baseline and positive `/tree` fixture control together justify classifying the omission as a host defect rather than intended selection.
 
-Installed Pi 1.0.0 source establishes the remaining cause:
+Installed Pi 1.0.0 source established the historical cause:
 
 1. `dist/core/sdk.js:144-148, 293-306` computes `initialActiveToolNames` from current selection/defaults and supplies it to every new `AgentSession`, including when given `SessionManager.open()` for an existing transcript.
 2. `dist/core/agent-session.js:197-202` calls `_restoreToolsFromTranscript()` at construction **only when** `initialActiveToolNames` is `undefined`.
@@ -41,7 +56,7 @@ The distinction matters: the repaired local startup defect **cleared existing pe
 
 ## Affected behavior and limits
 
-The lost state is the previously selected **model declaration** of inactive, deferred or codemode tools, including synthetic tools representing late MCP registration.
+This section records the pre-1.3 failure scope; the checked current behavior and remaining acceptance are above. The lost state was the previously selected **model declaration** of inactive, deferred or codemode tools, including synthetic tools representing late MCP registration.
 
 - `deferred` and `codemode` tools remain indirectly callable after registration, independently of the declared set. This finding does not claim their indirect access is broken.
 - Ordinary `direct` MCP tools generally activate on registration, which can mask the omission. The inactive direct control below isolates restoration itself; it does not demonstrate that all direct MCP tools become unusable.
@@ -112,19 +127,19 @@ Use `sdk-resume.test.ts`'s bounded child fixture rather than relying on an SDK-o
 
 ## Safety and implementation boundaries
 
-- Use an explicitly approved, real, non-symlink, canonical, current-user-owned, non-group/world-writable scratch root outside HOME, repository and cwd; prefer `0700`. It must neither equal, contain nor be contained by those protected paths, and must contain the caller-created, real current-user-owned `.step1-test-root-ready` sentinel. Filesystem `/` is rejected. Generated fixture roots must be exactly `0700`. Set both variables shown above; the pinned fixture helper checks the required root/sentinel safety and identities. See the durable [safe scratch setup](../../agent/extensions/permissions/README.md#safe-test-scratch-setup).
+- Use an explicitly approved, real, non-symlink, canonical, current-user-owned, non-group/world-writable scratch root outside HOME, repository and cwd; prefer `0700`. It must neither equal, contain nor be contained by those protected paths, and must contain the caller-created, real current-user-owned `.step1-test-root-ready` sentinel. Filesystem `/` is rejected. Generated fixture roots must be exactly `0700`. Set both variables shown above; the pinned fixture helper checks the required root/sentinel safety and identities. See the durable [safe scratch setup](../agent/extensions/permissions/README.md#safe-test-scratch-setup).
 - Keep sessions, configuration, auth/catalog paths, fake HOME, observers and reports under disposable fixture roots. Use the existing pinned fixture helpers; revalidate mutation targets before direct writes or host operations where practical. Do not use personal session/MCP data as fixtures.
 - Do not run paid model calls, dependency installations, enabled external MCP servers, real Trash operations or other guarded mutations to reproduce this issue. Do not change personal configuration.
 - Prefer public host APIs for retained tests; isolate any genuinely necessary private probe in approved scratch, version-check it and record skipped/missing seams explicitly. Do not import private host internals in production extensions.
 - Add positive failing restoration regressions before executable host changes. Do not simply omit `initialActiveToolNames` unconditionally: explicit `--tools`, exclusions, no-tools options, default-tool precedence, project trust and existing reload semantics must remain correct.
-- Do not emulate private pending state in local extensions, patch the installed host, or add a local workaround without separate authorization. The existing hidden-withdrawal fix and model-only/allowlist/safety contracts must remain intact. Read the durable [extension maintenance guide](../../agent/extensions/maintenance.md) before any separately authorized host-link/dependency change in this repository.
+- Do not emulate private pending state in local extensions, patch the installed host, or add a local workaround without separate authorization. The existing hidden-withdrawal fix and model-only/allowlist/safety contracts must remain intact. Read the durable [extension maintenance guide](../agent/extensions/maintenance.md) before any separately authorized host-link/dependency change in this repository.
 
-## Future host remediation and acceptance criteria
+## Remaining remediation and acceptance criteria
 
-In an authorized Pi source checkout, distinguish intentional current-invocation loadout replacement from ordinary resumed-session construction. Restore the appropriate active-branch declarations, including pending names for selected tools not yet registered. Close this TDR only when:
+Pi 1.3.0 supplies the original host prerequisite on the checked construction paths. Finish local validation and documentation without emulating private pending state; separately authorized source/upstream work is needed only if the remaining acceptance exposes another host defect. Preserve the distinction between intentional invocation-level selection and ordinary transcript restoration. Close this TDR only when:
 
 - Ordinary SDK construction from a reopened transcript and actual CLI `--session` retain selected inactive/deferred/codemode declarations through late registration.
-- The same restoration works with and without local extensions. Saved off modes, depth caps and top-level relay withdrawal remain enforced; repeat the local controls after the host is corrected, because today's omitted baseline can mask their effect.
+- The same restoration works with and without local extensions. Saved off modes, depth caps and top-level relay withdrawal remain enforced; repeat the local controls against the corrected host, because the historical omitted baseline could mask their effect.
 - Explicit restrictive selections, exclusions, no-tools/no-builtins options and documented `defaultTools` precedence remain intact. Restoration cannot resurrect prohibited or unselected tools.
 - Indirect callable exposure remains unchanged; activation defaults cannot accidentally pass a restoration regression.
 - Resume, fork, tree and reload are distinguished and tested through relevant public seams. Required creation-time restoration is not replaced with a tree-only positive control.

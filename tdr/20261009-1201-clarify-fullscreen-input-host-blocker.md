@@ -1,6 +1,6 @@
 # TDR-20261009-1201: Restore safe fullscreen clarify input
 
-- **Status:** Open — broader remediation is blocked by the host lifecycle defect; input/layout issues also remain
+- **Status:** Open — host overlay-ownership prerequisite fixed in Pi 1.3.0; local input/layout remediation and acceptance remain
 - **Priority:** Medium
 - **Created:** 2026-10-03
 - **Area:** `agent/extensions/clarify`; Pi custom-dialog integration
@@ -12,7 +12,26 @@ Clarify's fullscreen selector still loses question PageUp/PageDown/wheel input t
 
 The earlier focused custom overlay repaired input routing in isolation on Pi 1.0.0, but that version's overlay-completion lifecycle was unsafe under stacked dialogs and cancellation before installation. The user chose to defer that broader runtime fix until the host is corrected, rather than introduce a larger extension-owned overlay controller. That attempted runtime/helper implementation was withdrawn; its tests and documentation were retained. The mouse-ownership-only correction below does not introduce overlays or change the completion contract.
 
+Pi **1.3.0** fixes the overlay-ownership prerequisite that motivated deferral. The selector still uses the non-overlay dock, so local input/layout remediation remains open; the host correction does not itself resolve this record.
+
 This record is self-contained. It does not require the original audit/work-package files or ephemeral probe artifacts to understand or resume the work.
+
+## Pi 1.3.0 revalidation and remaining work
+
+[Pi 1.3.0](https://github.com/earendil-works/pi/releases/tag/v1.3.0), [PR 10999](https://github.com/earendil-works/pi/pull/10999), changes `InteractiveMode.showExtensionCustom()` to retain its overlay handle and complete with `overlayHandle?.hide()` rather than topmost `this.ui.hideOverlay()`. The renderer removes that specific entry by identity.
+
+A version-checked invocation of the actual host method on public fake-terminal `TuiAltScreen` state compared Pi 1.2.0 and 1.3.0:
+
+- Normal mounted completion removes the owned dialog, restores editor focus and disposes once on both versions.
+- With transcript search above the dialog, 1.3 removes the owned dialog and preserves search focus; 1.2 removes search and leaves the disposed owned dialog mounted.
+- Synchronous and microtask completion before installation preserve an unrelated overlay on 1.3; 1.2 removes it.
+- Raw host completion does not dispose a never-installed component on either version. The existing `showCancellableCustom()` wrapper remains necessary: with the actual 1.3 close path, a pre-install abort preserves the unrelated overlay and disposes once.
+
+The copied `clarifyUiFixture.ts` close adapter still calls topmost `tui.hideOverlay()`. Its two lifecycle diagnostic failures therefore model the old defect, not the corrected target host. Update that adapter against the actual host without weakening its positive assertions; it cannot independently establish an upstream correction.
+
+Five production requirements still fail on 1.3: question PageUp/PageDown/wheel routing, regular-mode mouse ownership and fullscreen help visibility. Existing fullscreen mouse-ownership and Home/End controls pass. The supported overlay route can now be revisited, using normalized mouse events, responsive available bounds and callback-owned completion. Preserve the shared FIFO, exactly-once cleanup, RPC/basic fallback and no-UI/model-only boundaries. No production overlay migration was made during revalidation.
+
+The full retained gate also needs the separate resume/activation fixture correction described in [TDR-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md#pi-130-revalidation-and-remaining-work). Complete the local selector integration, small/narrow/resize/repeated-interaction and cancellation/focus matrices, practical live-terminal checks and all acceptance criteria below before closure. These host probes use synthetic state, not a live terminal, personal session, provider or MCP connection.
 
 ## Confirmed defects and impact
 
@@ -31,9 +50,9 @@ No live-terminal smoke test was performed. Disabling fullscreen reporting/encodi
 
 **Temporary user workaround:** ask for shorter questions or start Pi with `pi --tui-mode regular` for keyboard scrolling without changing saved settings. This is not a resolution.
 
-## Host blocker: completion does not identify its own overlay
+## Historical host blocker: completion does not identify its own overlay
 
-Here, `HOST` means the currently installed `@earendil-works/pi-coding-agent` package root; `pi-tui` means the linked `@earendil-works/pi-tui` package. The installed source established this contract:
+The following describes the pre-1.3 host defect, not the current blocker. Here, `HOST` means the installed `@earendil-works/pi-coding-agent` package root; `pi-tui` means the linked `@earendil-works/pi-tui` package. The investigated source established this contract:
 
 1. `HOST/dist/modes/interactive/interactive-mode.js`, `InteractiveMode.showExtensionCustom()`, completes an overlay using `this.ui.hideOverlay()`.
 2. `pi-tui/dist/tui.js`, `hideOverlay()`, pops the most recently added overlay, not the overlay belonging to that custom interaction.
@@ -77,7 +96,7 @@ The reported macOS/Ghostty symptom is trackpad gestures recalling prompt history
 
 `showClarifySelector()` now snapshots the supplied renderer's `tui.mode === "regular"` and uses that same decision for mouse setup and disposal. Fullscreen sends neither enable nor disable sequences, including on selection, Escape, and abort. Regular mode retains its existing raw-SGR wheel behavior and paired mouse toggles; removing those toggles remains an outstanding diagnostic requirement, not part of this correction.
 
-The current non-overlay dock, shared FIFO, permission handling, and host completion lifecycle are unchanged. The host overlay blocker therefore still prevents the broader overlay remediation, but does not block this ownership-only correction.
+That scoped correction left the non-overlay dock, shared FIFO, permission handling and host completion lifecycle unchanged. On the investigated Pi 1.0.3, the host overlay blocker still prevented broader remediation. Pi 1.3.0 removes that prerequisite; the local selector work remains separate from the completed fullscreen mouse-ownership correction.
 
 The fullscreen ownership requirement is promoted into `clarify-input.test.ts`, covering creation/cleanup and post-dialog transcript wheel routing through the public renderer. Regular-mode setup/cleanup and input remain controls. These fake-terminal checks do not emulate Ghostty's wheel-to-arrow fallback; live-terminal verification of the correction remains separate. The earlier investigation and Pi 1.0.3 revalidation above describe the state before this scoped runtime correction.
 
@@ -125,7 +144,7 @@ Do not rely only on the adapter or a higher Pi version number:
 
 ## Future remediation and acceptance criteria
 
-Revisit after a host correction demonstrates identity-safe custom-overlay completion. Use the current supported contract, not the withdrawn implementation as a patch specification. Close this TDR only when:
+The identity-safe host prerequisite is demonstrated on Pi 1.3.0. Complete the local remedy using the current supported contract, not the withdrawn implementation as a patch specification. Close this TDR only when:
 
 - Focused long-question PageUp/PageDown/Home/End/wheel input scrolls the question, not the transcript. Configurable actions use injected keybindings; fullscreen mouse handling uses normalized host events/deltas where supported.
 - Opening, closing, and cancelling do not take over or disable host mouse modes. Regular mode remains keyboard-complete without unconditional mouse toggles.

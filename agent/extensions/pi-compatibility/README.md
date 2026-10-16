@@ -44,7 +44,7 @@ Checks visible, cancel-first Trash approval at representative narrow fullscreen 
 
 ### `clarify-input.test.ts`
 
-Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, four focused-overlay keyboard controls, independent normalized-wheel consumption/transcript-fallback probes, and unchanged regular-mode interaction/setup/cleanup. On the tested Pi 1.0.3 and revalidated Pi 1.1.0/1.2.0, question PageUp/PageDown/wheel routing, regular-mode mouse ownership, help clipping, and overlay completion remain open under [TDR-20261009-1201](../../../tdr/blocked/20261009-1201-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
+Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, four focused-overlay keyboard controls, independent normalized-wheel consumption/transcript-fallback probes, and unchanged regular-mode interaction/setup/cleanup. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership and help clipping remain open on Pi 1.3.0. The host overlay-ownership prerequisite is fixed, while the local remedy and copied close-adapter correction remain under [TDR-20261009-1201](../../../tdr/20261009-1201-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
 
 ### `dialog-concurrency.test.ts`
 
@@ -68,7 +68,7 @@ Checks that real codemode in both `on` and `only` modes preserves direct model d
 
 ### `sdk-resume.test.ts`
 
-Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration remains broken on the tested Pi 1.0.3 and revalidated Pi 1.1.0 under [TDR-20261009-1202](../../../tdr/blocked/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md); `sdk-resume.diagnostic.ts` checks the required positive restoration behavior. Passing the contract controls does not mean resume restoration works.
+Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration failed on Pi 1.0.3/1.1.0 and is fixed on the checked Pi 1.3.0 paths; remaining acceptance is tracked in [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). `sdk-resume.diagnostic.ts` now passes the core positive requirements on 1.3.0, but the normal constructor/pre-start fixture assumptions need correction. Neither result alone closes the remaining selection/lifecycle acceptance.
 
 ### `short-paths-loader.test.ts`
 

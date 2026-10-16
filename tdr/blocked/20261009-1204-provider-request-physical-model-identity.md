@@ -29,6 +29,12 @@ The sibling `provider_stream_event` already exposes physical identity as `provid
 
 These are source observations. No live provider request, ChatGPT sign-in compatibility test, or end-to-end routed request was used to establish them.
 
+## Pi 1.3.0 revalidation
+
+The blocker remains source-verified on Pi **1.3.0**. `BeforeProviderRequestEvent` still exposes only `type` and `payload`; SDK `transformProviderPayload()` and runner `emitBeforeProviderRequest()` still omit the physical model available to the adapter callback. The release's credential-aware model selection does not provide per-request physical dispatch identity, and stream-event identity still arrives too late for request mutation.
+
+No fake-adapter routed-request acceptance or live provider request was executed for this revalidation. Keep the conservative direct-legacy Codex behavior and all identity/capability safety constraints below; no status change or provider-coverage expansion is justified.
+
 ## Proposed narrow host improvement
 
 Carry physical request identity directly through the existing provider callback, SDK transform, runner dispatch, and public event declaration. An additive event property such as `requestModel` could expose public, read-only request identity, at least `provider`, `api`, and model `id`. Final naming and type belong to the upstream API design.
