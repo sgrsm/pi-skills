@@ -89,6 +89,8 @@ Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-comp
 
 Pi 1.3.0 establishes pending declarations during ordinary SDK/CLI resume, fixing the earlier host omission reproduced on Pi 1.0.3 and Pi 1.1.0. Hidden withdrawal still preserves those names; it is not obsolete. Remaining selection/lifecycle acceptance is separate from this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
 
+Startup policy on resume: enabled `clarify`, `web_search` and `subagent` add themselves to the active set in `session_start`, even when the resumed transcript did not record them. An eligible, registered but unselected `escalate_to_parent` relay tool does not and stays inactive. Restrictive allowlists and exclusions remain authoritative. `sdk-resume.test.ts` asserts the startup additions per phase.
+
 ## Extension retirement
 
 The Pi **1.0.0** assessment found no complete shipped-and-enabled built-in replacement for the 12 local runtime extensions assessed at that version. Partial native overlap, extension examples, and possible third-party MCP integrations are not equivalent replacements. Re-check the current host documentation, examples, enabled configuration, and owning extension guides after upgrades; this version-bound conclusion is neither a permanent keep requirement nor approval to remove anything. The old custom MCP bridge and IDEA connector were already retired and are not remaining compatibility backlog.

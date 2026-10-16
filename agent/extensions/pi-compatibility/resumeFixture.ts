@@ -12,6 +12,9 @@ import { withTestScratchFixture, type TestScratchFixture } from "../permissions/
 
 export const lateNames = ["mcp__resume__direct", "mcp__resume__deferred", "mcp__resume__codemode"];
 export const declared = ["read", ...lateNames];
+// Local tools eligible for a resumed transcript that deliberately records them as selected.
+export const localNames = ["clarify", "web_search", "subagent", "escalate_to_parent"];
+export const declaredWithLocals = [...declared, ...localNames];
 const localPaths = ["clarify", "web-search", "subagent"].map((name) =>
 	fileURLToPath(new URL(`../${name}/index.ts`, import.meta.url)));
 const envKeys = ["PI_CODING_AGENT_DIR", "PI_SUBAGENT_PARENT_ESCALATION", "PI_SUBAGENT_DEPTH",
@@ -62,14 +65,14 @@ async function resumeFixture(fixture: TestScratchFixture) {
 		process.env.PI_SUBAGENT_PARENT_ESCALATION = value.relay ? "1" : "0";
 		process.env.PI_SUBAGENT_DEPTH = "0";
 	}
-	async function sessionFile() {
+	async function sessionFile(selected: readonly string[]) {
 		const id = `resume-fixture-${sequence++}`;
 		const file = join(fixture.root, `${id}.jsonl`);
 		const entries = [
 			{ type: "session", version: 3, id, timestamp: new Date(0).toISOString(), cwd: fixture.project },
 			{ type: "message", id: "loadout", parentId: null, timestamp: new Date(1).toISOString(), message: {
 				role: "system", content: "Offline resume fixture", timestamp: 1,
-				toolsAdded: declared.map((name) => ({ name, description: name, parameters: { type: "object", properties: {} } })),
+				toolsAdded: selected.map((name) => ({ name, description: name, parameters: { type: "object", properties: {} } })),
 			} },
 			{ type: "message", id: "user", parentId: "loadout", timestamp: new Date(2).toISOString(), message: {
 				role: "user", content: "Recorded fixture only; never submitted to a model", timestamp: 2,
@@ -78,14 +81,16 @@ async function resumeFixture(fixture: TestScratchFixture) {
 		await fixture.writeFile(file, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 		return file;
 	}
-	async function sdk(withLocals = false, state: Modes = off, restoreThroughTree = false) {
+	// `selected` is the loadout the transcript records: `declared` omits local tools, while
+	// `declaredWithLocals` records them, so both resume transcripts can be compared.
+	async function sdk(withLocals = false, state: Modes = off, restoreThroughTree = false, selected: readonly string[] = declared) {
 		await modes(state);
-		const file = await sessionFile();
+		const file = await sessionFile(selected);
 		const manager = SessionManager.open(file);
 		const header = manager.getHeader();
 		assert.equal(header?.cwd, fixture.project);
 		const transcript = manager.buildSessionContext().messages.find((message) => message.role === "system");
-		assert.deepEqual(transcript?.toolsAdded?.map((tool) => tool.name), declared);
+		assert.deepEqual(transcript?.toolsAdded?.map((tool) => tool.name), selected);
 		const events = createEventBus();
 		const loaded = await discoverAndLoadExtensions((withLocals ? localPaths : []).concat(syntheticPath), fixture.project, agentDir, events);
 		assert.deepEqual(loaded.errors, []);
@@ -112,6 +117,8 @@ async function resumeFixture(fixture: TestScratchFixture) {
 			events.emit("resume-register", undefined);
 			assert.deepEqual(errors, []);
 			return { before, afterStartup, afterRegistration: session.getActiveToolNames(), callable: session.getCallableToolNames(),
+				// Registered local-tool exposure ("direct" for tools without an explicit value); undefined when unregistered.
+				localExposure: Object.fromEntries(localNames.map((name) => [name, session.getToolDefinition(name)?.exposure ?? (session.getToolDefinition(name) ? "direct" : undefined)])),
 				registered: session.getAllTools().filter((tool) => lateNames.includes(tool.name)).map((tool) => ({ name: tool.name, exposure: tool.exposure })),
 			};
 		} finally {
@@ -122,7 +129,7 @@ async function resumeFixture(fixture: TestScratchFixture) {
 
 	async function cli(withLocals: boolean) {
 		await modes(off);
-		const file = await sessionFile();
+		const file = await sessionFile(declared);
 		const report = await fixture.assertMutationTarget(join(fixture.root, `report-${sequence}.json`));
 		await fixture.assertMutationTarget(`${report}.before`);
 		const beforePath = join(fixture.root, `before-${sequence}.ts`);
@@ -176,3 +183,4 @@ export function assertRegisteredLateTools(registered: Array<{ name: string; expo
 	assert.deepEqual(registered, lateNames.map((name) => ({ name, exposure: name.slice("mcp__resume__".length) })), "Late tools really registered with the intended exposures");
 }
 
+export type SdkSnapshot = Awaited<ReturnType<Awaited<ReturnType<typeof resumeFixture>>["sdk"]>>;

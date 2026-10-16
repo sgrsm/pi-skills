@@ -16,7 +16,11 @@ The local clarify, web-search and subagent startup defect was independently fixe
 
 This record is self-contained. Temporary work-package documents and ephemeral probe artifacts are not required to understand, reproduce or resume the work.
 
-## Pi 1.3.0 revalidation and remaining work
+## Current implementation status
+
+The constructor and pre-start fixture corrections are complete. Direct construction requests `usesDefaultTools: true`; ordinary SDK resume now has separate transcripts with and without selected local tools and explicit phase-specific declaration/exposure/callability assertions. Enabled clarify/search/subagent additions remain intentional; an unselected relay stays inactive. Focused activation/resume tests and unchanged positive resume diagnostics pass on Pi 1.3.0 after independent source review and parent execution. The retained assessment records exact results. Broader resumed CLI restriction/lifecycle acceptance and diagnostic promotion below remain open; this is not closure.
+
+## Pi 1.3.0 revalidation and remaining work (audit-time)
 
 [Pi 1.3.0](https://github.com/earendil-works/pi/releases/tag/v1.3.0), [issue 10785](https://github.com/earendil-works/pi/issues/10785), restores recorded tool declarations during ordinary/default-selection resume. `AgentSession` now restores when `usesDefaultTools` is true; the public SDK supplies that flag for default selection and modifier-only options. CLI `+name`/`-name` modifiers apply to the restored loadout; explicit allowlists, exclusions and no-tools options retain their documented precedence.
 

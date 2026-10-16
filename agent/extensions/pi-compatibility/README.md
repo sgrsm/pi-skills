@@ -68,7 +68,7 @@ Checks that real codemode in both `on` and `only` modes preserves direct model d
 
 ### `sdk-resume.test.ts`
 
-Protects the positive `/tree` control, indirect callability, local on/off/relay availability, and actual CLI transcript/parity controls without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration failed on Pi 1.0.3/1.1.0 and is fixed on the checked Pi 1.3.0 paths; remaining acceptance is tracked in [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). `sdk-resume.diagnostic.ts` now passes the core positive requirements on 1.3.0, but the normal constructor/pre-start fixture assumptions need correction. Neither result alone closes the remaining selection/lifecycle acceptance.
+Protects positive ordinary SDK resume restoration, `/tree`, indirect callability, phase-specific local startup/relay availability for 16 saved-off/relay states (with and without recorded local selections), and an actual CLI transcript/all-off parity control without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration failed on Pi 1.0.3/1.1.0 and is fixed on the checked Pi 1.3.0 paths; remaining acceptance is tracked in [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). `sdk-resume.diagnostic.ts` passes the core positive requirements on 1.3.0, and the normal constructor/pre-start fixture assumptions have been corrected to the Pi 1.3 contract. The normal tests do not cover resumed CLI selection precedence or fork/continue/switch, so neither result alone closes the remaining selection/lifecycle acceptance.
 
 ### `short-paths-loader.test.ts`
 

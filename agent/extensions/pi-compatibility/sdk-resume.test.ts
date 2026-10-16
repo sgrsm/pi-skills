@@ -1,46 +1,105 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertRegisteredLateTools, declared, lateNames, off, withResumeFixture } from "./resumeFixture.ts";
+import {
+	assertRegisteredLateTools, declared, declaredWithLocals, lateNames, localNames, off, withResumeFixture,
+	type SdkSnapshot,
+} from "./resumeFixture.ts";
 
-// Contract controls, not a claim that SDK/CLI creation-time restoration works.
-// Positive restoration acceptance checks live in sdk-resume.diagnostic.ts.
+interface State { clarify: boolean; search: boolean; delegation: boolean; relay: boolean }
+
+// Local tools that are registered and eligible for a state. Eligibility is not activation: a resumed
+// transcript decides what is selected, and only some startup handlers add their own tool.
+function eligibleLocals(state: State) {
+	return [state.clarify && "clarify", state.search && "web_search", state.delegation && "subagent",
+		state.relay && "escalate_to_parent"].filter((name): name is string => Boolean(name));
+}
+const sorted = (names: readonly string[]) => [...names].sort();
+const states = [false, true].flatMap((relay) => Array.from({ length: 8 }, (_, mask) => ({
+	label: `${relay ? "child" : "top"}, off mask ${mask}`,
+	state: { clarify: !(mask & 1), search: !(mask & 2), delegation: !(mask & 4), relay },
+})));
+
+function assertLocalAvailability(actual: SdkSnapshot, state: State, locals: string[]) {
+	for (const name of localNames) {
+		const eligible = locals.includes(name);
+		// Registration/exposure: ineligible tools are re-registered hidden; eligible tools keep their intended exposure.
+		assert.equal(actual.localExposure[name], eligible ? (name === "web_search" ? "direct" : "model-only") : "hidden", `${name} exposure`);
+		// Callability: model-only tools are never nested-callable; only available web search is.
+		assert.equal(actual.callable.includes(name), name === "web_search" && state.search, `${name} callability`);
+	}
+	for (const name of lateNames.slice(1)) assert.ok(actual.callable.includes(name), name);
+}
+
+// Contract controls for the public SDK resume path, plus /tree and a CLI parity control as separate
+// seams. Ordinary SDK restoration is now positive here. sdk-resume.diagnostic.ts keeps the explicit
+// SDK/CLI acceptance probes; resumed CLI selection precedence and fork/continue/switch seams are not
+// covered by this file (tracked in TDR-20261009-1202).
 test("/tree restores the persisted loadout through late tool registration", async () => {
 	await withResumeFixture(async (h) => {
 		const control = await h.sdk(false, off, true);
 		assertRegisteredLateTools(control.registered);
-		assert.deepEqual([...control.afterRegistration].sort(), [...declared].sort());
+		assert.deepEqual(sorted(control.afterRegistration), sorted(declared));
 	});
 });
 
-test("resume keeps registered indirect tools callable independently of declaration restoration", async () => {
+test("resume restores the recorded loadout and keeps registered indirect tools callable", async () => {
 	await withResumeFixture(async (h) => {
 		const baseline = await h.sdk();
 		assertRegisteredLateTools(baseline.registered);
-		for (const name of lateNames.slice(1)) assert.ok(baseline.callable.includes(name));
-		assert.equal(baseline.callable.includes(lateNames[0]!), baseline.afterRegistration.includes(lateNames[0]!));
+		// Pi 1.3 restores the transcript's selected loadout for ordinary resume: `read` is active before
+		// startup, and the selected late tools become active only once they are registered.
+		assert.deepEqual(baseline.before, ["read"]);
+		assert.deepEqual(baseline.afterStartup, ["read"]);
+		assert.deepEqual(sorted(baseline.afterRegistration), sorted(declared));
+		// Callability is separate from declaration: every registered late tool stays callable.
+		for (const name of lateNames) assert.ok(baseline.callable.includes(name), name);
 	});
 });
 
-test("local off modes and relay preserve the host resume baseline and enforce local availability", async (t) => {
+// The transcript selects only `read` and the late tools. Local tools are not recorded, so the host
+// does not select them; enabled local extensions add their own tools in session_start. An unselected
+// relay tool is registered and eligible, but no startup handler adds it.
+test("resume without recorded local selections follows the transcript, then local startup additions", async (t) => {
 	await withResumeFixture(async (h) => {
 		const baseline = await h.sdk();
-		for (const relay of [false, true]) for (let mask = 0; mask < 8; mask++) {
-			await t.test(`${relay ? "child" : "top"}, off mask ${mask}`, async () => {
-				const state = { clarify: !(mask & 1), search: !(mask & 2), delegation: !(mask & 4), relay };
+		// Self-contained baseline: parity below is meaningless unless the host baseline itself is correct.
+		assert.deepEqual(baseline.before, ["read"]);
+		assert.deepEqual(baseline.afterStartup, ["read"]);
+		assert.deepEqual(sorted(baseline.afterRegistration), sorted(declared));
+		for (const { label, state } of states) {
+			await t.test(label, async () => {
 				const actual = await h.sdk(true, state);
+				const locals = eligibleLocals(state);
+				const startupLocals = locals.filter((name) => name !== "escalate_to_parent");
 				assertRegisteredLateTools(actual.registered);
-				for (const name of lateNames) {
-					assert.equal(actual.afterRegistration.includes(name), baseline.afterRegistration.includes(name),
-						"local extensions must neither discard nor invent restored declarations");
+				// Phase-specific: `before` is the recorded loadout; startup adds enabled locals;
+				// registration adds the selected late tools. Locals neither discard nor invent restored names.
+				assert.deepEqual(sorted(actual.before), sorted(baseline.before));
+				assert.deepEqual(sorted(actual.afterStartup), sorted([...baseline.afterStartup, ...startupLocals]));
+				assert.deepEqual(sorted(actual.afterRegistration), sorted([...baseline.afterRegistration, ...startupLocals]));
+				assert.ok(!actual.afterRegistration.includes("escalate_to_parent"), "unselected relay stays inactive");
+				assertLocalAvailability(actual, state, locals);
+			});
+		}
+	});
+});
+
+// Same states, but the transcript records every local tool: only eligible ones may be active, including
+// before startup; withdrawn or relay-ineligible names are not resurrected by the recorded selection.
+test("resume with recorded local selections restores only eligible local tools at every phase", async (t) => {
+	await withResumeFixture(async (h) => {
+		for (const { label, state } of states) {
+			await t.test(label, async () => {
+				const actual = await h.sdk(true, state, false, declaredWithLocals);
+				const locals = eligibleLocals(state);
+				assertRegisteredLateTools(actual.registered);
+				assert.deepEqual(sorted(actual.before), sorted(["read", ...locals]));
+				assert.deepEqual(sorted(actual.afterStartup), sorted(["read", ...locals]));
+				assert.deepEqual(sorted(actual.afterRegistration), sorted(["read", ...locals, ...lateNames]));
+				for (const name of localNames.filter((name) => !locals.includes(name))) {
+					assert.ok(!actual.afterRegistration.includes(name), `${name} is withdrawn despite its recorded selection`);
 				}
-				for (const name of lateNames.slice(1)) assert.ok(actual.callable.includes(name));
-				const locals = [state.clarify ? "clarify" : "", state.search ? "web_search" : "",
-					state.delegation ? "subagent" : "", state.relay ? "escalate_to_parent" : ""].filter(Boolean);
-				for (const phase of ["before", "afterStartup", "afterRegistration"] as const) {
-					assert.deepEqual([...actual[phase]].sort(), [...baseline[phase], ...locals].sort());
-				}
-				for (const name of ["clarify", "subagent", "escalate_to_parent"]) assert.ok(!actual.callable.includes(name));
-				assert.equal(actual.callable.includes("web_search"), state.search);
+				assertLocalAvailability(actual, state, locals);
 			});
 		}
 	});

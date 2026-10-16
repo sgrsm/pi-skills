@@ -6,12 +6,25 @@
 - **Versions:** requested baseline **1.2.0**, requested target **1.3.0**; managed selector, executed CLI, running-process evidence and target package identify **1.3.0**.
 - **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
-- **Current disposition:** this is the consolidated retained assessment for Pi 1.3.0. Documentation follow-up `00a5366` is reflected below; no executable fixes or new runtime validation are claimed by this consolidation.
+- **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
 - **Overall status:** **Partial assurance:** the full documented gate and positive diagnostics were executed, but the retained gate is red and extended/live acceptance remains incomplete. All three report categories were assessed and saved.
 - **Category status:** all discovered runtime extensions and shared infrastructure assessed; two validation-contract findings, with no newly demonstrated production execution regression. Resume startup selection differences are explicitly qualified below.
 - **Sibling reports:** [Simplification and debt](02-simplification-and-debt.md) · [API opportunities](03-api-opportunities.md).
 
-## Result
+## Implementation follow-up
+
+The user authorized the recommended local changes, associated validation/documentation and item-level commits. Each entry below supersedes the corresponding pending audit disposition; historical audit evidence remains version-bound.
+
+| Item | Current disposition and evidence |
+| --- | --- |
+| C1 | **Resolved.** Direct-constructor restoration now requests `usesDefaultTools: true`; separate selected-local and unselected-local transcripts assert phase-specific startup policy, registration/exposure and callability. Existing red run reproduced 52 failures; corrected focused activation/resume controls pass 137/137. Parent independently reran those controls plus unchanged resume diagnostics: 141/141. Independent source review found no blocking defect; documentation/coverage refinements were applied. A worker full gate passed 745/745 with concurrent C2 changes; item-local focused results are the C1 evidence. TDR-1202 remains open for D1. |
+| C2 | Pending integration of adapter repair and independent verification. |
+| D1 | Pending broader resumed-selection/lifecycle acceptance and diagnostic promotion. |
+| D2 | Pending supported Clarify overlay/input/layout remediation and acceptance. |
+| A1 | Pending public read-range formatter adoption. |
+| Optional verification | Pending focused Handoff serialization and Git Inspect codemode-catalog regressions. |
+
+## Result (audit-time)
 
 1. **C1, P1:** Pi's resumed-loadout correction invalidates two assumptions in the resume/activation tests. This accounts for all **52** normal-gate failures, not 52 independent defects.
 2. **C2, P2:** the copied custom-dialog completion adapter still implements Pi 1.2's defective topmost-overlay removal. Its two lifecycle diagnostics cannot assess the 1.3 host correction.
@@ -23,6 +36,8 @@ At audit time, the five stale host-package links were refreshed only after separ
 ## Required compatibility follow-up
 
 ### C1 — P1: adapt resume/activation fixtures to restored selection semantics
+
+**Resolution:** completed; see the [implementation follow-up](#implementation-follow-up). The following diagnosis/recommendation is retained as the original rationale, not outstanding work.
 
 **Affected:** [tool-activation.test.ts](../../agent/extensions/pi-compatibility/tool-activation.test.ts), `activationFixture.create()` around lines 126–136; [sdk-resume.test.ts](../../agent/extensions/pi-compatibility/sdk-resume.test.ts), local-mode parity test around lines 24–45; [resumeFixture.ts](../../agent/extensions/pi-compatibility/resumeFixture.ts); owning [coverage notes](../../agent/extensions/pi-compatibility/host-contract-coverage.md).
 

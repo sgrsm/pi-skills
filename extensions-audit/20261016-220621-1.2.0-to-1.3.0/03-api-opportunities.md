@@ -6,7 +6,7 @@
 - **Versions:** requested baseline **1.2.0**, requested target **1.3.0**; managed selector, executed CLI, running-process evidence and target package identify **1.3.0**.
 - **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
-- **Current disposition:** this is the consolidated retained assessment for Pi 1.3.0. Documentation follow-up `00a5366` is reflected below; no executable fixes or new runtime validation are claimed by this consolidation.
+- **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
 - **Overall status:** **Partial assurance:** the full documented gate and positive diagnostics were executed, but the retained gate is red and extended/live acceptance remains incomplete. All three report categories were assessed and saved.
 - **Category status:** released API/capability relevance screen complete for current consumers; one substantive optional adoption recommended. Demonstrated helper/renderer behavior is separate from unimplemented adoption and live acceptance.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).

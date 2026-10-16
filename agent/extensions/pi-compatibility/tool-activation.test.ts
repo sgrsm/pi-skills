@@ -125,13 +125,15 @@ async function activationFixture(fixture: TestScratchFixture) {
 		const manager = SessionManager.inMemory(fixture.project);
 		let session: AgentSession;
 		if (restored) {
-			// Public constructor restores this transcript when initialActiveToolNames is omitted.
-			// The SDK supplies that field, so this checks the restoration seam, not SDK resume selection.
+			// Pi 1.3 restores a transcript loadout in the public constructor only when `usesDefaultTools` is
+			// true (the SDK sets it for default-selection sessions). Omitting `initialActiveToolNames` alone
+			// no longer requests restoration. This checks the restoration seam, not SDK resume selection.
 			manager.appendMessage({ role: "system", content: "", timestamp: 1,
 				toolsAdded: ["read", ...localNames, ...lateNames].map((name) => ({ name, description: name, parameters: {} })),
 			});
 			session = new AgentSession({ agent: new Agent({ streamFn: () => { throw new Error("Model requests are forbidden in activation fixtures"); } }), cwd: fixture.project, sessionManager: manager,
-				settingsManager, resourceLoader, modelRuntime, sessionStartEvent: { type: "session_start", reason: "resume" } });
+				settingsManager, resourceLoader, modelRuntime, usesDefaultTools: true,
+				sessionStartEvent: { type: "session_start", reason: "resume" } });
 		} else {
 			({ session } = await createAgentSession({ ...selection, cwd: fixture.project, agentDir,
 				settingsManager, sessionManager: manager, resourceLoader, modelRuntime }));
