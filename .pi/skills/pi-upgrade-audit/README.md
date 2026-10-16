@@ -64,9 +64,11 @@ Each finding has one primary home, with cross-references rather than duplicates.
 
 ## Requirements and limits
 
-The full audit is the default; there is no light/full selection. Validation commands and scratch requirements are discovered from current repository guidance, manifests, and test harnesses, without assuming particular extensions exist. Runtime checks need approved scratch and correctly resolved Pi host packages. Pi may ask for narrowly scoped permission or setup if those prerequisites are missing. Offline tests avoid personal state and live provider/MCP calls.
+The full audit is the default; there is no light/full selection. Validation commands and scratch requirements are discovered from current repository guidance, manifests, and test harnesses, without assuming particular extensions exist. Runtime checks need approved scratch and correctly resolved Pi host packages. Offline tests avoid personal state and live provider/MCP calls.
 
-The skill writes the three category reports in a new run directory and approved scratch/test artifacts only. It does not refresh package links, install dependencies, edit TDRs, or disable/delete extensions without separate authorization.
+The audit automatically refreshes routine host-package links and reuses Pi’s ready session scratch for validation. It asks only when additional permission or setup is needed. You can request that links remain unchanged.
+
+Extension fixes, dependency installations, configuration/TDR changes, and extension removal still require separate approval.
 
 If checks cannot run or web access is unavailable, the reports record the gaps rather than claiming complete validation. Known host diagnostics can still fail without indicating a new regression.
 
