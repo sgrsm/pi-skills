@@ -110,3 +110,43 @@ for (const mode of ["error", "empty"] as const) {
 		assert.equal(output.split("File lists may be incomplete").length - 1, 1);
 	});
 }
+
+test("assistant thinking is absent from the model prompt and returned conversation text while visible and tool context remain", async () => {
+	const sentinel = "SYNTHETIC_THINKING_SENTINEL_7f3a";
+	const entry = (id: string, parentId: string | null, message: unknown) => ({
+		type: "message", id, parentId, timestamp: "2026-01-01T00:00:00.000Z", message,
+	});
+	const entries = [
+		entry("user", null, { role: "user", content: "Inspect the module", timestamp: 1 }),
+		entry("assistant", "user", { role: "assistant", timestamp: 2, content: [
+			{ type: "thinking", thinking: `${sentinel} private reasoning`, thinkingSignature: "sig" },
+			{ type: "text", text: "VISIBLE_ANSWER_MARKER" },
+			{ type: "toolCall", id: "call", name: "read", arguments: { path: "tool-context.ts" } },
+		], api: "openai-responses", provider: "test", model: "test", stopReason: "toolUse" }),
+		entry("result", "assistant", { role: "toolResult", toolName: "read", toolCallId: "call", timestamp: 3,
+			content: [{ type: "text", text: "TOOL_RESULT_MARKER" }], isError: false }),
+	] as SessionEntry[];
+	let captured: any;
+	const ctx = {
+		cwd: "/synthetic", model: { id: "test", provider: "test" }, signal: new AbortController().signal,
+		modelRegistry: { complete: async (_model: unknown, input: unknown) => {
+			captured = input;
+			return { content: [{ type: "text", text: "<body>## Goal\n- Continue.</body>" }] };
+		} },
+		sessionManager: { getEntries: () => entries, getLeafId: () => "result",
+			getSessionName: () => "Test", getSessionFile: () => undefined },
+	} as unknown as ExtensionContext;
+
+	const summary = await summarizeCurrentSession(ctx, undefined);
+	assert.equal(summary.usedFallback, false);
+	const serializedInput = JSON.stringify(captured);
+	const prompt = captured.messages[0].content[0].text;
+	for (const text of [prompt, serializedInput, summary.conversationText]) {
+		assert.ok(!text.includes(sentinel), "thinking sentinel must not be serialized");
+		assert.ok(!text.includes("private reasoning"));
+		assert.ok(text.includes("VISIBLE_ANSWER_MARKER"));
+		assert.ok(text.includes("TOOL_RESULT_MARKER"));
+		assert.ok(text.includes("read(path="));
+		assert.ok(text.includes("tool-context.ts"));
+	}
+});

@@ -27,7 +27,7 @@ The model receives read/modified candidates as hints and chooses materially rele
 
 ## Validation
 
-Focused regressions live in `fileOps.test.ts` and `summary.test.ts`: direct/nested parity, path normalization, failed/unfinished attempts, malformed or bounded records, notice placement/deduplication, model-selected file lists, the fallback cap, and exclusion of abandoned branches. Summary tests use a mocked model and a no-model fallback, not live codemode/MCP/provider sessions.
+Focused regressions live in `fileOps.test.ts` and `summary.test.ts`: direct/nested parity, path normalization, failed/unfinished attempts, malformed or bounded records, notice placement/deduplication, model-selected file lists, the fallback cap, and exclusion of abandoned branches. A summary test also checks that assistant thinking blocks never reach the mocked model input or the returned `conversationText` (relying on the host's `serializeConversation()` omitting thinking), while visible text, tool calls and tool results remain. Summary tests use a mocked model and a no-model fallback, not live codemode/MCP/provider sessions.
 
 Prepare the [approved scratch setup](../permissions/README.md#safe-test-scratch-setup), setting both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR`, then run from `agent/extensions/`:
 

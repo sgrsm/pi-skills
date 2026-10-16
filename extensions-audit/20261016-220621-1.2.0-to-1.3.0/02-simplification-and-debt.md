@@ -20,7 +20,7 @@
 
 ### Retained baseline benefit: Handoff serialization
 
-Since [Pi 1.2.0](https://github.com/earendil-works/pi/releases/tag/v1.2.0), the public `serializeConversation()` omits thinking blocks. [Handoff](../../agent/extensions/handoff/index.ts), `summarizeWithModel()`, already calls `serializeConversation(convertToLlm(messages))`; the earlier synthetic baseline/target probe confirmed thinking omission while retaining the visible answer. Keep that supported helper rather than adding local filtering. A focused summary-input regression remains optional; no live summary-quality or token-saving magnitude was measured. This is an inherited benefit, not a new 1.3 finding or runtime migration.
+Since [Pi 1.2.0](https://github.com/earendil-works/pi/releases/tag/v1.2.0), the public `serializeConversation()` omits thinking blocks. [Handoff](../../agent/extensions/handoff/index.ts), `summarizeWithModel()`, already calls `serializeConversation(convertToLlm(messages))`; the earlier synthetic baseline/target probe confirmed thinking omission while retaining the visible answer. Keep that supported helper rather than adding local filtering. The optional verification is now complete: `handoff/summary.test.ts` captures mocked summary input and returned conversation text, proves thinking omission while retaining visible answer/tool-call/result context, and fails a deliberate leak mutation. Independent review found no blocker; independent execution passed 22/22 Handoff tests. No runtime filtering change, live summary-quality or token-saving magnitude claim is made. This is an inherited benefit, not a new 1.3 finding or runtime migration.
 
 ## Upgrade-enabled debt work
 
