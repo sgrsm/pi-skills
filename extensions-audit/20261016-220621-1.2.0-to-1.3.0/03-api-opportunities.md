@@ -8,7 +8,7 @@
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
 - **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
 - **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. API adoption and optional verification dispositions are tracked in the remediation record. Live hardware/provider/MCP acceptance is explicitly unclaimed.
-- **Category status:** released API/capability relevance screen complete for current consumers; one substantive optional adoption recommended. Demonstrated helper/renderer behavior is separate from unimplemented adoption and live acceptance.
+- **Category status:** A1 adoption is complete with focused regression and independent verification. Other screened integration skip decisions remain unchanged. The optional Git Inspect catalog regression is tracked in the implementation record.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).
 
 ## Recommendation summary
@@ -27,6 +27,8 @@
 Pi 1.2.0 began presenting schema constraints in codemode declarations. [Git Inspect](../../agent/extensions/git-inspect/index.ts) already supplies integer/range bounds for `maxCount` and a maximum `paths` length; the earlier passive catalog probe demonstrated those tags. Keep schemas as the source of truth rather than duplicating a declaration formatter. A small catalog regression remains optional, not a migration requirement or new 1.3 finding. Earlier `reachesTools`/namespace-alias candidates still have no concrete local adoption need; blocked-status integration remains in the debt report.
 
 ## A1 — Adopt now: use the public read-range formatter
+
+**Resolution: complete.** The implementation uses the public root `formatReadLineRange(args?.offset, args?.limit)` and removes only the duplicated local formatter. Pi 1.3 is the documented support floor. Literal range tests cover raw numeric/string combinations, null/omitted/malformed/non-finite values, hidden/smart-visible rendering with shortening on/off, narrow widths and component reuse. Native visible/off passthrough is discriminated by raw/home paths; expanded result markers remain unchanged. Independent verification passed 57/57 focused renderer/loader/wrapper tests; source review refinements were applied, and the integrated full gate passes 898/898 with host links/typecheck. Old formatter negative controls failed the new cases; an always-replace-header mutation fails the passthrough tests. No live terminal or provider malformed-input workflow is claimed. The original recommendation below is historical rationale, not pending adoption.
 
 **Priority/category:** low-risk optional correctness/maintenance improvement. Affected: [short-paths/toolCallSummary.ts](../../agent/extensions/short-paths/toolCallSummary.ts), `formatReadRange()`, `buildSummaryParts("read")`, `renderSmartToolCall()` and `renderSmartVisibleToolCall()`; [hide-tool-output](../../agent/extensions/hide-tool-output/README.md) chooses those summary paths.
 

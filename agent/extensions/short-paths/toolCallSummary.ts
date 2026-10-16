@@ -1,4 +1,5 @@
 import { homedir } from "node:os"
+import { formatReadLineRange } from "@earendil-works/pi-coding-agent"
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
 
 type ToolArgs = Record<string, unknown> | undefined
@@ -45,13 +46,6 @@ function compactValue(value: string, max = 80): string {
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? singular : plural
-}
-
-function formatReadRange(offset?: number, limit?: number): string | undefined {
-  if (offset === undefined && limit === undefined) return undefined
-  const startLine = offset ?? 1
-  const endLine = limit !== undefined ? startLine + limit - 1 : undefined
-  return `:${startLine}${endLine !== undefined ? `-${endLine}` : ""}`
 }
 
 function stripAtPrefix(path: string): string {
@@ -365,7 +359,8 @@ function buildSummaryParts(toolName: string, args: ToolArgs, theme: any, useSmar
   switch (toolName) {
     case "read": {
       let prefix = theme.fg("toolTitle", theme.bold("read")) + " "
-      const range = formatReadRange(getNumberArg(args, "offset"), getNumberArg(args, "limit"))
+      // Raw arguments let Pi's public formatter normalize numeric strings, nulls and malformed values.
+      const range = formatReadLineRange(args?.offset, args?.limit)
       return {
         prefix,
         rawPath,

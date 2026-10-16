@@ -182,6 +182,35 @@ for (const reverse of [false, true]) for (const hidden of [true, false]) {
   });
 }
 
+test("actual loaded read rows use Pi's public range formatter, hidden and visible, paths on and off", async () => {
+  const plain = (text: string) => text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, "");
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ offset: "10", limit: "5" }, ":10-14"], [{ offset: "10", limit: 5 }, ":10-14"],
+    [{ offset: null, limit: 5 }, ":1-5"], [{ offset: 10, limit: null }, ":10"],
+    [{ offset: "bad", limit: 5 }, ""], [{ offset: "", limit: 5 }, ""],
+    [{ offset: Number.NaN, limit: 5 }, ""], [{}, ""],
+  ];
+  for (const hidden of [true, false]) for (const enabled of [true, false]) {
+    await withLoader(async (h) => {
+      await h.persist(JSON.stringify({ enabled }));
+      await h.fixture.writeFile(join(h.agentDir, "hide-tool-output.json"), JSON.stringify({ enabled: hidden }));
+      const loaded = await h.load();
+      await loaded.start();
+      const read = loaded.tools.get("read")!;
+      let component: any;
+      // One reused component across all cases proves the label follows current arguments.
+      for (const [extra, range] of cases) {
+        const context: any = { toolCallId: "read", state: {}, cwd: process.cwd(), expanded: false, outputPad: 1,
+          isPartial: false, isError: false, argsComplete: true, executionStarted: true,
+          lastComponent: component, invalidate() {} };
+        component = read.renderCall!({ path: "src/file.ts", ...extra } as any, theme as any, context);
+        const header = component.render(220).map(plain).find((line: string) => line.includes("read"));
+        assert.equal(header.trim(), `read src/file.ts${range}`, `hidden=${hidden} shortPaths=${enabled} ${JSON.stringify(extra)}`);
+      }
+    });
+  }
+});
+
 test("reused command factories keep independent caches and publish to their own bus", async () => {
   await withLoader(async (h) => {
     const wrapper = join(h.fixture.root, "reused-factory.ts");

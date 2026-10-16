@@ -15,6 +15,8 @@ This is a UI rendering change only:
 
 If no saved state exists, hiding is enabled by default. The state is saved in `~/.pi/agent/hide-tool-output.json`.
 
+Requires Pi 1.3.0 or newer.
+
 ## Command
 
 ```text

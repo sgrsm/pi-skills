@@ -88,6 +88,18 @@ Important invariants:
   reset of mixed row expansion is separate from path-state synchronization;
   preserve explicit hiding semantics when changing that behavior.
 
+### Pi support floor and read ranges
+
+`toolCallSummary.ts` statically imports the public root export
+`formatReadLineRange()`, added in Pi 1.3.0, so `short-paths` and
+`hide-tool-output` require Pi 1.3.0 or newer; verified Pi 1.2 lacks that export
+and is unsupported. Pass raw
+`offset`/`limit` arguments rather than pre-filtered numbers so hidden and
+smart-visible read headers match native normalization of numeric strings,
+null/omitted values and malformed or non-finite input. Visible rows with
+short paths off keep the native header. Do not reintroduce a local range
+formatter or a fallback import.
+
 Recheck current host declarations and installed `docs/extensions.md` and
 `docs/tui.md` when upgrading Pi; do not substitute private production imports.
 
@@ -106,7 +118,7 @@ Prepare the [approved scratch setup](../permissions/README.md#safe-test-scratch-
 before running tests. From `agent/extensions/`:
 
 ```bash
-node --test pi-compatibility/wrapped-builtins.test.ts pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
+node --test short-paths/toolCallSummary.test.ts pi-compatibility/wrapped-builtins.test.ts pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
 npm run verify
 ```
 

@@ -17,6 +17,10 @@ Native Node imports alone could share module caches and conceal state divergence
 - All six supported file tools at narrow and wide widths, with output hidden and
   visible. Every smart renderer has a narrow-width control proving that enabled
   and disabled formatting differ; visible native edit/write calls are exempt.
+- Loaded `read` rows with numeric, string, null, omitted, empty, malformed and
+  non-finite ranges, hidden and visible, with short paths on and off, through one
+  reused component. Narrow/wide and native-header controls are in
+  `short-paths/toolCallSummary.test.ts`.
 - Repeated on/off commands, successful/already/usage/status notifications,
   no-UI commands, normal home-path formatting and result hiding.
 - Missing, malformed, null, non-boolean and saved-off configuration. A safe
@@ -74,6 +78,6 @@ setting both `PI_PERMISSIONS_TEST_SCRATCH_ROOT` and `TMPDIR` to the approved
 canonical root. From `agent/extensions/`:
 
 ```bash
-node --test pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
+node --test short-paths/toolCallSummary.test.ts pi-compatibility/short-paths-loader.test.ts hide-tool-output/index.test.ts hide-tool-output/renderStrategy.test.ts
 npm run verify
 ```

@@ -6,6 +6,8 @@ Toggles smart path shortening in Pi tool-call summaries.
 
 `short-paths` keeps long file paths readable in narrow tool rows. It preserves the filename, shortens parent directories, replaces the home directory with `~`, normalizes `\` to `/`, and uses `…` when a path still does not fit.
 
+Requires Pi 1.3.0 or newer.
+
 The extension defaults to `on` when no saved state exists.
 
 ## When it is used
@@ -62,7 +64,7 @@ Summaries follow Pi's `outputPad` setting: 0 means no horizontal padding, and 1 
 
 Tool summaries also include small metadata where available:
 
-- `read` - optional line range such as `:10-25`
+- `read` - optional line range such as `:10-25`; numeric strings are accepted, and malformed ranges are omitted
 - `edit` - edit count
 - `write` - line count and byte count
 - `grep` - pattern, search path, optional glob, optional limit
