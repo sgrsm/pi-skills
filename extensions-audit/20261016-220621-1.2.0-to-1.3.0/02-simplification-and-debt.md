@@ -7,7 +7,7 @@
 - **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
 - **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
-- **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. API adoption and optional verification dispositions are tracked in the remediation record. Live hardware/provider/MCP acceptance is explicitly unclaimed.
+- **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. A1 and both concrete optional verifications are also complete. Live hardware/provider/MCP acceptance is explicitly unclaimed.
 - **Category status:** D1/D2 acceptance is complete and TDR-1202/1201 are deleted with concise closure evidence below. Other TDR constraints and all defer/skip/retirement decisions are unchanged.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [API opportunities](03-api-opportunities.md).
 
@@ -68,7 +68,7 @@ The index is context, not a debt record. All owning records under both `tdr/` an
 | [1205: Trash all-projects storage policy](../../tdr/20261009-1205-trash-history-all-projects-storage-policy.md) | **Still valid / policy decision pending** | Readonly manager still has no supported effective-configured-root provenance. `getSessionDir()` may be an opened file's parent; `usesDefaultSessionDir()` remains absent from readonly context despite existing on the full class. Current scope/safety tests do not select a policy. | Retain the three unselected branches. Recommend conventional-only scope as the bounded default for a later decision; custom support needs supported root/traversal evidence, refusal needs provable scope. Align help/preview/confirmation/docs only after approval. No real Trash/session action. |
 | [1206: custom-dialog blocked program status](../../tdr/blocked/20261009-1206-custom-dialog-blocked-status.md) | **Still blocked; record wording clarified** | Standard host selectors/inputs/editors set `ProgramStatusReporter` blocked state; `showExtensionCustom()` still does not. Its public options expose no scoped/arbitrated blocked metadata. The 1.3 overlay close fix is unrelated. No live dashboard proof. | The record now states the missing scoped/arbitrated integration, distinguishes the low-level setter and includes shared custom-answer users. Retain blocked status and privacy/displayed-lifetime/arbitration acceptance. This precision correction is not an upgrade defect. |
 
-The docs-only follow-up updated/moved TDR-1201/1202, added 1204 revalidation and clarified 1206. No TDR was closed and no runtime or test implementation was changed. Host unblock, local remediation and record closure remain separate outcomes.
+The earlier docs-only follow-up updated/moved TDR-1201/1202, added 1204 revalidation and clarified 1206. It did not close a TDR or change runtime/tests; subsequent D1/D2 implementation closes 1202/1201 as recorded above. Host unblock, local remediation and record closure remain separate outcomes.
 
 ## Built-in overlap and retirement screen
 
@@ -97,11 +97,11 @@ These are coverage rows, not repetitions of unchanged debt as new findings.
 
 | Limitation/workaround surface | Target assessment |
 | --- | --- |
-| Clarify fullscreen dock input/layout; regular-mode mouse handling; shorter-question/regular-mode workaround | D2 changes the host prerequisite, not production behavior. Preserve unresolved user warnings until local remediation is validated. |
-| Copied close adapter and fixed-dock layout fixtures | C2 is new diagnostic drift; actual close was independently probed. Baseline/target fixed-dock composition has no relevant interval change. Keep fake-terminal limits explicit. |
+| Clarify fullscreen dock input/layout; regular-mode mouse handling; shorter-question/regular-mode workaround | D2 completed the supported selector/editor overlay remedy. Old dock warnings/workaround are superseded; current user guidance records fake-terminal versus untested live hardware limits. |
+| Copied close adapter and fixed-dock layout fixtures | C2 repaired identity-close drift; D2 adds independent public actual-host integration. Clarify follows overlay bounds; unrelated fixed-dock controls and fake-terminal limits remain explicit. |
 | Shared FIFO only for clarify/permissions; other approvals/handoff/Trash not enrolled | Still needed; no new host global dialog serialization. Preserve collision warnings and scope cancellation. Identity-safe overlay removal does not serialize ordinary dialogs. |
 | Cancellable in-Pi editor, disabled external-editor shortcut; RPC placeholder/basic input and stale visible RPC dialog | No new abort-aware external editor or RPC dismissal contract found. Preserve backend cancellation/late-reply protection and no-UI fail-closed handling. |
-| Optional-tool hidden withdrawal and additive startup activation | Still necessary. D1 repairs the host's seed step, not local off/depth/exclusion policy. Startup additions require phase-aware coverage under C1; do not replace hidden withdrawal with subtractive startup reconciliation. |
+| Optional-tool hidden withdrawal and additive startup activation | Still necessary. D1 verifies the host's repaired seed step, not a change to local off/depth/exclusion policy. Startup additions have phase-aware coverage under C1/D1; do not replace hidden withdrawal with subtractive startup reconciliation. |
 | Structured prompt sections and deliberate whole-prompt overrides | User/custom runner matrix passes. Whole-prompt overrides still can hide additive guidance. Actual custom-run scheduling/provider-cache coverage remains bounded, unchanged. |
 | Permission best-effort shell/path classification, custom-shell forwarding, custom/MCP boundary and filesystem races | Unchanged. New malformed-argument rejection is native defense in depth, not a sandbox or authorization expansion. Keep P0 and concrete guards. |
 | Subagent transient trust, child MCP startup/performance, process/output/recovery/accounting limits | Existing tests pass; transient trust remains 1200. Codemode worker fixes do not remove child process-tree cleanup or output limits. No live provider/MCP child performance test. |
@@ -109,7 +109,7 @@ These are coverage rows, not repetitions of unchanged debt as new findings.
 | Trash conventional root, project-header identity, last-pathname race and archive/Trash prerequisites | 1205 remains open. Current-project protections pass; no custom-root promise or permanent-delete path is authorized. |
 | MCP config-only projection, extension-registered servers absent, no connection validation | Unchanged; native `/mcp` remains complementary. No live server fixture. |
 | Precolored footer strings refresh on next write; speculative setup-error/stale-context timer observations | No new scoped theme/status callback removes the limitation. Keep existing refresh triggers; no reachable lifecycle regression established. |
-| Wrapper/short-path state bus, native selection/image parity, row invalidation, live/GC/edit-preview gaps | Normal controls pass; small public-helper opportunity A1 is separate. Do not replace the state bus or strip row invalidation based on a range-label fix. |
+| Wrapper/short-path state bus, native selection/image parity, row invalidation, live/GC/edit-preview gaps | Normal controls pass; A1 adopts the public range helper with literal renderer/loader and reuse controls. Do not replace the state bus or strip row invalidation based on a range-label fix. |
 | Git Inspect hide toggle display lifetime; search service/full-output persistence; Handoff model summary/fallback limits | No released replacement/remedy in this interval. Local focused tests pass, not live workflow acceptance. |
 
 ## Original recommended order (completed dispositions above)

@@ -842,8 +842,8 @@ test("rendered selector lines carry no raw mouse or cursor control sequences", a
 
 // Adapter-faithfulness controls. The adapter mirrors Pi 1.3 showExtensionCustom():
 // an overlay interaction completes by hiding its own handle, never the topmost overlay.
-// These are copied-adapter checks; the version-checked actual-host probe in
-// TDR-20261009-1201 is the independent evidence for the real host method.
+// These are copied-adapter checks; clarify-host.test.ts independently exercises the real host.
+// See host-contract-coverage.md for the distinction and practical limits.
 const overlayOptions = { overlay: true } as const;
 const probeComponent = (label: string) => ({
 	label, disposed: 0, render: () => [label], invalidate() {}, dispose() { this.disposed++; },

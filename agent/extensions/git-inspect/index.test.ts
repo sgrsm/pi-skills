@@ -41,6 +41,16 @@ test("git_inspect exposes only operation as required in its TypeBox schema", () 
 	assert.deepEqual(tool.parameters.required, ["operation"]);
 });
 
+test("git_inspect schema keeps closed-object, integer range, and path-count bounds", () => {
+	const schema = registerGitInspectTool().parameters as any;
+	assert.equal(schema.additionalProperties, false);
+	assert.equal(schema.properties.maxCount.type, "integer");
+	assert.equal(schema.properties.maxCount.minimum, 1);
+	assert.equal(schema.properties.maxCount.maximum, 100);
+	assert.equal(schema.properties.paths.type, "array");
+	assert.equal(schema.properties.paths.maxItems, 20);
+});
+
 test("git_inspect call renderer summarizes the operation and relevant paths", () => {
 	const tool = registerGitInspectTool();
 	assert.ok(tool.renderCall, "git_inspect must render its call arguments");

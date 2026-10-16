@@ -36,4 +36,10 @@ node --test git-inspect/rendering.test.ts git-inspect/index.test.ts hide-tool-ou
 npm run typecheck
 ```
 
+`../pi-compatibility/git-inspect-catalog.test.ts` separately loads `git_inspect` in the real codemode sandbox and checks that `describeTool()` shows the schema tags (`@integer`, `@minimum`/`@maximum`, `@maxItems`). It pins current host formatting, not a public API guarantee, and never invokes Git or a provider (it asserts no nested calls). Run it with scratch prepared as above:
+
+```bash
+node --test pi-compatibility/git-inspect-catalog.test.ts
+```
+
 Run `npm run verify` as the full gate per [extension maintenance](../maintenance.md).

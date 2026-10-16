@@ -7,7 +7,7 @@ Developer/internal compatibility checks for local Pi extensions. This directory 
 - Keeps small regression tests for extension behavior that depends on Pi host API details.
 - Protects cross-extension invariants that are easy to break during extension work but are not a single extension feature by themselves.
 - Runs contract regressions as part of the `agent/extensions` test suite (`*.test.ts`).
-- Keeps positive acceptance checks for unresolved host debt in explicit diagnostics (`*.diagnostic.ts`), outside the normal success gate. Diagnostics execute real checks and fail nonzero while the required behavior is broken; they are not skipped or marked TODO.
+- Runs the formerly outstanding resume and Clarify positive acceptance requirements as normal regressions. There are currently no separate `*.diagnostic.ts` files or diagnostic-only npm command.
 
 ## Current checks
 
@@ -82,6 +82,10 @@ Protects resumed tool-loadout restoration with isolated, offline fixtures: no pr
 
 Coverage limits are in [host-contract coverage](host-contract-coverage.md#sdk-resumetestts). The tests do not require a particular Pi version.
 
+### `git-inspect-catalog.test.ts`
+
+Checks that the real codemode sandbox's `describeTool("git_inspect")` shows the tool's schema constraint tags. It only describes the schema: no Git command or provider request runs. See [coverage and limits](host-contract-coverage.md#git-inspect-catalogtestts).
+
 ### `short-paths-loader.test.ts`
 
 Checks that `/short-paths` updates wrapped summaries across independently loaded extensions while preserving row expansion and cleaning up on reload. See [short-paths loader coverage](short-paths-loader.md).
@@ -98,7 +102,7 @@ Checks native/wrapped file-tool selection at startup and reload, restrictive SDK
 
 The fake-terminal fixtures support Pi 1.1.0's required `Terminal.setProgramStatus()` method. These renderer/input tests do not exercise OSC 7501 reporting. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
 
-At the Pi 1.1.0 baseline the positive resume and Clarify diagnostics failed. On Pi 1.3.0 those requirements are normal tests; `clarify-host.test.ts` independently exercises actual host custom-dialog completion rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
+At the Pi 1.1.0 baseline the positive resume and Clarify diagnostics failed. On Pi 1.3.0 those requirements are normal tests; `clarify-host.test.ts` independently exercises actual host custom-dialog completion rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-130-revalidation). Earlier investigation baselines remain in the owning records.
 
 ## Scratch setup
 

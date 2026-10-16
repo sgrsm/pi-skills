@@ -7,7 +7,7 @@
 - **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
 - **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
-- **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. API adoption and optional verification dispositions are tracked in the remediation record. Live hardware/provider/MCP acceptance is explicitly unclaimed.
+- **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. A1 and both concrete optional verifications are also complete. Live hardware/provider/MCP acceptance is explicitly unclaimed.
 - **Category status:** A1 adoption is complete with focused regression and independent verification. Other screened integration skip decisions remain unchanged. The optional Git Inspect catalog regression is tracked in the implementation record.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).
 
@@ -15,7 +15,7 @@
 
 | Capability / consumer | Recommendation | Reason |
 | --- | --- | --- |
-| New public `formatReadLineRange()` / short-paths and hide-tool-output read summaries | **Adopt now** | Replaces a duplicated formatter with supported normalization and fixes demonstrated misleading/missing local labels. Small, presentation-only change. |
+| New public `formatReadLineRange()` / short-paths and hide-tool-output read summaries | **Adopted (A1 resolved)** | Replaces a duplicated formatter with supported normalization and fixes demonstrated misleading/missing local labels. Small, presentation-only change. |
 | Resumed default-selection semantics / availability and validation | **Required follow-up, not optional API adoption** | C1 owns fixture changes; D1 owns existing-debt acceptance/documentation. Keep the hidden-withdrawal helper. |
 | Identity-safe custom-overlay completion / Clarify | **Existing-debt remediation, not a second optional finding** | C2/D2 own the now-feasible remedy and diagnostic repair. |
 | `ToolCall.argumentsError` / local tool-call display and child JSON consumers | **Skip custom parsing/integration now** | Host validation already rejects malformed final arguments; no local parser workaround or current lost-error workflow was established. |
@@ -24,7 +24,7 @@
 
 ## Retained baseline recommendation
 
-Pi 1.2.0 began presenting schema constraints in codemode declarations. [Git Inspect](../../agent/extensions/git-inspect/index.ts) already supplies integer/range bounds for `maxCount` and a maximum `paths` length; the earlier passive catalog probe demonstrated those tags. Keep schemas as the source of truth rather than duplicating a declaration formatter. A small catalog regression remains optional, not a migration requirement or new 1.3 finding. Earlier `reachesTools`/namespace-alias candidates still have no concrete local adoption need; blocked-status integration remains in the debt report.
+Pi 1.2.0 began presenting schema constraints in codemode declarations. [Git Inspect](../../agent/extensions/git-inspect/index.ts) already supplies integer/range bounds for `maxCount` and a maximum `paths` length; the earlier passive catalog probe demonstrated those tags. Keep schemas as the source of truth rather than duplicating a declaration formatter. The concrete optional catalog regression is complete: registered schema bounds and real QuickJS `describeTool("git_inspect")` output assert `@integer`, minimum 1, maximum 100 and `@maxItems 20`, with zero nested calls. Independent source review found no blocker; independent execution passed 13/13 schema/catalog/model-only controls. This pins current host formatting and does not exercise a Git operation or provider call. It remains inherited verification, not a migration requirement or new 1.3 finding. Earlier `reachesTools`/namespace-alias candidates still have no concrete local adoption need; blocked-status integration remains in the debt report.
 
 ## A1 — Adopt now: use the public read-range formatter
 
@@ -84,7 +84,7 @@ The screen used the complete interval release notes and baseline/target public d
 
 | New/changed surface | Current local workflow assessment | Decision and evidence boundary |
 | --- | --- | --- |
-| `AgentSessionConfig.usesDefaultTools` restoration semantics; CLI modifiers/selection precedence | Direct constructor fixture and resumed optional-tool controls are concrete consumers. Production startup can intentionally add saved-on workflow tools. | C1/D1, not optional duplication. Core host diagnostics pass; full retained gate and broader CLI lifecycle acceptance remain incomplete. |
+| `AgentSessionConfig.usesDefaultTools` restoration semantics; CLI modifiers/selection precedence | Direct constructor fixture and resumed optional-tool controls are concrete consumers. Production startup can intentionally add saved-on workflow tools. | C1/D1, not optional duplication. At audit time the core host diagnostics passed while full retained-gate and broader CLI lifecycle acceptance were incomplete; C1/D1 have since completed that work. |
 | Owned custom-overlay completion | Clarify's deferred supported overlay route has a concrete user-visible input/layout need. | C2/D2. Actual host probes demonstrate the prerequisite; no speculative optional feature added here. |
 | Public read-range formatter | Custom hidden and smart-visible headers replace the native header. | A1, demonstrated optional adoption above. |
 | `ToolCall.argumentsError`, root-exported `parseToolCallArguments()` and repaired final-argument parsing | Permissions consumes validated tool events; subagent processes child events/results rather than implementing a provider final-arguments parser; Handoff extracts tool argument metadata. No local use of the removed `assistant-message-frame` root export was found. | **Skip** writing a second parser or inferring authorization from error metadata. Native rejection is safety benefit in depth; typecheck and current tests pass outside C1. No live malformed-provider request was attempted. |
@@ -98,10 +98,10 @@ The screen used the complete interval release notes and baseline/target public d
 | Prompt-template empty quoted arguments and renderer line-label changes | Local Handoff candidate extraction uses structured call arguments, not rendered read labels. No local prompt-template tokenizer to remove. | Native improvement; A1 owns the only concrete custom-renderer consumer. No unrelated prompt-library work added. |
 | Structured prompt events, reach metadata, namespace aliases, terminal status setter | These predate 1.3; no changed event declaration or new scoped status facility in the interval. | Not new API opportunities. Existing consumers/helpers remain; 1206 remains blocked on supported status ownership/arbitration. |
 
-## Adoption order and limits
+## Original adoption order and limits
 
 1. Repair [C1/C2](01-compatibility.md#required-compatibility-follow-up) so retained validation reflects the selected host.
 2. Finish [D1](02-simplification-and-debt.md#d1--medium-priority-finish-local-acceptance-and-documentation-for-restored-resume-tools), and adopt A1 as a small independent renderer change.
 3. Plan [D2](02-simplification-and-debt.md#d2--medium-priority-revisit-the-supported-clarify-overlay-remedy) as separately approved lifecycle/input/layout work. Do not invent local integrations for unshipped physical-identity or scoped-status APIs.
 
-All recommendations are non-remediating. Optional metadata/API adoption does not weaken P0, no-UI behavior, trust boundaries, explicit tool restrictions, model-only exposure, cancellation, or user-data preservation. The [canonical validation record](01-compatibility.md#canonical-validation-record) is the authoritative executed-versus-skipped account.
+The original audit was non-remediating; the authorized follow-up has completed C1/C2, D1/D2, A1 and both concrete optional regressions, as recorded in [implementation follow-up](01-compatibility.md#implementation-follow-up). Optional metadata/API adoption does not weaken P0, no-UI behavior, trust boundaries, explicit tool restrictions, model-only exposure, cancellation, or user-data preservation. The [canonical validation record](01-compatibility.md#canonical-validation-record) is the authoritative executed-versus-skipped account.

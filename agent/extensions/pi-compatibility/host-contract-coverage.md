@@ -14,7 +14,7 @@ Related integration rules are in [extension maintenance](../maintenance.md): [sh
 
 Runtime contract checks and public loading of all local runtime extensions succeeded using Pi 1.1.0 host packages and isolated configuration. Keep extension verification separate from resolution of host debt:
 
-- **Verification gate:** the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` implement the required `Terminal.setProgramStatus()` method as a no-op. This satisfies the host interface without testing OSC 7501 reporting. Verify host-package links before running checks so direct imports and declarations come from the host version under review. `npm run verify` checks host links, TypeScript, and normal contract tests, not outstanding host acceptance diagnostics.
+- **Verification gate (Pi 1.1.0 historical result; positive requirements are now normal regressions):** the fake terminals in `clarifyUiFixture.ts` and `trash-confirmation.test.ts` implement the required `Terminal.setProgramStatus()` method as a no-op. This satisfies the host interface without testing OSC 7501 reporting. Verify host-package links before running checks so direct imports and declarations come from the host version under review. `npm run verify` checks host links, TypeScript, and normal contract tests, not outstanding host acceptance diagnostics.
 - **Clarify (Pi 1.1.0 result, superseded by the Pi 1.3.0 overlay selector in [`clarify-input.test.ts`](#clarify-inputtestts-and-clarify-hosttestts)):** working fullscreen mouse-ownership and Home/End controls remained intact; positive PageUp/PageDown/wheel, regular-mode mouse-ownership and help-visibility requirements still failed. A separate version-checked invocation of the actual Pi 1.1.0 `showExtensionCustom()` method also reproduced removal of stacked search while leaving the disposed owned overlay mounted, and removal of an unrelated overlay on completion before installation. Normal mounted completion removed the owned overlay and disposed it once. This corroborates the adapter; it does not unblock the overlay remediation.
 - **Resume (Pi 1.1.0 result, superseded by Pi 1.3.0 normal tests in [`sdk-resume.test.ts`](#sdk-resumetestts)):** positive SDK and actual CLI `--session` restoration checks still failed with and without local extensions. Working `/tree`, indirect-callability and local-availability controls remain separate from creation-time restoration.
 
@@ -96,6 +96,14 @@ Protects the direct-only invocation boundary for `clarify`, `subagent`, and `esc
 - Loads the actual local workflow extensions with isolated saved state, an offline runtime, and an in-memory session. Checks model-only exposure, active/callable sets, model-facing descriptions and rendered guidance, and the agent's request projection. A callable `read` control remains declared in `on` and is hidden in `only`; workflow declarations remain visible in both.
 - Runs catalog/property checks in the real QuickJS sandbox. Workflow names are absent from `ALL_TOOLS`, search and descriptions, and property access produces a missing-member error. A callable `read` discovery control remains available.
 - Does not invoke nested tools, child processes, dialogs, providers or MCP servers. It does not validate nested delegation lifecycle/accounting or prove that models always follow the prompt guidance. Policy-section availability and no-UI fallback remain covered by `structured-prompt.test.ts`.
+
+## `git-inspect-catalog.test.ts`
+
+Protects that the model-facing codemode catalog presents `git_inspect` parameter limits.
+
+- Loads the local `git-inspect` extension and the public `createCodemodeExtension()` in an isolated, offline, in-memory session, then runs `describeTool("git_inspect")` in the real sandbox. Asserts the `maxCount` (`@integer`, `@minimum 1`, `@maximum 100`) and `paths` (`@maxItems 20`) tags, and that the script made no nested tool calls. Failure messages include the sandbox output.
+- Pins current host schema formatting, not a public API guarantee; revisit the regexes if a Pi upgrade changes the description format.
+- Never invokes `git_inspect`, Git or a provider. Execution and result rendering are covered by `git-inspect/index.test.ts` and `git-inspect/rendering.test.ts`.
 
 ## `wrapped-builtins.test.ts`
 

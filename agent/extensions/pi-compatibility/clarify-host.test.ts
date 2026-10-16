@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { withTestScratchFixture } from "../permissions/testScratch.ts";
 
-// Actual-host evidence for TDR-20261009-1201: Pi's real InteractiveMode (public root export) runs in
+// Independent host lifecycle evidence: Pi's real InteractiveMode (public root export) runs in
 // a bounded, isolated subprocess with a fake Terminal, an offline in-memory session runtime and the
 // real Clarify extension. See clarifyHostChild.ts for what the child exercises and its limits. This is
 // a fake terminal: it says nothing about Ghostty/terminal input translation or real mouse hardware.

@@ -21,14 +21,14 @@ export type UiOptions = {
 type DialogComponent = Component & { dispose?(): void };
 
 /**
- * Public renderer fixture for contract tests and explicit host diagnostics.
+ * Public renderer fixture for contract and positive acceptance tests.
  * custom() installation/completion is a test adapter, not an actual host-method invocation.
  * It mirrors Pi 1.3 InteractiveMode.showExtensionCustom(): an overlay interaction retains its own
  * handle and completes with handle.hide() (identity-specific), never topmost tui.hideOverlay(), and
  * a non-overlay interaction replaces the editor slot. Production Clarify requests an overlay; the
  * adapter honors whatever options the extension passes. Compare it with the host close path after
  * upgrades; the bounded subprocess in clarify-host.test.ts exercises the actual host method.
- * See TDR-20261009-1201.
+ * Coverage and practical limits are documented in host-contract-coverage.md.
  */
 export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = {}) {
 	// The host's definitions also carry app actions; the one the answer editor intercepts is mirrored here.
