@@ -6,6 +6,10 @@
 
 `dialogQueue.ts` and `dialogUi.ts` coordinate permission approvals and clarify questions within a session. They keep each selector/custom-answer exchange together, cancel waiting or displayed work on abort/shutdown/reload, and leave independent sessions separate. The owning extensions use them automatically; there is nothing to enable or configure here.
 
+`showCancellableCustom()` accepts optional host `custom()` options (for example `{ overlay: true, overlayOptions }`) and forwards them unchanged. The options type omits `onHandle`: completion always goes through the host's callback and a dialog never hides its own overlay handle, so a cancelled interaction removes only its own overlay, and a component that was never installed is still disposed exactly once.
+
+`showCancellableEditor()` takes the same optional options. Without them it keeps the host's default (input-area) presentation, which the permission prompts use. With `overlay: true` it fits the terminal height (shortening the title, then the hints, then showing the lines around the cursor) and does not let the wheel scroll the transcript beneath it. Outside the TUI the options are ignored.
+
 Prompt layout, hidden-scope limits, and custom-answer input differ by mode and are described in the [permissions](../permissions/README.md#prompt-choices) and [clarify](../clarify/README.md#tool) guides.
 
 Tests: `dialogQueue.test.ts`, `dialogUi.test.ts`, the owning extension tests, and [`pi-compatibility/dialog-concurrency.test.ts`](../pi-compatibility/host-contract-coverage.md#dialog-concurrencytestts). For rules when adding a consumer and the dialogs not yet enrolled, see [Shared interactive dialogs](../maintenance.md#shared-interactive-dialogs).

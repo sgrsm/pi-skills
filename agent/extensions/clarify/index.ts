@@ -2,21 +2,15 @@ import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir, type AgentToolResult, type ExtensionAPI, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import {
-	Key,
-	matchesKey,
-	SelectList,
-	Text,
-	truncateToWidth,
-	type AutocompleteItem,
-	type SelectItem,
-	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import { Text, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { registerToolAvailability } from "../shared/toolAvailability.ts";
 import { getSessionDialogQueue, waitForDialog } from "../shared/dialogQueue.ts";
-import { boundedDialogDetails, showCancellableCustom, showCancellableEditor } from "../shared/dialogUi.ts";
+import { boundedDialogDetails, showCancellableCustom, showCancellableEditor, type CancellableCustomOptions } from "../shared/dialogUi.ts";
+import { clarifyOverlayOptions, createClarifySelector, type ClarifyChoice, type ClarifySelection } from "./selector.ts";
+
+export { renderClarifyOptionLines, styleClarifyOptionLine } from "./selector.ts";
 
 interface ClarifyOption {
 	label: string;
@@ -77,6 +71,9 @@ const ClarifyParamsSchema = Type.Object({
 	),
 });
 
+/** Host presentation shared by Clarify's selector and answer editor (no handle access, by type). */
+const CLARIFY_OVERLAY_PRESENTATION: CancellableCustomOptions = { overlay: true, overlayOptions: clarifyOverlayOptions };
+
 function normalizeText(value: string | undefined): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.replace(/\s+/g, " ").trim();
@@ -97,105 +94,8 @@ function buildChoiceLabel(index: number, label: string): string {
 	return `${index + 1}. ${label}`;
 }
 
-type ClarifySelection = { kind: "option"; index: number } | { kind: "custom" };
-
 export function canUseClarifyCustomSelector(ctx: { mode: string }): boolean {
 	return ctx.mode === "tui";
-}
-
-const ENABLE_MOUSE_SCROLL = "\x1b[?1000h\x1b[?1006h";
-const DISABLE_MOUSE_SCROLL = "\x1b[?1000l\x1b[?1006l";
-const MOUSE_WHEEL_SEQUENCE = /^\x1b\[<(\d+);\d+;\d+[Mm]$/;
-const CLARIFY_SELECTED_OPTION_COLOR = "#0066CC";
-const CLARIFY_MAX_VISIBLE_OPTIONS = 8;
-
-type ClarifySelectorTheme = { fg(color: string, text: string): string };
-
-function fgHex(hex: string, text: string): string {
-	const match = /^#?([0-9a-fA-F]{6})$/.exec(hex);
-	if (!match) return text;
-	const value = match[1];
-	const r = Number.parseInt(value.slice(0, 2), 16);
-	const g = Number.parseInt(value.slice(2, 4), 16);
-	const b = Number.parseInt(value.slice(4, 6), 16);
-	return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
-}
-
-function boldAnsi(text: string): string {
-	return `\x1b[1m${text}\x1b[22m`;
-}
-
-export function styleClarifyOptionLine(text: string, selected: boolean, theme: ClarifySelectorTheme): string {
-	return selected ? fgHex(CLARIFY_SELECTED_OPTION_COLOR, boldAnsi(text)) : theme.fg("accent", text);
-}
-
-export function renderClarifyOptionLines(
-	items: SelectItem[],
-	selectedValue: string | undefined,
-	width: number,
-	theme: ClarifySelectorTheme,
-	maxVisible = CLARIFY_MAX_VISIBLE_OPTIONS,
-): string[] {
-	if (items.length === 0) return [theme.fg("warning", "  No matching options")];
-
-	const visibleCount = Math.max(1, Math.min(maxVisible, items.length));
-	const selectedIndex = Math.max(
-		0,
-		items.findIndex((item) => item.value === selectedValue),
-	);
-	const startIndex = Math.max(0, Math.min(selectedIndex - Math.floor(visibleCount / 2), items.length - visibleCount));
-	const endIndex = Math.min(startIndex + visibleCount, items.length);
-	const lineWidth = Math.max(1, width);
-	const lines: string[] = [];
-
-	for (let index = startIndex; index < endIndex; index++) {
-		const item = items[index];
-		if (!item) continue;
-		const selected = index === selectedIndex;
-		const prefix = selected ? "→ " : "  ";
-		const line = truncateToWidth(`${prefix}${item.label}`, lineWidth, "");
-		lines.push(styleClarifyOptionLine(line, selected, theme));
-	}
-
-	if (startIndex > 0 || endIndex < items.length) {
-		lines.push(theme.fg("dim", truncateToWidth(`  (${selectedIndex + 1}/${items.length})`, lineWidth, "")));
-	}
-
-	return lines;
-}
-
-function parseMouseWheelDirection(data: string): -1 | 1 | null {
-	const match = data.match(MOUSE_WHEEL_SEQUENCE);
-	if (!match) return null;
-	const code = Number.parseInt(match[1] ?? "", 10);
-	if (code === 64) return -1;
-	if (code === 65) return 1;
-	return null;
-}
-
-function buildDescriptionPreviewLines(
-	description: string | undefined,
-	innerWidth: number,
-	maxLines: number,
-	theme: { fg(color: string, text: string): string },
-): string[] {
-	if (!description || innerWidth <= 0 || maxLines <= 0) return [];
-
-	const prefix = "↳ ";
-	const continuationPrefix = "  ";
-	const descriptionWidth = Math.max(1, innerWidth - prefix.length);
-	const wrappedLines = wrapTextWithAnsi(description, descriptionWidth);
-	if (wrappedLines.length === 0) return [];
-
-	const visibleLines = wrappedLines.slice(0, maxLines);
-	if (wrappedLines.length > maxLines) {
-		const lastIndex = visibleLines.length - 1;
-		if (lastIndex >= 0) {
-			visibleLines[lastIndex] = truncateToWidth(`${visibleLines[lastIndex]} …`, descriptionWidth);
-		}
-	}
-
-	return visibleLines.map((line, index) => theme.fg("muted", `${index === 0 ? prefix : continuationPrefix}${line}`));
 }
 
 async function showClarifySelector(
@@ -207,175 +107,27 @@ async function showClarifySelector(
 ): Promise<ClarifySelection | undefined> {
 	if (!canUseClarifyCustomSelector(ctx)) return undefined;
 
-	const optionItems = options.map((option, index) => ({
-		value: `option:${index}`,
+	const choices: ClarifyChoice[] = options.map((option, index) => ({
 		label: buildChoiceLabel(index, option.label),
 		description: option.description,
+		selection: { kind: "option", index },
 	}));
-
 	if (allowCustom) {
-		optionItems.push({
-			value: "__custom__",
+		choices.push({
 			label: buildChoiceLabel(options.length, "Custom instructions"),
 			description: "Open the editor to type a custom answer.",
+			selection: { kind: "custom" },
 		});
 	}
 
-	// SelectList descriptions are single-line, so render only labels in the list and show
-	// the selected option description in a wrapped preview below.
-	const items: SelectItem[] = optionItems.map(({ value, label }) => ({ value, label }));
-	const descriptionsByValue = new Map(optionItems.map((item) => [item.value, item.description]));
-
-	return showCancellableCustom<ClarifySelection>(ctx.ui, signal, (tui, theme, _keybindings, done) => {
-		// Fullscreen mouse modes belong to Pi; retain legacy wheel support only in regular mode.
-		const ownsMouseModes = tui.mode === "regular";
-		const selectList = new SelectList(items, Math.min(items.length, CLARIFY_MAX_VISIBLE_OPTIONS), {
-			selectedPrefix: (text: string) => theme.fg("accent", text),
-			selectedText: (text: string) => theme.fg("accent", text),
-			description: (text: string) => theme.fg("muted", text),
-			scrollInfo: (text: string) => theme.fg("dim", text),
-			noMatch: (text: string) => theme.fg("warning", text),
-		});
-
-		let scrollOffset = 0;
-		let questionLines: string[] = [];
-		let questionViewportHeight = 1;
-		let cachedWidth: number | undefined;
-		let cachedLines: string[] | undefined;
-
-		const invalidate = () => {
-			cachedWidth = undefined;
-			cachedLines = undefined;
-		};
-
-		const clampScroll = () => {
-			const maxScroll = Math.max(0, questionLines.length - questionViewportHeight);
-			scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-		};
-
-		const scrollBy = (delta: number): boolean => {
-			clampScroll();
-			const maxScroll = Math.max(0, questionLines.length - questionViewportHeight);
-			const nextOffset = Math.max(0, Math.min(scrollOffset + delta, maxScroll));
-			if (nextOffset === scrollOffset) return false;
-			scrollOffset = nextOffset;
-			return true;
-		};
-
-		const requestRender = () => {
-			invalidate();
-			tui.requestRender();
-		};
-
-		const resolveSelection = (item: SelectItem | null): ClarifySelection | undefined => {
-			if (!item) return undefined;
-			if (item.value === "__custom__") return { kind: "custom" };
-			if (!item.value.startsWith("option:")) return undefined;
-			const index = Number.parseInt(item.value.slice("option:".length), 10);
-			return Number.isInteger(index) && index >= 0 ? { kind: "option", index } : undefined;
-		};
-
-		selectList.onSelect = (item) => done(resolveSelection(item));
-		selectList.onCancel = () => done(undefined);
-
-		if (ownsMouseModes) tui.terminal.write(ENABLE_MOUSE_SCROLL);
-
-		return {
-			render(width: number): string[] {
-				if (cachedLines && cachedWidth === width) return cachedLines;
-
-				const innerWidth = Math.max(1, width - 2);
-				questionLines = wrapTextWithAnsi(theme.fg("text", question), innerWidth);
-				const selectedItem = selectList.getSelectedItem();
-				const selectLines = renderClarifyOptionLines(items, selectedItem?.value, innerWidth, theme);
-
-				const maxDialogHeight = Math.max(1, tui.terminal.rows - 1);
-				const previewLines = buildDescriptionPreviewLines(
-					selectedItem ? descriptionsByValue.get(selectedItem.value) : undefined,
-					innerWidth,
-					Math.max(0, maxDialogHeight - selectLines.length - 6),
-					theme,
-				);
-				questionViewportHeight = Math.max(
-					1,
-					Math.min(questionLines.length, maxDialogHeight - selectLines.length - previewLines.length - 5),
-				);
-				clampScroll();
-
-				const visibleQuestionLines = questionLines.slice(scrollOffset, scrollOffset + questionViewportHeight);
-				const startLine = questionLines.length === 0 ? 0 : scrollOffset + 1;
-				const endLine = Math.min(questionLines.length, scrollOffset + questionViewportHeight);
-				const questionStatus =
-					questionLines.length > questionViewportHeight
-						? `Context ${startLine}-${endLine}/${questionLines.length} • PgUp/PgDn/Home/End or wheel to scroll`
-						: `Context ${questionLines.length}/${questionLines.length}`;
-				const helpText = `↑↓ navigate • Enter select • Esc cancel${
-					questionLines.length > questionViewportHeight ? " • PgUp/PgDn/Home/End or wheel scroll context" : ""
-				}`;
-
-				const lines = [
-					theme.fg("accent", "─".repeat(width)),
-					truncateToWidth(` ${theme.fg("accent", theme.bold("Clarify"))}`, width),
-					...visibleQuestionLines.map((line) => truncateToWidth(` ${line}`, width)),
-					truncateToWidth(` ${theme.fg("dim", questionStatus)}`, width),
-					...selectLines.map((line) => truncateToWidth(` ${line}`, width)),
-					...previewLines.map((line) => truncateToWidth(` ${line}`, width)),
-					truncateToWidth(` ${theme.fg("dim", helpText)}`, width),
-					theme.fg("accent", "─".repeat(width)),
-				];
-
-				cachedWidth = width;
-				cachedLines = lines;
-				return lines;
-			},
-
-			invalidate() {
-				invalidate();
-				selectList.invalidate();
-			},
-
-			handleInput(data: string): void {
-				const wheelDirection = parseMouseWheelDirection(data);
-				if (wheelDirection !== null) {
-					if (scrollBy(wheelDirection * 3)) {
-						requestRender();
-					}
-					return;
-				}
-
-				if (matchesKey(data, Key.pageUp)) {
-					scrollBy(-Math.max(1, questionViewportHeight - 1));
-					requestRender();
-					return;
-				}
-
-				if (matchesKey(data, Key.pageDown)) {
-					scrollBy(Math.max(1, questionViewportHeight - 1));
-					requestRender();
-					return;
-				}
-
-				if (matchesKey(data, Key.home)) {
-					scrollOffset = 0;
-					requestRender();
-					return;
-				}
-
-				if (matchesKey(data, Key.end)) {
-					scrollOffset = Math.max(0, questionLines.length - questionViewportHeight);
-					requestRender();
-					return;
-				}
-
-				selectList.handleInput(data);
-				requestRender();
-			},
-
-			dispose() {
-				if (ownsMouseModes) tui.terminal.write(DISABLE_MOUSE_SCROLL);
-			},
-		};
-	});
+	// A focused overlay owns keyboard and wheel input and is budgeted against its own bounds, so
+	// the transcript never competes for them. Completion stays with the host-supplied callback.
+	return showCancellableCustom<ClarifySelection>(
+		ctx.ui,
+		signal,
+		(tui, theme, keybindings, done) => createClarifySelector({ tui, theme, keybindings, done, question, choices }),
+		CLARIFY_OVERLAY_PRESENTATION,
+	);
 }
 
 function buildBasicSelectTitle(question: string, options: ClarifyOption[], allowCustom: boolean): string {
@@ -571,7 +323,9 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 					if (!selected) return cancelled();
 					if (selected.kind === "custom") {
 						const title = options.length === 0 ? question : `Custom instructions\n\n${question}`;
-						const customAnswer = await showCancellableEditor(ctx, signal, title, params.customPrompt ?? "");
+						// Presented as an overlay like the selector, so the host completes it by its own handle and
+						// stacked overlays (transcript search) keep keyboard focus for the whole exchange.
+						const customAnswer = await showCancellableEditor(ctx, signal, title, params.customPrompt ?? "", CLARIFY_OVERLAY_PRESENTATION);
 						signal.throwIfAborted();
 						const trimmed = customAnswer?.trim();
 						if (!trimmed) return cancelled();

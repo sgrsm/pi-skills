@@ -36,7 +36,7 @@ When adding another consumer:
 - Capture `dialogs.scopeSignal(ctx.signal, executionSignal)` before any asynchronous preflight (omit the execution signal for event/command handlers). Pass it to preflight operations as well as the queued interaction so shutdown/reload cannot resume old work through a stale context.
 - Keep the entire selector → custom-answer exchange and its state changes inside `dialogs.run(signal, ...)`. The queue releases its lock in `finally`; consumers must still check cancellation after awaits and before grants, notifications, or other side effects.
 - Re-check enablement, scoped grants, and displayed state after acquiring the lock. Gather current state there and apply changes before releasing it; never broaden grant scope to eliminate duplicate prompts.
-- Use cancellable UI helpers and supported dialog signals. Racing an abort against a promise alone does not dismiss the underlying interaction. Custom components must complete and dispose exactly once, including cancellation before host installation. Pi 1.0's plain editor and external-editor launch are not abort-aware; preserve the owning READMEs' documented TUI/RPC alternatives.
+- Use cancellable UI helpers and supported dialog signals. Racing an abort against a promise alone does not dismiss the underlying interaction. Custom components must complete and dispose exactly once, including cancellation before host installation. Overlays opened with `ctx.ui.custom()` must complete through the supplied callback, never by hiding an overlay handle directly. Pi 1.0's plain editor and external-editor launch are not abort-aware; preserve the owning READMEs' documented TUI/RPC alternatives.
 - Keep Priority 0 hard denials, no-UI blocking, and read-only/noninteractive work outside the dialog queue. Never offer approval for scopes hidden by truncated request details, and validate replies against the choices actually displayed.
 - Cover queued/displayed cancellation, the complete custom-answer exchange, scoped-grant reuse, and fresh-instance reload. Cross-extension tests must exercise both registration orders and a new runtime on the same event bus; use fake dialogs and approved scratch fixtures, not personal state or real guarded mutations.
 
@@ -114,8 +114,8 @@ First prepare an approved test scratch root as described in the permissions exte
 npm run verify
 ```
 
-`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-20261009-1201. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
+`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. All retained resume and Clarify positive requirements now run as normal `*.test.ts` regressions, including actual CLI and public-host fake-terminal controls. There are currently no separate host diagnostic files or diagnostic-only npm command. Use the same scratch setup for focused `node --test` commands in the owning coverage notes.
 
-For the current Pi 1.1.0 runtime-check results and independently failing host acceptance checks, see [compatibility revalidation and limits](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). A green `npm run verify` does not imply that outstanding host acceptance diagnostics pass.
+Earlier version-bound results remain in [host-contract coverage](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). A green gate does not prove live terminal/provider/MCP workflows or resolve unrelated TDRs.
 
 Run npm dependency commands from `agent/extensions/`, not from `agent/`.

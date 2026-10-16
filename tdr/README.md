@@ -5,7 +5,6 @@ This directory tracks known technical debt that is intentionally not being addre
 | ID | Title | Status | Priority |
 |---|---|---|---|
 | [TDR-20261009-1200](./20261009-1200-propagate-transient-project-trust-to-subagents.md) | Preserve transient project trust for contained subagent children | Open | Low |
-| [TDR-20261009-1201](./20261009-1201-clarify-fullscreen-input-host-blocker.md) | Restore safe fullscreen clarify input | Open — host prerequisite fixed in Pi 1.3.0; local input/layout remediation pending | Medium |
 | [TDR-20261009-1204](./blocked/20261009-1204-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Blocked — Pi host API enhancement deferred upstream | Low |
 | [TDR-20261009-1205](./20261009-1205-trash-history-all-projects-storage-policy.md) | Decide the Trash-history all-projects storage policy | Open — policy decision pending | Medium |
 | [TDR-20261009-1206](./blocked/20261009-1206-custom-dialog-blocked-status.md) | Report custom TUI dialogs as blocked in program status | Blocked — no supported scoped/arbitrated custom-dialog status integration | Low |
@@ -14,13 +13,13 @@ The owning records explain the evidence, scope and acceptance criteria for each 
 
 ## Pi 1.3.0 revalidation
 
-- **TDR-20261009-1201:** the identity-safe host overlay-completion prerequisite is fixed. Actual-host fake-terminal probes preserve stacked search and unrelated overlays before installation. The copied close adapter is corrected and verified lifecycle checks are normal regressions. Local input/layout requirements and broader acceptance remain open.
+- **TDR-20261009-1201 resolved:** supported Clarify overlays and input/layout/lifecycle acceptance completed. The record is deleted; [resolution evidence and practical limits](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d2--medium-priority-revisit-the-supported-clarify-overlay-remedy) are retained in the assessment.
 - **TDR-20261009-1202 resolved:** SDK/actual-CLI restoration, restriction and lifecycle acceptance completed. The record is deleted; [resolution evidence and limits](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d1--medium-priority-finish-local-acceptance-and-documentation-for-restored-resume-tools) are retained in the assessment.
 - **TDR-20261009-1204:** request-hook identity remains payload-only; the supported physical-model prerequisite is still missing.
 - **TDR-20261009-1206:** custom UI still lacks supported scoped/arbitrated blocked-status integration. The low-level terminal setter is not an equivalent replacement; no live dashboard reproduction is claimed.
 - **TDR-20261009-1200 / TDR-20261009-1205:** no upgrade-driven status change; transient trust and the all-projects storage policy remain open.
 
-TDR-1201 is no longer grouped under `blocked/` and remains open. TDR-1202 is closed. Their records distinguish verified host improvements from remaining local work and acceptance; historical revalidations below retain their original version scope.
+TDR-1201 and TDR-1202 are closed. The retained assessment distinguishes completed local acceptance from skipped live workflows; historical revalidations below retain their original version scope.
 
 ## Pi 1.1.0 revalidation
 
@@ -36,4 +35,4 @@ See [compatibility revalidation and limits](../agent/extensions/pi-compatibility
 
 ## Earlier revalidation
 
-On the tested Pi 1.0.3, fullscreen clarify Home/End routing improves, but PageUp/PageDown/wheel, mouse/layout issues and unsafe host overlay completion remain; SDK/CLI resumed-tool restoration is still broken independently of the local startup correction. Positive host acceptance diagnostics run explicitly with `npm run diagnose:pi-host` and fail while TDR-20261009-1201/TDR-20261009-1202 remain open; a green normal contract gate does not resolve them. The subagent parallel-cancellation accounting loss confirmed at that baseline has since been fixed; the [subagent documentation](../agent/extensions/subagent/README.md#output-and-cancellation) describes current behavior and accepted recovery limits.
+On the tested Pi 1.0.3, fullscreen clarify Home/End routing improves, but PageUp/PageDown/wheel, mouse/layout issues and unsafe host overlay completion remain; SDK/CLI resumed-tool restoration is still broken independently of the local startup correction. The positive host acceptance diagnostics failed at that baseline; their requirements are now normal regressions following the Pi 1.3.0 remedies. The historical result is not the current disposition. The subagent parallel-cancellation accounting loss confirmed at that baseline has since been fixed; the [subagent documentation](../agent/extensions/subagent/README.md#output-and-cancellation) describes current behavior and accepted recovery limits.

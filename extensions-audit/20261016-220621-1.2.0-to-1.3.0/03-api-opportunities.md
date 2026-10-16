@@ -7,7 +7,7 @@
 - **Baseline provenance:** explicit user-supplied upgrade interval; installed 1.2.0 source and the retained 1.2.0 comparison evidence in the compatibility document provide bounded support, not an inferred upgrade history.
 - **Repository at audit:** `main`, HEAD `aed4ee4f6bab6e60b021beff9940b9f0b9b661c8`; initially clean and synchronized with upstream.
 - **Current disposition:** implementation follow-up is tracked in the [remediation record](01-compatibility.md#implementation-follow-up). Audit-time observations below remain historical unless explicitly superseded there.
-- **Overall status:** **Partial assurance:** the full documented gate and positive diagnostics were executed, but the retained gate is red and extended/live acceptance remains incomplete. All three report categories were assessed and saved.
+- **Overall status:** required validation repairs and upgrade-enabled resume/Clarify remediation are complete; the integrated normal gate is green. API adoption and optional verification dispositions are tracked in the remediation record. Live hardware/provider/MCP acceptance is explicitly unclaimed.
 - **Category status:** released API/capability relevance screen complete for current consumers; one substantive optional adoption recommended. Demonstrated helper/renderer behavior is separate from unimplemented adoption and live acceptance.
 - **Sibling reports:** [Compatibility and canonical validation](01-compatibility.md) · [Simplification and debt](02-simplification-and-debt.md).
 

@@ -11,34 +11,56 @@ const choices = [
 	{ label: "Second", description: "Second description" },
 ];
 
+type ChoiceInput = { label: string; description?: string };
 type CustomOptions = Parameters<ExtensionUIContext["custom"]>[1];
+export type UiOptions = {
+	columns?: number; rows?: number;
+	/** User keybinding overrides, injected through the factory like the host's KeybindingsManager. */
+	userBindings?: ConstructorParameters<typeof KeybindingsManager>[1];
+};
 type DialogComponent = Component & { dispose?(): void };
 
 /**
  * Public renderer fixture for contract tests and explicit host diagnostics.
  * custom() installation/completion is a test adapter, not an actual host-method invocation.
- * It mirrors only the overlay branch of Pi 1.3 InteractiveMode.showExtensionCustom(): an overlay
- * interaction retains its own handle and completes with handle.hide() (identity-specific), never
- * topmost tui.hideOverlay(). It does not reproduce the host's non-overlay branch or other host
- * behavior. Compare it with the host close path after upgrades; see TDR-20261009-1201.
+ * It mirrors Pi 1.3 InteractiveMode.showExtensionCustom(): an overlay interaction retains its own
+ * handle and completes with handle.hide() (identity-specific), never topmost tui.hideOverlay(), and
+ * a non-overlay interaction replaces the editor slot. Production Clarify requests an overlay; the
+ * adapter honors whatever options the extension passes. Compare it with the host close path after
+ * upgrades; the bounded subprocess in clarify-host.test.ts exercises the actual host method.
+ * See TDR-20261009-1201.
  */
-export function createUi(mode: "fullscreen" | "regular", presentation: "current-dock" | "custom-overlay-probe" = "current-dock") {
-	const bindings = new KeybindingsManager(TUI_KEYBINDINGS);
+export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = {}) {
+	// The host's definitions also carry app actions; the one the answer editor intercepts is mirrored here.
+	const bindings = new KeybindingsManager(
+		{ ...TUI_KEYBINDINGS, "app.editor.external": { defaultKeys: "ctrl+g", description: "Open external editor" } } as typeof TUI_KEYBINDINGS,
+		uiOptions.userBindings,
+	);
 	const h = createDialogHarness();
 	clarifyExtension(h.pi, { loadModeState: () => ({ enabled: true }) });
 	const ctx = h.context(undefined, "tui");
 	const toolCtx: ExtensionToolContext = { ...ctx, tools: [], executeTool: async () => { throw new Error("no nested execution in this fixture"); } };
 	const writes: string[] = [];
-	let input: (data: string) => void = () => { throw new Error("terminal not started"); };
+	let terminalInput: (data: string) => void = () => { throw new Error("terminal not started"); };
+	let notifyResize: () => void = () => {};
+	const size = { columns: uiOptions.columns ?? 80, rows: uiOptions.rows ?? 24 };
 	const terminal = {
-		columns: 80, rows: 24, kittyProtocolActive: false,
-		start(onInput) { input = onInput; },
+		get columns() { return size.columns; }, get rows() { return size.rows; }, kittyProtocolActive: false,
+		start(onInput, onResize) { terminalInput = onInput; notifyResize = onResize; },
 		stop() {}, async drainInput() {}, write(data) { writes.push(data); }, moveBy() {},
 		hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
 		clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
 	} satisfies Terminal;
+	// Clipboard and URL activation are captured, never performed: the host's own default gestures can
+	// be observed (selection text, link click) without touching the system clipboard or a browser.
+	const copied: string[] = [];
+	const openedUrls: string[] = [];
 	const tui = mode === "fullscreen"
-		? new TuiAltScreen(terminal, false, undefined, { wheelScrollLines: 3 })
+		? new TuiAltScreen(terminal, false, undefined, {
+			wheelScrollLines: 3,
+			copySelection: async (text) => { copied.push(text); return true; },
+			openUrl: (url) => { openedUrls.push(url); },
+		})
 		: new TuiMainScreen(terminal);
 	const editor = new Text("Main editor", 0, 0);
 	const editorContainer = new Container();
@@ -57,10 +79,6 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 	tui.setFocus(editor);
 	const dialogs: Array<{ component: DialogComponent; options: CustomOptions; handle?: OverlayHandle; doneCalls: number }> = [];
 	ctx.ui.custom = <T>(factory: Parameters<ExtensionUIContext["custom"]>[0], options?: CustomOptions): Promise<T> => new Promise((resolve, reject) => {
-		// Probe the proposed custom-overlay approach without modifying runtime code.
-		if (presentation === "custom-overlay-probe") options = {
-			overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", margin: 1 },
-		};
 		let component: DialogComponent | undefined;
 		let closed = false;
 		let overlayHandle: OverlayHandle | undefined;
@@ -90,17 +108,40 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 			tui.renderNow();
 		}).catch(reject);
 	});
+	const start = (controller: AbortController, options: ChoiceInput[] = choices, allowCustom = false, questionText = question) =>
+		h.tools.get("clarify")!.execute("ui-test", { question: questionText, options, allowCustom, customPrompt: "line one\nline two" }, controller.signal, undefined, toolCtx);
 	tui.start();
 	tui.renderNow();
+	/** Start a clarify call and wait until its selector is installed. */
+	const open = async (controller: AbortController, options: ChoiceInput[] = choices, allowCustom = false, questionText = question) => {
+		const previousCount = dialogs.length;
+		const result = start(controller, options, allowCustom, questionText);
+		await flushDialogs();
+		assert.equal(dialogs.length, previousCount + 1, "exactly one fresh selector installed");
+		return { result, dialog: dialogs.at(-1)! };
+	};
+	const input = (data: string) => { terminalInput(data); tui.renderNow(); };
 	return {
-		...h, ctx, toolCtx, terminal, tui, transcript, editor, dialogs, writes,
-		input(data: string) { input(data); tui.renderNow(); },
-		async open(controller: AbortController, options = choices, allowCustom = false) {
+		...h, ctx, toolCtx, terminal, tui, transcript, editor, dialogs, writes, copied, openedUrls, start, bindings,
+		input,
+		resize(columns: number, rows: number) { size.columns = columns; size.rows = rows; notifyResize(); tui.renderNow(); },
+		/** Hardware cursor cell (zero-based) of the most recent frame that positioned it. */
+		cursor(): { row: number; col: number } | undefined {
+			const matches = [...writes.join("").matchAll(/\x1b\[(\d+);(\d+)H\x1b\[\?25[hl]/g)];
+			const last = matches.at(-1);
+			return last ? { row: Number(last[1]) - 1, col: Number(last[2]) - 1 } : undefined;
+		},
+		/** Start a clarify call and wait until its selector is installed. */
+		open,
+		/** Start a clarify call, choose "Custom instructions" and wait until the answer editor is installed. */
+		async openEditor(controller: AbortController, questionText = question) {
+			const { result, dialog: selector } = await open(controller, [{ label: "First" }], true, questionText);
 			const previousCount = dialogs.length;
-			const result = h.tools.get("clarify")!.execute("ui-test", { question, options, allowCustom, customPrompt: "line one\nline two" }, controller.signal, undefined, toolCtx);
+			input("\x1b[B");
+			input("\r");
 			await flushDialogs();
-			assert.equal(dialogs.length, previousCount + 1, "exactly one fresh selector installed");
-			return { result, dialog: dialogs.at(-1)! };
+			assert.equal(dialogs.length, previousCount + 1, "exactly one fresh answer editor installed");
+			return { result, selector, dialog: dialogs.at(-1)! };
 		},
 	};
 }
@@ -108,11 +149,19 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 export function lines(dialog: { component: DialogComponent; handle?: OverlayHandle }, fallbackWidth = 80) {
 	return dialog.component.render(dialog.handle?.getBounds()?.width ?? fallbackWidth).map(stripVTControlCharacters);
 }
+/** Composed fullscreen screen text after the public renderer clipped/composited the overlay. */
+export function screen(h: { tui: unknown }): string[] {
+	assert.ok(h.tui instanceof TuiAltScreen);
+	return h.tui.getScreenLines().map(stripVTControlCharacters);
+}
 export function contextStart(dialog: Parameters<typeof lines>[0]): number {
 	const status = lines(dialog).find((line) => /Context \d+-\d+\/40/.test(line));
 	assert.ok(status, "long question has context position");
 	return Number(/Context (\d+)-/.exec(status)![1]);
 }
+
+/** Default `tui.altScreen.search` binding (verified against the actual host in clarify-host.test.ts). */
+export const SEARCH_KEY = "\x1b[102;6u";
 
 export const scrollingInputs = [
 	["PageDown", "\x1b[6~", "\x1b[H", 1],

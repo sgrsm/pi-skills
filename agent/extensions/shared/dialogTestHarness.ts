@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { setImmediate, setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createEventBus, initTheme, type ExtensionAPI, type ExtensionUIDialogOptions, type ExtensionUIContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { createTestExtensionContext } from "../permissions/testContext.ts";
 
 export type DialogRequest = {
@@ -11,6 +12,8 @@ export type DialogRequest = {
 	signal?: AbortSignal;
 	answer(value?: string): void;
 	component?: { handleInput?(data: string): void; dispose?(): void };
+	/** Options forwarded to ui.custom(); undefined for dialog methods. */
+	options?: Parameters<ExtensionUIContext["custom"]>[1];
 	doneCalls: number;
 };
 
@@ -69,11 +72,11 @@ export function createDialogHarness() {
 		select: (title, choices, opts) => dialog("select", title, choices, opts),
 		input: (title, _placeholder, opts) => dialog("input", title, undefined, opts),
 		editor: (title) => dialog("editor", title),
-		custom<T>(factory: Parameters<ExtensionUIContext["custom"]>[0]): Promise<T> {
+		custom<T>(factory: Parameters<ExtensionUIContext["custom"]>[0], options?: Parameters<ExtensionUIContext["custom"]>[1]): Promise<T> {
 			return new Promise((resolve, reject) => {
 				let closed = false;
 				let component: any;
-				const request: DialogRequest = { method: "custom", title: "", doneCalls: 0, answer() {} };
+				const request: DialogRequest = { method: "custom", title: "", options, doneCalls: 0, answer() {} };
 				requests.push(request);
 				const done = (result: unknown) => {
 					request.doneCalls++;
@@ -85,7 +88,7 @@ export function createDialogHarness() {
 				// Faithful to Pi: factory is synchronous, but installation is a microtask;
 				// completing inside the factory skips host installation/disposal.
 				const tui = { mode: "fullscreen" as const, terminal: { rows: 24, columns: 80, write: (data: string) => terminalWrites.push(data) }, requestRender() {} };
-				Promise.resolve(factory(tui as any, ui.theme, { matches: () => false } as any, done))
+				Promise.resolve(factory(tui as any, ui.theme, new KeybindingsManager(TUI_KEYBINDINGS) as any, done))
 					.then((value) => { if (!closed) { component = value; request.component = value; } })
 					.catch(reject);
 			});

@@ -44,7 +44,11 @@ Checks visible, cancel-first Trash approval at representative narrow fullscreen 
 
 ### `clarify-input.test.ts`
 
-Protects fullscreen mouse-mode ownership across selection, Escape, and abort, post-dialog wheel routing, working Home/End routes, four focused-overlay keyboard controls, independent normalized-wheel consumption/transcript-fallback probes, and unchanged regular-mode interaction/setup/cleanup. Question PageUp/PageDown/wheel routing, regular-mode mouse ownership and help clipping remain open on Pi 1.3.0. The host overlay-ownership prerequisite and copied close adapter are corrected; normal tests protect their lifecycle contract, while the local selector remedy remains under [TDR-20261009-1201](../../../tdr/20261009-1201-clarify-fullscreen-input-host-blocker.md). Their positive acceptance checks remain in `clarify-input.diagnostic.ts`. The shared custom-dialog adapter cannot independently prove a host lifecycle correction, and injected wheel input does not emulate terminal-specific reporting behavior.
+Protects the Clarify overlay selector and answer editor with the public fullscreen and regular renderers and fake terminals: PageUp/PageDown/Home/End/wheel scroll the question and not the transcript (including wheel at both scroll boundaries); fullscreen and regular mode never toggle terminal mouse modes; actions follow injected keybindings; layout stays within the terminal across a size matrix (small, narrow, height-only and width-only resize, many choices, long descriptions, wide characters); and a lifecycle matrix covers queued/displayed cancellation, stacked search or unrelated overlays above/below, synchronous/microtask installation, shutdown/reload, repeated interactions and exactly-once completion. Completion goes through a test `custom()` adapter that mirrors Pi 1.3's identity-specific close path, so these checks do not by themselves prove host behavior. See the [coverage limits](host-contract-coverage.md#clarify-inputtestts-and-clarify-hosttestts).
+
+### `clarify-host.test.ts`
+
+Runs the real `InteractiveMode` (public root export) in a bounded, isolated subprocess (`clarifyHostChild.ts`) with a fake terminal, an offline in-memory session runtime and the real Clarify extension, in fullscreen and regular mode. It checks input routing, boundary wheel, resize, completion/cancellation focus, search stacked above or opened before each stage (selector and answer editor), pointer text selection over the dialog, the answer editor overlay (bounds, cursor, footer, paste, wheel), queued/FIFO and the custom-answer exchange, and shutdown/reload through the host's own `showExtensionCustom()` path. It needs the same approved scratch setup as the other tests and no network. It is not a live-terminal test and does not emulate Ghostty or real mouse hardware.
 
 ### `dialog-concurrency.test.ts`
 
@@ -94,7 +98,7 @@ Checks native/wrapped file-tool selection at startup and reload, restrictive SDK
 
 The fake-terminal fixtures support Pi 1.1.0's required `Terminal.setProgramStatus()` method. These renderer/input tests do not exercise OSC 7501 reporting. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
 
-Positive host acceptance diagnostics still fail for TDR-20261009-1201 (the resume checks for TDR-20261009-1202 became normal tests after the host fix; see `sdk-resume.test.ts`). Actual-host custom-dialog completion probes corroborate the lifecycle blocker rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
+At the Pi 1.1.0 baseline the positive resume and Clarify diagnostics failed. On Pi 1.3.0 those requirements are normal tests; `clarify-host.test.ts` independently exercises actual host custom-dialog completion rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
 
 ## Scratch setup
 
@@ -136,13 +140,13 @@ Run the full extension contract test suite:
 npm test
 ```
 
-Run outstanding host acceptance checks explicitly, particularly after a Pi upgrade or before closing the owning TDRs:
+All previously outstanding resume and Clarify host requirements run in the normal gate. For focused actual-host validation after upgrades, use the approved scratch setup and run:
 
 ```bash
-npm run diagnose:pi-host
+node --test pi-compatibility/sdk-resume.test.ts pi-compatibility/clarify-input.test.ts pi-compatibility/clarify-host.test.ts
 ```
 
-This command intentionally exits nonzero while TDR-20261009-1201 remains unresolved; the resume checks for TDR-20261009-1202 are normal tests. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
+A green gate covers the documented offline/fake-terminal contracts, not live hardware, providers or MCP services. See the owning coverage limits before making a closure claim.
 
 Optional validation before broader extension work:
 

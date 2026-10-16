@@ -114,16 +114,23 @@ The status is refreshed on session start and when `/clarify on|off` changes the 
 
 Interactive selector in TUI mode:
 
-- title: `Clarify`
-- shows the question, numbered options, and the selected option's description preview
+- opens as a focused overlay titled `Clarify` that sizes itself to your terminal (up to the full screen) and shows the question, numbered options, and the selected option's description
 - non-selected options use the theme accent color; the selected option uses fixed blue `#0066CC` and bold text
-- keys: `↑` / `↓` navigate, `Enter` selects, `Esc` cancels
-- in regular mode, long questions can be scrolled with `PgUp`, `PgDn`, `Home`, `End`, or wheel; keyboard scrolling is recommended
-- choosing `Custom instructions` opens the cancellable in-Pi editor
+- keys follow your Pi keybindings: `↑` / `↓` navigate (wrapping), `Enter` selects, `Esc` cancels. Long questions scroll with `PgUp` / `PgDn` / `Home` / `End`; the on-screen help shows the keys you have configured. The scroll actions are the `tui.select.pageUp`/`pageDown` and `tui.editor.cursorLineStart`/`cursorLineEnd` bindings
+- in fullscreen, the mouse wheel scrolls the question while the pointer is over the dialog (including when it is already at the top or bottom, so it never scrolls the transcript beneath it); the wheel over the transcript outside the dialog behaves normally
+- in regular mode the terminal owns the wheel, so use the keyboard; Clarify no longer turns terminal mouse reporting on or off in either mode
+- on small or narrow terminals the dialog drops decoration (borders, title, status) before it drops content, and always keeps the selected option; every description line that fits is shown, and a description that cannot fit is cut with `…`
+- choosing `Custom instructions` opens the cancellable in-Pi editor (see below)
 
-**Known Pi 1.0.3 fullscreen limitation (open):** Home/End scroll the question in the tested cases, but despite the on-screen help, PageUp/PageDown and wheel input still go to the transcript instead of the question. Long dialogs can also lose their bottom help to clipping. Ask for a shorter question, or start Pi with `pi --tui-mode regular` for regular-mode keyboard scrolling without changing saved settings.
+Custom-answer editor in TUI mode:
 
-In fullscreen, Clarify leaves Pi in control of mouse handling, so closing a question does not disable transcript scrolling. If wheel/trackpad scrolling is already stuck after using an older version of this extension, restart Pi after updating; `/reload` alone does not restore terminal mouse modes. Regular-mode wheel behavior is unchanged. The remaining fullscreen limitations above are still open; see [maintainer details](./maintenance.md#fullscreen-input-defect).
+- opens as the same kind of focused overlay as the selector, so the whole question and answer exchange keeps one consistent presentation. It shows the context, a multiline editor with your starter text, and `Enter` submit / newline / cancel hints; the external-editor shortcut is unavailable while it is open
+- the dialog fits the terminal: on a short screen the context text is shortened with `…` first, then the hints, and finally the editor shows only the lines around your cursor; the cursor stays visible and bracketed paste works as in the main editor
+- the mouse wheel over the dialog does not scroll the transcript beneath it; clicking or dragging works as the terminal and Pi normally do
+
+While a question or answer editor is open, that dialog has keyboard focus. If transcript search (fullscreen) is open, or you open it on top, search keeps or takes focus as you would expect: cancelling or finishing Clarify removes only its own dialog and focus goes back to the search box, never to the main editor behind it. Dragging over the dialog selects the dialog's text and clicking a link in the question follows Pi's normal link behavior.
+
+**Known limitations:** the transcript-search shortcut is handled by Pi even while a dialog is open, so pressing it toggles search beneath or above the dialog. Mouse behavior was verified with fake terminals only; macOS/Ghostty trackpad and other live-terminal behavior with this overlay has not been tested. If wheel/trackpad scrolling is stuck after using an older version of this extension, restart Pi after updating; `/reload` alone does not restore terminal mouse modes.
 
 Tool display states:
 
