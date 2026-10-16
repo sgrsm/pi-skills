@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { VERSION } from "@earendil-works/pi-coding-agent";
-import { Text, TuiAltScreen } from "@earendil-works/pi-tui";
+import { TuiAltScreen } from "@earendil-works/pi-tui";
 import { contextStart, createUi, scrollingInputs } from "./clarifyUiFixture.ts";
 
 // Positive acceptance checks for open TDR-20261009-1201, run via diagnose:pi-host.
-// The public renderer is real; custom() installation/close is a test adapter.
-// Reconstruct the actual-host scratch probe in TDR-20261009-1201 after host upgrades:
-// these adapter lifecycle assertions alone cannot prove a host correction.
+// The public renderer is real; custom() installation is a test adapter, so adapter
+// lifecycle assertions (clarify-input.test.ts) alone cannot prove a host correction.
 for (const [name, key, initialKey, direction] of scrollingInputs) {
 	if (name === "Home" || name === "End") continue; // Positive contract tests cover these working routes.
 	test(`TDR-20261009-1201: fullscreen dock routes ${name} to the question, not the transcript`, async (t) => {
@@ -54,41 +53,4 @@ test("TDR-20261009-1201: fullscreen clarify keeps navigation help visible at 80x
 	await h.open(abort);
 	assert.ok(h.tui instanceof TuiAltScreen);
 	assert.match(h.tui.getScreenLines().map(stripVTControlCharacters).join("\n"), /navigate • Enter select • Esc cancel/);
-});
-
-test("TDR-20261009-1201: adapter contract removes the cancelled owned overlay while preserving search", async (t) => {
-	const h = createUi("fullscreen", "custom-overlay-probe");
-	const abort = new AbortController();
-	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
-	const { result, dialog } = await h.open(abort);
-	h.input("\x1b[102;6u");
-	const search = h.tui.getFocusedComponent();
-	assert.notEqual(search, dialog.component, "search must actually be above the custom overlay");
-	abort.abort();
-	assert.equal((await result).details.answerType, "cancelled");
-	h.tui.renderNow();
-	assert.equal(dialog.handle?.getBounds(), undefined, "owned overlay must no longer be mounted");
-	assert.equal(h.tui.getFocusedComponent(), search, "unrelated search must retain focus");
-	assert.equal(dialog.doneCalls, 1);
-});
-
-test("TDR-20261009-1201: adapter contract preserves unrelated overlays on abort before installation", async (t) => {
-	const h = createUi("fullscreen", "custom-overlay-probe");
-	const abort = new AbortController();
-	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
-	const other = h.tui.showOverlay(new Text("Unrelated overlay", 0, 0));
-	h.tui.renderNow();
-	assert.ok(other.getBounds());
-	const custom = h.ctx.ui.custom;
-	h.ctx.ui.custom = (factory, options) => custom((tui, theme, kb, done) => {
-		const component = factory(tui, theme, kb, done);
-		abort.abort();
-		return component;
-	}, options);
-	const result = await h.tools.get("clarify")!.execute("pre-install", {
-		question: "Which option?", options: [{ label: "First" }, { label: "Second" }], allowCustom: false,
-	}, abort.signal, undefined, h.toolCtx);
-	assert.equal(result.details.answerType, "cancelled");
-	assert.equal(h.dialogs.length, 0);
-	assert.ok(other.getBounds(), "unrelated overlay must survive pre-install cancellation");
 });

@@ -16,8 +16,11 @@ type DialogComponent = Component & { dispose?(): void };
 
 /**
  * Public renderer fixture for contract tests and explicit host diagnostics.
- * custom() completion is a test adapter, not an actual host-method invocation.
- * Compare it with the host close path after upgrades; see TDR-20261009-1201.
+ * custom() installation/completion is a test adapter, not an actual host-method invocation.
+ * It mirrors only the overlay branch of Pi 1.3 InteractiveMode.showExtensionCustom(): an overlay
+ * interaction retains its own handle and completes with handle.hide() (identity-specific), never
+ * topmost tui.hideOverlay(). It does not reproduce the host's non-overlay branch or other host
+ * behavior. Compare it with the host close path after upgrades; see TDR-20261009-1201.
  */
 export function createUi(mode: "fullscreen" | "regular", presentation: "current-dock" | "custom-overlay-probe" = "current-dock") {
 	const bindings = new KeybindingsManager(TUI_KEYBINDINGS);
@@ -60,15 +63,18 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 		};
 		let component: DialogComponent | undefined;
 		let closed = false;
+		let overlayHandle: OverlayHandle | undefined;
 		const record = { options, doneCalls: 0 } as typeof dialogs[number];
 		const done = (value: unknown) => {
 			record.doneCalls++;
 			if (closed) return;
 			closed = true;
-			if (options?.overlay) tui.hideOverlay();
+			// Like Pi 1.3: remove this interaction's overlay, not the topmost one.
+			// Before installation the handle is undefined, so nothing is removed.
+			if (options?.overlay) overlayHandle?.hide();
 			else { editorContainer.clear(); editorContainer.addChild(editor); tui.setFocus(editor); }
 			resolve(value as T);
-			component?.dispose?.();
+			try { component?.dispose?.(); } catch { /* the host ignores dispose errors */ }
 		};
 		Promise.resolve(factory(tui, ctx.ui.theme, bindings as Parameters<Parameters<ExtensionUIContext["custom"]>[0]>[2], done)).then((value) => {
 			if (closed) return;
@@ -76,7 +82,9 @@ export function createUi(mode: "fullscreen" | "regular", presentation: "current-
 			record.component = component;
 			if (options?.overlay) {
 				const overlayOptions = typeof options.overlayOptions === "function" ? options.overlayOptions() : options.overlayOptions;
-				record.handle = tui.showOverlay(component, overlayOptions);
+				overlayHandle = tui.showOverlay(component, overlayOptions);
+				record.handle = overlayHandle;
+				options?.onHandle?.(overlayHandle);
 			} else { editorContainer.clear(); editorContainer.addChild(component); tui.setFocus(component); }
 			dialogs.push(record);
 			tui.renderNow();

@@ -18,7 +18,7 @@ The user authorized the recommended local changes, associated validation/documen
 | Item | Current disposition and evidence |
 | --- | --- |
 | C1 | **Resolved.** Direct-constructor restoration now requests `usesDefaultTools: true`; separate selected-local and unselected-local transcripts assert phase-specific startup policy, registration/exposure and callability. Existing red run reproduced 52 failures; corrected focused activation/resume controls pass 137/137. Parent independently reran those controls plus unchanged resume diagnostics: 141/141. Independent source review found no blocking defect; documentation/coverage refinements were applied. A worker full gate passed 745/745 with concurrent C2 changes; item-local focused results are the C1 evidence. TDR-1202 remains open for D1. |
-| C2 | Pending integration of adapter repair and independent verification. |
+| C2 | **Resolved.** Copied overlay adapter retains its own handle and mirrors actual Pi 1.3 completion. Two lifecycle requirements promoted unchanged; added normal/synchronous/microtask and exactly-once wrapper pre-install controls with unrelated focus assertions. Independent reviewer found no blocking defect; follow-up coverage refinements applied. Parent reran 47/47 focused tests, host links/typecheck and a separate version-checked actual-host probe: all five normal/stacked/pre-install cases pass. Old topmost-close negative control fails five adapter tests. Five production diagnostics remain for D2, not C2. |
 | D1 | Pending broader resumed-selection/lifecycle acceptance and diagnostic promotion. |
 | D2 | Pending supported Clarify overlay/input/layout remediation and acceptance. |
 | A1 | Pending public read-range formatter adoption. |
@@ -64,6 +64,8 @@ A focused reviewer identified a possible exact-resume-policy mismatch here. Pare
 **Confidence:** high for both failure causes and target behavior. The scratch control is not a durable repair or a green repository gate. Broader resume/fork/continue/switch acceptance remains incomplete.
 
 ### C2 — P2: stop diagnosing the old host overlay-close algorithm
+
+**Resolution:** completed; see the [implementation follow-up](#implementation-follow-up). The original diagnosis and recommendation below are historical.
 
 **Affected:** [clarifyUiFixture.ts](../../agent/extensions/pi-compatibility/clarifyUiFixture.ts), `createUi()` completion callback around line 68; the final two checks in [clarify-input.diagnostic.ts](../../agent/extensions/pi-compatibility/clarify-input.diagnostic.ts); [coverage notes](../../agent/extensions/pi-compatibility/host-contract-coverage.md#clarify-inputtestts-and-clarify-inputdiagnosticts).
 

@@ -15,7 +15,7 @@ The owning records explain the evidence, scope and acceptance criteria for each 
 
 ## Pi 1.3.0 revalidation
 
-- **TDR-20261009-1201:** the identity-safe host overlay-completion prerequisite is fixed. Actual-host fake-terminal probes preserve stacked search and unrelated overlays before installation. Local input/layout requirements and broader acceptance remain open; the copied close adapter still needs correction.
+- **TDR-20261009-1201:** the identity-safe host overlay-completion prerequisite is fixed. Actual-host fake-terminal probes preserve stacked search and unrelated overlays before installation. The copied close adapter is corrected and verified lifecycle checks are normal regressions. Local input/layout requirements and broader acceptance remain open.
 - **TDR-20261009-1202:** positive SDK and actual CLI `--session` restoration checks pass, with and without local extensions. Retained constructor/pre-start fixtures are corrected; broader resumed-selection/lifecycle acceptance and documentation still need work. No local pending-state workaround is needed.
 - **TDR-20261009-1204:** request-hook identity remains payload-only; the supported physical-model prerequisite is still missing.
 - **TDR-20261009-1206:** custom UI still lacks supported scoped/arbitrated blocked-status integration. The low-level terminal setter is not an equivalent replacement; no live dashboard reproduction is claimed.

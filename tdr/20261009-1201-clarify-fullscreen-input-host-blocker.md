@@ -27,11 +27,11 @@ A version-checked invocation of the actual host method on public fake-terminal `
 - Synchronous and microtask completion before installation preserve an unrelated overlay on 1.3; 1.2 removes it.
 - Raw host completion does not dispose a never-installed component on either version. The existing `showCancellableCustom()` wrapper remains necessary: with the actual 1.3 close path, a pre-install abort preserves the unrelated overlay and disposes once.
 
-The copied `clarifyUiFixture.ts` close adapter still calls topmost `tui.hideOverlay()`. Its two lifecycle diagnostic failures therefore model the old defect, not the corrected target host. Update that adapter against the actual host without weakening its positive assertions; it cannot independently establish an upstream correction.
+The copied `clarifyUiFixture.ts` overlay close adapter now retains the owned handle and completes by identity, following source comparison and a fresh version-checked invocation of the actual Pi 1.3 method. Normal tests retain the two positive lifecycle assertions and add normal, synchronous/microtask pre-install and exactly-once wrapper-disposal controls. Parent execution independently confirms the actual-host probe's five positive cases and focused tests; the retained assessment records results. The adapter alone cannot establish upstream behavior. C2 is resolved; production input/layout and wider D2 acceptance remain open.
 
 Five production requirements still fail on 1.3: question PageUp/PageDown/wheel routing, regular-mode mouse ownership and fullscreen help visibility. Existing fullscreen mouse-ownership and Home/End controls pass. The supported overlay route can now be revisited, using normalized mouse events, responsive available bounds and callback-owned completion. Preserve the shared FIFO, exactly-once cleanup, RPC/basic fallback and no-UI/model-only boundaries. No production overlay migration was made during revalidation.
 
-The full retained gate also needs the separate resume/activation fixture correction described in [TDR-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md#pi-130-revalidation-and-remaining-work). Complete the local selector integration, small/narrow/resize/repeated-interaction and cancellation/focus matrices, practical live-terminal checks and all acceptance criteria below before closure. These host probes use synthetic state, not a live terminal, personal session, provider or MCP connection.
+The separate resume/activation fixtures have been corrected as described in [TDR-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md#pi-130-revalidation-and-remaining-work). Complete the local selector integration, small/narrow/resize/repeated-interaction and cancellation/focus matrices, practical live-terminal checks and all acceptance criteria below before closure. These host probes use synthetic state, not a live terminal, personal session, provider or MCP connection.
 
 ## Confirmed defects and impact
 
@@ -80,7 +80,7 @@ Source inspection of Pi 1.0.3 still shows `showExtensionCustom()` calling topmos
 
 These are executed actual-method probes, not conclusions drawn from the adapter or the higher version number. They use fake terminal input and isolated synthetic state, not a live session. Live-terminal mouse effects, complete resize/layout acceptance, and the larger remediation remain unverified or deferred.
 
-Working routes and controls belong in `clarify-input.test.ts`. Outstanding positive requirements belong in `clarify-input.diagnostic.ts`; `npm run diagnose:pi-host` exits nonzero while they remain broken. The shared `clarifyUiFixture.ts` adapter still models the observed close path and cannot independently detect a future host correction.
+Working routes and controls belong in `clarify-input.test.ts`. Outstanding positive requirements belong in `clarify-input.diagnostic.ts`; `npm run diagnose:pi-host` exits nonzero while they remain broken. At that historical revalidation the shared adapter modeled the old close path. It now mirrors Pi 1.3 identity-specific overlay completion, but cannot independently detect a future host change.
 
 ## Wheel routing in Pi 1.2.0
 

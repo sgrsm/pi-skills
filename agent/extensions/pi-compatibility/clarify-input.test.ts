@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Component, TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Text, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { flushDialogs } from "../shared/dialogTestHarness.ts";
+import { showCancellableCustom } from "../shared/dialogUi.ts";
 import { contextStart, createUi, lines, scrollingInputs } from "./clarifyUiFixture.ts";
 
 // Working routes are contract regressions. Outstanding TDR-20261009-1201 requirements
@@ -138,3 +140,110 @@ test("regular-mode clarify remains keyboard-complete", async (t) => {
 	], "regular-mode mouse setup and cleanup remain unchanged");
 });
 
+// Adapter-faithfulness controls. The adapter mirrors Pi 1.3 showExtensionCustom():
+// an overlay interaction completes by hiding its own handle, never the topmost overlay.
+// These are copied-adapter checks; the version-checked actual-host probe in
+// TDR-20261009-1201 is the independent evidence for the real host method.
+const overlayOptions = { overlay: true } as const;
+const probeComponent = (label: string) => ({
+	label, disposed: 0, render: () => [label], invalidate() {}, dispose() { this.disposed++; },
+});
+
+test("adapter lifecycle contract (Pi 1.3 close path): normal mounted completion removes the owned overlay and disposes once", async (t) => {
+	const h = createUi("fullscreen");
+	t.after(() => h.tui.stop({ preserveScreen: true }));
+	const component = probeComponent("owned");
+	let complete!: (value: string) => void;
+	const result = h.ctx.ui.custom<string>((_tui, _theme, _kb, done) => { complete = done; return component; }, overlayOptions);
+	await flushDialogs();
+	assert.ok(h.dialogs.at(-1)?.handle?.getBounds(), "owned overlay mounted");
+	complete("first"); complete("second");
+	assert.equal(await result, "first");
+	h.tui.renderNow();
+	assert.equal(h.dialogs.at(-1)?.handle?.getBounds(), undefined);
+	assert.equal(h.tui.getFocusedComponent(), h.editor);
+	assert.equal(component.disposed, 1);
+});
+
+for (const timing of ["inside the factory", "in a microtask before installation"] as const) {
+	test(`adapter lifecycle contract (Pi 1.3 close path): completion ${timing} preserves an unrelated overlay`, async (t) => {
+		const h = createUi("fullscreen");
+		t.after(() => h.tui.stop({ preserveScreen: true }));
+		const unrelated = new Text("Unrelated overlay", 0, 0);
+		const other = h.tui.showOverlay(unrelated);
+		h.tui.renderNow();
+		assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay starts focused");
+		const component = probeComponent("never-installed");
+		const result = h.ctx.ui.custom<string>((_tui, _theme, _kb, done) => {
+			if (timing === "inside the factory") done("early");
+			else queueMicrotask(() => done("early"));
+			return component;
+		}, overlayOptions);
+		assert.equal(await result, "early");
+		h.tui.renderNow();
+		assert.equal(h.dialogs.length, 0, "never-installed interaction must not mount");
+		assert.ok(other.getBounds(), "unrelated overlay must survive");
+		assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay must keep focus");
+		assert.equal(component.disposed, 0, "the raw host skips disposal of a never-installed component");
+	});
+}
+
+test("adapter lifecycle contract (Pi 1.3 close path): cancelled owned overlay is removed while stacked search keeps focus", async (t) => {
+	const h = createUi("fullscreen", "custom-overlay-probe");
+	const abort = new AbortController();
+	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
+	const { result, dialog } = await h.open(abort);
+	h.input("\x1b[102;6u");
+	const search = h.tui.getFocusedComponent();
+	assert.notEqual(search, dialog.component, "search must actually be above the custom overlay");
+	abort.abort();
+	assert.equal((await result).details.answerType, "cancelled");
+	h.tui.renderNow();
+	assert.equal(dialog.handle?.getBounds(), undefined, "owned overlay must no longer be mounted");
+	assert.equal(h.tui.getFocusedComponent(), search, "unrelated search must retain focus");
+	assert.equal(dialog.doneCalls, 1);
+});
+
+test("adapter lifecycle contract (Pi 1.3 close path): abort before installation preserves unrelated overlays", async (t) => {
+	const h = createUi("fullscreen", "custom-overlay-probe");
+	const abort = new AbortController();
+	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
+	const unrelated = new Text("Unrelated overlay", 0, 0);
+	const other = h.tui.showOverlay(unrelated);
+	h.tui.renderNow();
+	assert.ok(other.getBounds());
+	assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay starts focused");
+	const custom = h.ctx.ui.custom;
+	h.ctx.ui.custom = (factory, options) => custom((tui, theme, kb, done) => {
+		const component = factory(tui, theme, kb, done);
+		abort.abort();
+		return component;
+	}, options);
+	const result = await h.tools.get("clarify")!.execute("pre-install", {
+		question: "Which option?", options: [{ label: "First" }, { label: "Second" }], allowCustom: false,
+	}, abort.signal, undefined, h.toolCtx);
+	assert.equal(result.details.answerType, "cancelled");
+	assert.equal(h.dialogs.length, 0);
+	assert.ok(other.getBounds(), "unrelated overlay must survive pre-install cancellation");
+	assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay must keep focus");
+});
+
+test("adapter lifecycle contract (Pi 1.3 close path): showCancellableCustom pre-install abort disposes once and preserves unrelated overlay", async (t) => {
+	const h = createUi("fullscreen", "custom-overlay-probe");
+	const abort = new AbortController();
+	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
+	const unrelated = new Text("Unrelated overlay", 0, 0);
+	const other = h.tui.showOverlay(unrelated);
+	h.tui.renderNow();
+	const before = other.getBounds();
+	assert.ok(before);
+	assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay starts focused");
+	const component = probeComponent("retained");
+	const result = showCancellableCustom<string>(h.ctx.ui, abort.signal, () => { abort.abort(); return component; });
+	await assert.rejects(result, (error) => error === abort.signal.reason);
+	h.tui.renderNow();
+	assert.equal(component.disposed, 1, "wrapper must dispose the retained component exactly once");
+	assert.equal(h.dialogs.length, 0, "aborted interaction must not mount a dialog");
+	assert.deepEqual(other.getBounds(), before, "unrelated overlay bounds must be unchanged");
+	assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay must keep focus");
+});

@@ -57,7 +57,9 @@ In each target case, the active set after late registration equals recorded `rea
 
 **Released change:** [PR 10999](https://github.com/earendil-works/pi/pull/10999), shipped in [1.3.0](https://github.com/earendil-works/pi/releases/tag/v1.3.0), makes custom-overlay completion hide the interaction's owned handle instead of the topmost overlay. The actual method, not just the copied fixture, was invoked on both installed versions with public fake-terminal TUI state.
 
-**Acceptance split:**
+**Implementation follow-up:** C2 is resolved: the adapter now matches identity-specific completion, lifecycle requirements are normal regressions, and a fresh actual-host probe passes. D2 production work remains open. See the [remediation record](01-compatibility.md#implementation-follow-up).
+
+**Audit-time acceptance split:**
 
 - **Improved and behaviorally verified:** normal mounted completion still disposes once and restores editor focus; target completion under stacked transcript search removes the owned dialog and preserves search focus; synchronous/microtask pre-install completion no longer steals an unrelated overlay. The existing local cancellable helper with actual target completion also preserves the unrelated overlay and disposes once on pre-install abort.
 - **Still local responsibility:** raw host completion does not dispose a never-installed component in either version. The existing wrapper supplies this cleanup; do not remove it because overlay ownership improved.
