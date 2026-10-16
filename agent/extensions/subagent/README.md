@@ -134,7 +134,7 @@ Top-level sessions never get `escalate_to_parent`, even if a tool selection name
 
 The request includes a required `question` and can set `requestType` (`clarify` or `approval`), focused `options`, custom-answer controls, and a `reason`. After escalating, the child should stop; the parent decides whether to ask the user, rerun the child, or continue directly.
 
-**Pi 1.3.0 resume:** ordinary SDK/CLI resume restores previously selected tool declarations. Broader resume/loadout validation remains open; see [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
+**Pi 1.3.0 resume:** ordinary SDK/CLI resume restores previously selected tool declarations. Enabled local workflow tools can add themselves during startup; explicit allowlists and exclusions still apply. See [tool selection and resume behavior](../maintenance.md#tool-availability-at-startup).
 
 ## Settings
 

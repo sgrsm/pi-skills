@@ -68,7 +68,15 @@ Checks that real codemode in both `on` and `only` modes preserves direct model d
 
 ### `sdk-resume.test.ts`
 
-Protects positive ordinary SDK resume restoration, `/tree`, indirect callability, phase-specific local startup/relay availability for 16 saved-off/relay states (with and without recorded local selections), and an actual CLI transcript/all-off parity control without requiring a particular Pi version or treating tool omission as intended behavior. SDK/CLI creation-time restoration failed on Pi 1.0.3/1.1.0 and is fixed on the checked Pi 1.3.0 paths; remaining acceptance is tracked in [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). `sdk-resume.diagnostic.ts` passes the core positive requirements on 1.3.0, and the normal constructor/pre-start fixture assumptions have been corrected to the Pi 1.3 contract. The normal tests do not cover resumed CLI selection precedence or fork/continue/switch, so neither result alone closes the remaining selection/lifecycle acceptance.
+Protects resumed tool-loadout restoration with isolated, offline fixtures: no provider request, live MCP server or personal session is used.
+
+- Ordinary SDK construction from a reopened transcript and the actual bundled CLI `--session` must restore the selected late tool declarations, with and without the local extensions (saved off).
+- One case table runs resumed selection precedence through both the public SDK and the actual CLI: no options, `+name`/`-name` modifiers, plain allowlists, MCP-filtering allowlists, exclusions, `--no-tools`, `--no-builtin-tools` and `defaultTools` settings.
+- Local startup availability is checked for 16 saved-off/relay states plus depth-capped states, with and without local tools recorded in the transcript, including the declaration, registration and callability distinction.
+- Actual CLI `--continue` (isolated session directory) and `--fork` (deterministic ID) and public runtime `switchSession()`/`fork()` check the session identity, start reason, lineage and per-branch loadout.
+- `/tree` and `reload()` are separate controls from creation-time restoration.
+
+Coverage limits are in [host-contract coverage](host-contract-coverage.md#sdk-resumetestts). The tests do not require a particular Pi version.
 
 ### `short-paths-loader.test.ts`
 
@@ -86,7 +94,7 @@ Checks native/wrapped file-tool selection at startup and reload, restrictive SDK
 
 The fake-terminal fixtures support Pi 1.1.0's required `Terminal.setProgramStatus()` method. These renderer/input tests do not exercise OSC 7501 reporting. Host-package links must resolve to the version under test; old peer links are not upgrade-validation evidence.
 
-Positive host acceptance diagnostics still fail for TDR-20261009-1201 and TDR-20261009-1202. Actual-host custom-dialog completion probes corroborate the lifecycle blocker rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
+Positive host acceptance diagnostics still fail for TDR-20261009-1201 (the resume checks for TDR-20261009-1202 became normal tests after the host fix; see `sdk-resume.test.ts`). Actual-host custom-dialog completion probes corroborate the lifecycle blocker rather than relying only on the copied adapter. See [revalidation evidence and limits](host-contract-coverage.md#pi-110-revalidation) and the [current TDR index](../../../tdr/README.md#pi-110-revalidation). Earlier investigation baselines remain in the owning records.
 
 ## Scratch setup
 
@@ -134,7 +142,7 @@ Run outstanding host acceptance checks explicitly, particularly after a Pi upgra
 npm run diagnose:pi-host
 ```
 
-This command intentionally exits nonzero on the tested Pi 1.0.3 and revalidated Pi 1.1.0 because TDR-20261009-1201 and TDR-20261009-1202 remain unresolved. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
+This command intentionally exits nonzero while TDR-20261009-1201 remains unresolved; the resume checks for TDR-20261009-1202 are normal tests. A green `npm run verify` means the contract regressions pass, **not** that known host debt is fixed. Diagnostics print the host version and relevant observations; review their failure reasons rather than blindly changing version pins or preserving bugs as successful expectations. After a verified correction, promote the corresponding positive checks into the normal test suite.
 
 Optional validation before broader extension work:
 

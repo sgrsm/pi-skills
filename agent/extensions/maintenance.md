@@ -87,7 +87,7 @@ Contract:
 
 Regression coverage is in [`pi-compatibility/tool-activation.test.ts`](./pi-compatibility/host-contract-coverage.md#tool-activationtestts), [`pi-compatibility/cli-tool-selection.test.ts`](./pi-compatibility/host-contract-coverage.md#cli-tool-selectiontestts) (actual CLI parser/process) and `pi-compatibility/extension-api.test.ts`, which check this against the public host with late synthetic tools registered inactive.
 
-Pi 1.3.0 establishes pending declarations during ordinary SDK/CLI resume, fixing the earlier host omission reproduced on Pi 1.0.3 and Pi 1.1.0. Hidden withdrawal still preserves those names; it is not obsolete. Remaining selection/lifecycle acceptance is separate from this contract; see [resume contract controls and diagnostics](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts-contract-controls) and the [host-defect record](../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md). Do not add a local workaround without separate authorization.
+Pi 1.3.0 establishes pending declarations during ordinary SDK/CLI resume, fixing the earlier host omission reproduced on Pi 1.0.3 and Pi 1.1.0. Hidden withdrawal still preserves those names; it is not obsolete. Resume, `--continue`, `--fork`, runtime switch/fork, `/tree`, reload and CLI/SDK selection-precedence behavior are normal contract tests; see [resume coverage and limits](./pi-compatibility/host-contract-coverage.md#sdk-resumetestts). Do not add a private pending-state workaround.
 
 Startup policy on resume: enabled `clarify`, `web_search` and `subagent` add themselves to the active set in `session_start`, even when the resumed transcript did not record them. An eligible, registered but unselected `escalate_to_parent` relay tool does not and stays inactive. Restrictive allowlists and exclusions remain authoritative. `sdk-resume.test.ts` asserts the startup additions per phase.
 
@@ -114,7 +114,7 @@ First prepare an approved test scratch root as described in the permissions exte
 npm run verify
 ```
 
-`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-20261009-1201/TDR-20261009-1202. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
+`npm run verify` requires `PI_PERMISSIONS_TEST_SCRATCH_ROOT`; it does not create or choose an approved scratch root automatically. It runs contract regressions (`*.test.ts`), not outstanding host acceptance diagnostics (`*.diagnostic.ts`). Run `npm run diagnose:pi-host` with the same scratch setup after Pi upgrades or before closing TDR-20261009-1201. Diagnostics execute positive requirements and fail nonzero while debt persists; a green contract gate is not a claim that host debt is resolved.
 
 For the current Pi 1.1.0 runtime-check results and independently failing host acceptance checks, see [compatibility revalidation and limits](./pi-compatibility/host-contract-coverage.md#pi-110-revalidation). A green `npm run verify` does not imply that outstanding host acceptance diagnostics pass.
 

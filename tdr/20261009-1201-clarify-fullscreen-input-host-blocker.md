@@ -31,7 +31,7 @@ The copied `clarifyUiFixture.ts` overlay close adapter now retains the owned han
 
 Five production requirements still fail on 1.3: question PageUp/PageDown/wheel routing, regular-mode mouse ownership and fullscreen help visibility. Existing fullscreen mouse-ownership and Home/End controls pass. The supported overlay route can now be revisited, using normalized mouse events, responsive available bounds and callback-owned completion. Preserve the shared FIFO, exactly-once cleanup, RPC/basic fallback and no-UI/model-only boundaries. No production overlay migration was made during revalidation.
 
-The separate resume/activation fixtures have been corrected as described in [TDR-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md#pi-130-revalidation-and-remaining-work). Complete the local selector integration, small/narrow/resize/repeated-interaction and cancellation/focus matrices, practical live-terminal checks and all acceptance criteria below before closure. These host probes use synthetic state, not a live terminal, personal session, provider or MCP connection.
+The separate resume/activation fixtures have been corrected as described in [the retained resume-resolution summary](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d1--medium-priority-finish-local-acceptance-and-documentation-for-restored-resume-tools). Complete the local selector integration, small/narrow/resize/repeated-interaction and cancellation/focus matrices, practical live-terminal checks and all acceptance criteria below before closure. These host probes use synthetic state, not a live terminal, personal session, provider or MCP connection.
 
 ## Confirmed defects and impact
 

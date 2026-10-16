@@ -37,7 +37,7 @@ TUI Clarify selection and custom-answer UI use `ctx.ui.custom()`, which Pi 1.1.0
 
 ## Startup availability and resume
 
-Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only explicit `/clarify off` removes the tool from the active set. Core SDK/CLI transcript restoration is fixed in Pi 1.3.0; remaining selection/lifecycle validation is tracked separately: [TDR-20261009-1202](../../../tdr/20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md).
+Do not use subtractive `setActiveTools()` during `session_start`; follow [Tool availability at startup](../maintenance.md#tool-availability-at-startup). Only explicit `/clarify off` removes the tool from the active set. Core SDK/CLI transcript restoration is fixed in Pi 1.3.0; selection/lifecycle controls and their limits are in [resume coverage](../pi-compatibility/host-contract-coverage.md#sdk-resumetestts).
 
 ## Structured prompt section
 

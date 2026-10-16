@@ -6,7 +6,6 @@ This directory tracks known technical debt that is intentionally not being addre
 |---|---|---|---|
 | [TDR-20261009-1200](./20261009-1200-propagate-transient-project-trust-to-subagents.md) | Preserve transient project trust for contained subagent children | Open | Low |
 | [TDR-20261009-1201](./20261009-1201-clarify-fullscreen-input-host-blocker.md) | Restore safe fullscreen clarify input | Open — host prerequisite fixed in Pi 1.3.0; local input/layout remediation pending | Medium |
-| [TDR-20261009-1202](./20261009-1202-sdk-cli-resume-tool-restoration-host-defect.md) | Restore the transcript tool loadout on SDK/CLI resume | Open — core host restoration fixed in Pi 1.3.0; remaining acceptance pending | Medium |
 | [TDR-20261009-1204](./blocked/20261009-1204-provider-request-physical-model-identity.md) | Expose physical model identity to provider-request extensions | Blocked — Pi host API enhancement deferred upstream | Low |
 | [TDR-20261009-1205](./20261009-1205-trash-history-all-projects-storage-policy.md) | Decide the Trash-history all-projects storage policy | Open — policy decision pending | Medium |
 | [TDR-20261009-1206](./blocked/20261009-1206-custom-dialog-blocked-status.md) | Report custom TUI dialogs as blocked in program status | Blocked — no supported scoped/arbitrated custom-dialog status integration | Low |
@@ -16,12 +15,12 @@ The owning records explain the evidence, scope and acceptance criteria for each 
 ## Pi 1.3.0 revalidation
 
 - **TDR-20261009-1201:** the identity-safe host overlay-completion prerequisite is fixed. Actual-host fake-terminal probes preserve stacked search and unrelated overlays before installation. The copied close adapter is corrected and verified lifecycle checks are normal regressions. Local input/layout requirements and broader acceptance remain open.
-- **TDR-20261009-1202:** positive SDK and actual CLI `--session` restoration checks pass, with and without local extensions. Retained constructor/pre-start fixtures are corrected; broader resumed-selection/lifecycle acceptance and documentation still need work. No local pending-state workaround is needed.
+- **TDR-20261009-1202 resolved:** SDK/actual-CLI restoration, restriction and lifecycle acceptance completed. The record is deleted; [resolution evidence and limits](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d1--medium-priority-finish-local-acceptance-and-documentation-for-restored-resume-tools) are retained in the assessment.
 - **TDR-20261009-1204:** request-hook identity remains payload-only; the supported physical-model prerequisite is still missing.
 - **TDR-20261009-1206:** custom UI still lacks supported scoped/arbitrated blocked-status integration. The low-level terminal setter is not an equivalent replacement; no live dashboard reproduction is claimed.
 - **TDR-20261009-1200 / TDR-20261009-1205:** no upgrade-driven status change; transient trust and the all-projects storage policy remain open.
 
-TDR-1201 and TDR-1202 are no longer grouped under `blocked/`, but neither is closed. Their records distinguish verified host improvements from remaining local work and acceptance; historical revalidations below retain their original version scope.
+TDR-1201 is no longer grouped under `blocked/` and remains open. TDR-1202 is closed. Their records distinguish verified host improvements from remaining local work and acceptance; historical revalidations below retain their original version scope.
 
 ## Pi 1.1.0 revalidation
 
