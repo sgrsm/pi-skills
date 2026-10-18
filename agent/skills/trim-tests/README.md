@@ -6,11 +6,11 @@ The preferred destination is usually one representative happy-flow integration t
 
 ## Useful inputs
 
-Provide these, or ask Pi to discover them:
+Provide these, or ask the agent (Pi or Claude Code) to discover them:
 
 - target feature, package, module, files, or branch diff;
 - requirements or acceptance criteria, especially critical failure behavior;
-- Maven/Gradle command and required profiles;
+- Maven/Gradle command, required profiles, and any coverage or mutation-testing gates;
 - known production, security, transaction, messaging, retry, idempotency, or compatibility risks;
 - whether you want recommendations only or an applied test refactor;
 - desired evidence such as estimated LOC reduction, runtime comparison, or a guarantee-to-test map.
@@ -39,17 +39,14 @@ Apply the safe trim plan to these tests, run the focused baseline first, and rep
 
 ## What to expect
 
-By default, Pi performs a read-only review and reports:
+By default, the agent performs a read-only review and reports:
 
-- the current test shape and main sources of waste;
-- business- and operational-critical guarantees inferred from the code and requirements;
-- a proposed portfolio by test layer;
-- exact `keep`, `delete`, `merge`, `convert`, or `simplify` actions with file/test locations;
-- the retained owner for every guarantee affected by a deletion or merge;
-- estimated or measured LOC/runtime/maintenance savings;
-- unresolved risks and validation steps.
+- prioritized `keep`, `delete`, `merge`, `convert`, or `simplify` actions with file/test locations and evidence;
+- for each deletion or merge, the retained test and assertion that protect the guarantee, or why none is needed;
+- assumptions, unresolved risks, and validation steps;
+- when they help the decision, the current test shape, a proposed portfolio by layer, a guarantee map, and LOC/runtime/maintenance savings that have a defensible basis.
 
-Pi should not force the preferred one-integration-test shape when distinct security, persistence, transaction, messaging, external-protocol, or configuration behavior requires a real boundary test. It should also avoid retaining tests that only re-prove Spring Boot, JUnit, Mockito, Jackson, Lombok, or other library behavior.
+The agent should not force the preferred one-integration-test shape when distinct security, persistence, transaction, messaging, external-protocol, or configuration behavior requires a real boundary test. It should also avoid retaining tests that only re-prove Spring Boot, JUnit, Mockito, Jackson, Lombok, or other library behavior.
 
 ## Related files
 

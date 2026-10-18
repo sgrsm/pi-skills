@@ -27,24 +27,7 @@ A valuable test owns a meaningful guarantee with an appropriate failure signal. 
 
 Require evidence that a listed risk applies to the scoped feature; do not assume all do.
 
-## 2. Classify existing tests
-
-For each test or coherent parameterized group:
-
-| Field | Record |
-|---|---|
-| Layer | Plain unit, Spring slice, application integration, infrastructure/contract, or system/E2E |
-| Entry point | Real caller boundary used |
-| Real collaborators | Real beans, database, broker, filesystem, clock, or external stubs |
-| Observable assertion | Output, state, event, protocol, or error checked |
-| Unique guarantee | Regression only this test would catch |
-| Overlap | Other test already owning the guarantee |
-| Cost | Context/container startup, fixtures, mocks, runtime, flakiness, and diagnostic difficulty |
-| Decision | Keep, delete, merge, convert, or simplify |
-
-Group tests by role to keep the inventory short.
-
-## 3. Choose the cheapest credible owner
+## 2. Choose the cheapest credible owner
 
 Use the narrowest layer that can genuinely observe the guarantee.
 
@@ -63,14 +46,19 @@ Use the narrowest layer that can genuinely observe the guarantee.
 
 Mocks cannot make a unit test credibly own framework wiring, transactions, queries, serialization, or broker semantics.
 
-## 4. High-yield trimming patterns
+When narrowing a boundary test, preserve the infrastructure semantics its assertions depend on. Check database-engine differences, transaction boundaries, and whether failures occur at flush or commit; the test annotation alone does not establish equivalence.
+
+## 3. High-yield trimming patterns
 
 - **Duplicate happy paths**
   - **Signal:** Similar success scenarios and assertions across service units, controller slices, repository tests, and `@SpringBootTest`.
   - **Default move:** Let one integration test own cross-layer wiring and the visible happy flow. Keep units for class-owned decisions and boundary tests for unique contracts.
 - **Integration matrices**
-  - **Signal:** A full context/container starts for every rule variant, invalid input, or collaborator response.
+  - **Signal:** A full application context or container-backed integration stack is used for every rule variant, invalid input, or collaborator response.
   - **Default move:** Keep one representative success and infrastructure-dependent failures; move business-rule matrices to focused or parameterized units.
+- **Avoidable context or container startup**
+  - **Signal:** Test classes start separate contexts because they differ only in mocked beans, properties, or profiles, or invalidate the context without needing to; containers start per class.
+  - **Default move:** Consolidate configurations or share infrastructure only where test semantics and isolation remain intact. Check reuse and lifecycle before claiming startup savings.
 - **Heavy unit tests**
   - **Signal:** Spring starts while meaningful collaborators are mocked and only one class is asserted.
   - **Default move:** Construct the class with Mockito or fakes. Keep Spring only when testing injection, proxies, validation, transactions, or configuration.
@@ -79,7 +67,7 @@ Mocks cannot make a unit test credibly own framework wiring, transactions, queri
   - **Default move:** Assert observable results and contract-significant interactions; remove refactoring-sensitive verification.
 - **Configuration/wiring ceremony**
   - **Signal:** Tests assert bean existence, annotations, default property binding, standard auto-configuration, or trivial `@Bean` pass-throughs.
-  - **Default move:** Delete when the happy-flow context exercises the bean. Retain custom conditions, property transformations, security chains, bean selection, or fragile deployment wiring.
+  - **Default move:** Delete when the happy-flow test would fail if the bean were missing or misconfigured. Retain custom conditions, property transformations, security chains, bean selection, or fragile deployment wiring.
 - **Fixture combinatorics**
   - **Signal:** Large builders create near-identical graphs; tests vary irrelevant fields; setup dominates behavior.
   - **Default move:** Use minimal valid fixtures, behavior-named local helpers, and compact parameterized rule tables. Avoid shared fixtures that hide intent or couple unrelated classes.
@@ -93,7 +81,7 @@ Mocks cannot make a unit test credibly own framework wiring, transactions, queri
   - **Signal:** Extensive stubbing ends in `notNull`, completion, or a mirrored mock response.
   - **Default move:** Strengthen around a real guarantee or delete; setup complexity does not prove value.
 
-## 5. Distinguish overlap from different risks
+## 4. Distinguish overlap from different risks
 
 Similar execution is legitimate when tests own different guarantees, for example:
 
@@ -105,21 +93,17 @@ Similar execution is legitimate when tests own different guarantees, for example
 
 Name the distinct guarantees before declaring overlap.
 
-## 6. Apply the target shape as a hypothesis
-
-Use the [preferred target shape](../SKILL.md#preferred-target-shape) as a starting hypothesis, not a quota. Avoid per-method and per-requirement test quotas; one test may own several tightly related assertions. Add shared helpers only for material repetition remaining after redundant tests are removed.
-
-## 7. Rank recommendations
+## 5. Rank recommendations
 
 | Category | Use when | Action |
 |---|---|---|
 | Safe trim | Another retained test clearly owns the guarantee, or the test only re-proves framework/library behavior. | Recommend deletion or merge. |
-| Structural simplification | A valuable guarantee sits at an unnecessarily expensive layer. | Convert to a unit or narrower slice and name retained assertions. |
+| Cheaper layer | A valuable guarantee sits at an unnecessarily expensive layer. | Convert to a unit or narrower slice and name retained assertions. |
 | Confirmation required | Intent may encode an undocumented production, regulatory, compatibility, security, or incident-derived requirement. | Ask before deletion. |
 
-Prioritize duplicate slow integrations, then Spring-backed tests that can be units, low-value configuration/framework checks, repeated fixture/mock ceremony, and finally minor assertion/helper cleanup.
+Prioritize by observed cost. A typical order is duplicate slow integrations, avoidable context or container startup, Spring-backed tests that can be units, low-value configuration/framework checks, repeated fixture/mock ceremony, and finally minor assertion/helper cleanup.
 
-## 8. Apply changes safely
+## 6. Apply changes safely
 
 When edits are requested:
 
@@ -131,9 +115,8 @@ When edits are requested:
 
 When cheap, measure net test LOC, methods/classes removed or converted, Spring context/container starts removed, focused runtime before/after, and duplicated fixture/helper code removed. Measurements support rather than replace the guarantee map.
 
-## 9. Report material actions
+## 7. Example action table
 
-| Priority | Location | Action | Why redundant/heavy | Guarantee owner after change | Risk |
+| Priority | Location | Action | Evidence | Retained guarantee owner | Risk |
 |---|---|---|---|---|---|
-
-Then show the portfolio by layer and map critical guarantees to retained owners. Clearly mark assumptions and removals needing confirmation.
+| 1 | `OrderFlowIT`: five invalid-quantity tests | `convert` four to a parameterized unit test; keep one | All five run through the full integration stack to check one validator rule | `OrderValidatorTest#rejectsInvalidQuantity` (rule); the kept `OrderFlowIT` test (400 error body) | Low |
