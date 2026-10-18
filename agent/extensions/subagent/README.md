@@ -181,6 +181,16 @@ Depth and task limits always apply. Unknown agents are blocked. Project-local ag
 
 Delegation guidance is added to Pi's prompt only while `subagent` or child `escalate_to_parent` is active. If another extension forces a complete system prompt, the guidance may not reach the model; mode, approval, trust, depth and allowlist enforcement are unaffected. See [structured prompt contributions](../maintenance.md#structured-prompt-contributions).
 
+## Restrict delegation from a launcher
+
+A program that starts Pi without a UI, such as a review orchestrator, can limit that session to read-only delegation by setting this in Pi's environment:
+
+```bash
+PI_SUBAGENT_INHERITED_APPROVAL_SCOPE=read-only
+```
+
+The session then behaves as if it inherited read-only approval from a parent agent, whatever the policy mode. It can still delegate to known user agents whose declared tools are all enforced read-only, such as `scout` and `reviewer`. Write-capable agents such as `worker` are blocked, because there is no UI to approve them. Pi's delegation guidance tells the model that this approval comes from an ancestor session.
+
 ## Approval and clarification previews
 
 In TUI mode, delegation approval and child clarification show request details in a persistent warning-style preview in the transcript. Read that preview before choosing an approval or answering; scroll the transcript if needed. Choices and the custom-answer editor use compact, generic titles that point to the details above. There is no extra acknowledgement step, and approval previews remain summaries rather than full task texts.

@@ -6,6 +6,7 @@ import {
 	buildApprovalPrompt,
 	buildProjectAgentConfirmationDetails,
 	evaluateSubagentPolicy,
+	getInheritedSubagentApprovalScope,
 	getSubagentApprovalOptions,
 	isWriteCapableAgent,
 	resolveDelegatedApprovalScopeForPolicy,
@@ -201,6 +202,35 @@ test("auto mode cannot broaden inherited read-only nested approval to writers", 
 		evaluateSubagentPolicy("auto", summary, false, "Improve this module", false, "read-only", false, true).action,
 		"block",
 	);
+});
+
+test("a launcher can limit a top-level session to read-only delegation through the environment", () => {
+	const saved = {
+		scope: process.env.PI_SUBAGENT_INHERITED_APPROVAL_SCOPE,
+		legacy: process.env.PI_SUBAGENT_INHERITED_APPROVAL,
+	};
+	try {
+		delete process.env.PI_SUBAGENT_INHERITED_APPROVAL;
+		process.env.PI_SUBAGENT_INHERITED_APPROVAL_SCOPE = "read-only";
+		const scope = getInheritedSubagentApprovalScope();
+		assert.equal(scope, "read-only");
+		assert.equal(
+			evaluateSubagentPolicy("auto", writeCapableParallelSummary(), false, "Review this module", false, scope, false).action,
+			"block",
+		);
+		assert.equal(
+			evaluateSubagentPolicy("auto", readOnlySingleSummary(), false, "Review this module", false, scope, false).action,
+			"allow",
+		);
+	} finally {
+		for (const [name, value] of [
+			["PI_SUBAGENT_INHERITED_APPROVAL_SCOPE", saved.scope],
+			["PI_SUBAGENT_INHERITED_APPROVAL", saved.legacy],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	}
 });
 
 test("manual mode allows explicit requests and blocks non-explicit top-level requests", () => {

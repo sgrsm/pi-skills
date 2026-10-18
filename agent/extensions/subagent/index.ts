@@ -605,7 +605,8 @@ function formatSubagentPolicyMode(mode: SubagentPolicyMode): string {
 	}
 }
 
-function getInheritedSubagentApprovalScope(): DelegationApprovalScope {
+// Also a supported launcher contract: see "Restrict delegation from a launcher" in README.md.
+export function getInheritedSubagentApprovalScope(): DelegationApprovalScope {
 	const rawScope = process.env[SUBAGENT_INHERITED_APPROVAL_SCOPE_ENV]?.trim().toLowerCase();
 	if (rawScope === "all") return "all";
 	if (rawScope === "read-only" || rawScope === "readonly" || rawScope === "read_only") return "read-only";
