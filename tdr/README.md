@@ -13,8 +13,8 @@ The owning records explain the evidence, scope and acceptance criteria for each 
 
 ## Pi 1.3.0 revalidation
 
-- **TDR-20261009-1201 resolved:** supported Clarify overlays and input/layout/lifecycle acceptance completed. The record is deleted; [resolution evidence and practical limits](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d2--medium-priority-revisit-the-supported-clarify-overlay-remedy) are retained in the assessment.
-- **TDR-20261009-1202 resolved:** SDK/actual-CLI restoration, restriction and lifecycle acceptance completed. The record is deleted; [resolution evidence and limits](../extensions-audit/20261016-220621-1.2.0-to-1.3.0/02-simplification-and-debt.md#d1--medium-priority-finish-local-acceptance-and-documentation-for-restored-resume-tools) are retained in the assessment.
+- **TDR-20261009-1201 resolved:** supported Clarify overlays and input/layout/lifecycle acceptance completed. The record is deleted; [resolution evidence and practical limits](../extensions-audit/20261024-143437-1.3.0-to-1.4.0/02-simplification-and-debt.md#tdr-1201-clarify-overlay-remedy-resolved) are retained in the assessment.
+- **TDR-20261009-1202 resolved:** SDK/actual-CLI restoration, restriction and lifecycle acceptance completed. The record is deleted; [resolution evidence and limits](../extensions-audit/20261024-143437-1.3.0-to-1.4.0/02-simplification-and-debt.md#tdr-1202-sdkcli-resumed-tools-resolved) are retained in the assessment.
 - **TDR-20261009-1204:** request-hook identity remains payload-only; the supported physical-model prerequisite is still missing.
 - **TDR-20261009-1206:** custom UI still lacks supported scoped/arbitrated blocked-status integration. The low-level terminal setter is not an equivalent replacement; no live dashboard reproduction is claimed.
 - **TDR-20261009-1200 / TDR-20261009-1205:** no upgrade-driven status change; transient trust and the all-projects storage policy remain open.
