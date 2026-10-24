@@ -130,17 +130,54 @@ Record commands, environment/version context, results, and unexecuted criteria. 
 
 Run one coordinated audit, not three independent category audits. Reconcile the evidence once, then write all three reports in the new `extensions-audit/` run directory specified in `SKILL.md`. Use its `YYYYMMDD-HHMMSS` timestamp format and collision handling. Keep only the newest timestamped set as the current assessment; no fourth overview, archive or separate history marker is required.
 
+### Lean output
+
+Perform the full inspection and validation above; write a decision record, not an investigation transcript. For a routine audit with few findings, aim for **900 words or less in compatibility, 500 in simplification/debt, and 300 in API opportunities**. These are ceilings to aim under, not quotas. Quiet categories can be a few sentences. Expand only for material findings, necessary safety/reproduction evidence, or the required TDR dispositions; never hide consequential uncertainty to fit a budget.
+
+Keep each finding to a short block, normally three bullets and about 120–180 words. Keep the consequence, timing, decisive evidence and next step. Link to owning code/docs rather than explaining the extension again. Use one or two decisive source links per claim; do not append a general bibliography.
+
+Cut repeated summaries, methodology/permission boilerplate, full logs, exploratory probe narratives, exhaustive assertion lists, unchanged-limitation matrices, release-note inventories and historical remediation stories. Do not move the excess into appendices, extra reports or maintainer documents. Working notes/logs may stay in approved scratch, but the retained reports must contain the essential evidence without relying on those temporary artifacts.
+
 ### Consolidation and replacement
 
-1. Read the previous set together. Carry forward unresolved actions, relevant API recommendations, current TDR/limitation dispositions and essential version-bound validation evidence/gaps. Reassess what the current run covers; label retained evidence that was not rechecked rather than implying fresh validation. Summarize resolved findings only when useful for comparison, qualify reused finding IDs by version interval, and do not copy obsolete narratives or turn unchanged debt into new findings.
+1. Read the previous set together. Carry forward current actions, recommendations, dispositions and only the version-bound evidence/gaps needed to support them. Label evidence not rechecked. Retain a brief closure note only when needed for comparison or an inbound reference; preserve its acceptance result and material limits, not the old chronology or test matrix. Qualify reused finding IDs by version interval. Do not copy obsolete narratives or turn unchanged debt into new findings.
 2. Make the new set self-contained, remove dependencies on older report paths and repair inbound links within the authorized scope; request approval if external documents need edits. Save all three documents, then verify coverage, links and consistent completion/disposition status before retiring the previous set. A red validation gate or explicitly partial assessment is not a publication failure: preserve its gaps and any relevant prior evidence instead of implying success.
 3. Skill invocation authorizes removal of the older report sets after that check, subject to active permissions and explicit user restrictions. Remove only the three standard report files in verified older run directories and then the empty directories; do not traverse symlinks or remove extra/user-owned content. Ask about unexpected contents or missing authorization. If saving/checking the replacement fails, keep the previous set and report the incomplete replacement. Use existing Git history for committed snapshots, without making archives or rewriting history.
 
-Keep this retained set's dispositions current during separately authorized follow-up: reflect verified fixes and record maintenance, retain original audit-time evidence/version scope, and distinguish later validation from the original run. Do not leave completed recommendations presented as pending, claim unperformed checks or silently close incomplete acceptance.
+Keep this retained set's dispositions and at-a-glance triage current during separately authorized follow-up: reflect verified fixes and record maintenance, retain original audit-time evidence/version scope, and distinguish later validation from the original run. Do not leave completed recommendations presented as pending, claim unperformed checks or silently close incomplete acceptance.
+
+### Plain-language triage
+
+Make the practical decision visible before technical context, inventories or validation logs. Open `01-compatibility.md` with an **At a glance** summary across all three categories; open the other reports with a short category verdict and a link to that summary. This stays within the three-document contract, not a fourth overview.
+
+Start with a direct verdict: **Action needed now**, **No immediate action found within the checked scope**, or **Immediate risk unclear**. Explain what this means for continued use and any affected workflow to avoid or constrain. Choose unclear when a specific evidence gap prevents judging a credible immediate risk, not merely because exhaustive live testing was unavailable. Never turn an untested surface into reassurance.
+
+Follow with a compact table: **Finding / Practical impact / What to do and when**, linking to the detailed findings. Use descriptive problem names, not IDs alone. Include all immediate/high-impact items and the useful maintenance/defer/acceptance recommendations, not every coverage row. Keep this first-screen summary to a verdict and normally three to six short rows; use fewer when possible. Say explicitly when nothing needs immediate attention, even with a red gate.
+
+Apply the rubric below; do not copy it into reports. Keep impact, timing and confidence separate:
+
+| Practical impact | Meaning for the affected workflow |
+| --- | --- |
+| **High** | Credible data loss, security/privacy exposure, substantial unexpected cost, or a core workflow unusable or materially incorrect without a reasonable workaround. State the affected scope. |
+| **Medium** | Meaningful workflow breakage or degradation, but limited in scope or with a practical workaround. |
+| **Low** | Cosmetic, peripheral or narrowly encountered inconvenience with little practical consequence. Explain the triggering condition. |
+| **Maintenance-only** | Tests, documentation or development checks need attention, without an established runtime consequence. State the maintenance cost separately. |
+| **Unknown** | Evidence is insufficient to judge practical impact; identify the missing check. This is not a low-impact rating. |
+
+Use one plain-language timing recommendation per finding:
+- **Do now:** address or mitigate before continuing the affected workflow; explain why waiting is unsafe or impractical and the smallest safe interim step.
+- **Before [specific checkpoint]:** give a concrete deadline such as before the next extension change or before relying on the verification gate, not an unexplained high priority.
+- **Can wait:** deferral is reasonable; state the current cost/workaround and a useful revisit trigger.
+- **Accept for now:** recommend retaining the current limitation because the practical benefit does not justify the change's cost or risk; state the trade-off and when to reconsider. This is advice, not a user acceptance decision or TDR closure.
+- **Verify first:** uncertainty prevents choosing action or acceptance; name the next bounded check and any justified precaution while it remains unverified.
+
+Explain confidence in the supporting evidence separately, especially for source-only risks or unexecuted criteria. Do not infer runtime severity from a failing-test count, a red gate, required-versus-optional classification, or implementation order. A stale test can need repair before the next change without being an urgent production failure; a low-frequency issue can still be high impact. Do not invent numerical scores or use `P0`/`P1` priority codes as substitutes for consequences and timing. If using `C1`/`D1`/`A1` finding IDs, explain once that they mean compatibility/debt/API finding numbers local to this assessment, not severity.
+
+A defer or acceptance recommendation must preserve required/optional classification, evidence, safeguards and unresolved acceptance criteria. New host support alone does not authorize a policy change, accepted risk or remediation. Keep optional API **adopt now / defer / skip** decisions consistent with the practical triage. “Adopt now” means ready and worthwhile, not an operational emergency; still give a separate timing recommendation and distinguish code adoption from verification.
 
 ### Shared context and classification
 
-Give each document the same compact context header: run timestamp/timezone, requested and actual versions, baseline provenance or absence, repository revision, overall assessment completion status, and that category's completion status. Include relative links to both sibling documents. Record relevant working-tree changes and full host/environment context in the compatibility document.
+After the verdict, give each document the same two- or three-line context block: timestamp/timezone, requested/actual versions, baseline provenance or absence, revision, and overall/category completion status. Add sibling links. Put host/environment details and relevant dirty state only in compatibility; include what is needed to identify and reproduce the checked setup, not an environment inventory.
 
 Give each finding one primary home, merging cross-extension findings that share a cause:
 1. Required compatibility changes belong in `01-compatibility.md`, including when a new API causes the requirement.
@@ -153,30 +190,36 @@ Always create all three documents, including empty or inconclusive categories. S
 
 ### 01-compatibility.md
 
-Include prioritized upgrade-related compatibility findings and required fixes; detailed assessment context (host roots/Node, relevant dirty state, scope, research limits); and a compact row per runtime extension showing activation status, compatibility evidence, and gaps. Identify shared infrastructure coverage separately.
+Use four compact sections: **At a glance**, **Findings**, **Validation**, **Coverage and gaps**. Omit an empty findings section after saying no findings; do not repeat the action list at the end.
 
-Keep the canonical detailed validation record here: executed commands and environment/version context, results and evidence strength, unchanged diagnostic failures as baseline/coverage context rather than new bugs, skipped checks, network/delegation limits, and next verification steps. Summarize evidence durably rather than relying only on temporary logs. Link to replacement/limitation outcomes in the second document where relevant.
+Keep findings ordered by practical urgency/impact. Record the selected host root, Node version and relevant dirty state once. Use a validation table: command or bounded probe, result, and what it establishes. Include full-gate totals/failure cause, separate positive acceptance outcomes and material skips. Group related probes instead of listing every scenario; retain enough command/environment detail and decisive assertions to reproduce a consequential result. Successful host-link/scratch setup needs one compact entry covering resolution, authorization and safety checks; describe procedure only if it failed or changed a conclusion.
+
+Account for every runtime extension's name, activation, checked evidence and gaps, plus shared infrastructure, using grouped lists or rows for common outcomes. Give individual rows only to exceptions; do not repeat each extension's purpose or unchanged limitations. List gaps once with their consequence/next check; mention network/delegation limits only when they affected coverage. Cross-reference debt/API findings instead of retelling them.
 
 ### 02-simplification-and-debt.md
 
-Include prioritized built-in replacement/retirement candidates, partial replacements, and newly feasible workaround/accepted-limitation improvements. Record coverage of documented limitations, including unchanged or incompletely assessed ones, without restating old defects as new findings.
+Report actionable replacement/simplification findings, then one compact TDR table: **Record / Disposition / Decisive evidence and remaining action**. Cover every present TDR, including non-blocked records, without retelling it. Include proposed record changes only when needed; distinguish host unblock, local remediation and closure, linking acceptance results to validation rather than copying logs.
 
-Give every TDR, including non-blocked records, a compact row with disposition, evidence, remaining work, and proposed record changes. Keep unchanged debt concise; separate record-only corrections from upgrade findings. Retain the relevant positive acceptance results and gaps here, linking to the canonical validation record rather than duplicating full logs.
+Summarize unchanged built-in overlap and documented limitations in one grouped coverage sentence/list linked to owning docs. Give detail only for changed conclusions or incomplete assessment. If an older closure still needs an evidence anchor, retain a short note with version, acceptance result and material limit, not its full history.
 
 ### 03-api-opportunities.md
 
-Include the substantive optional API-adoption shortlist: new capability/release, concrete current consumer/workflow, expected benefit, smallest feasible adoption, alternatives and costs, validation performed or proposed, and an **adopt now / defer / skip** recommendation. Summarize relevance-screen coverage even if no candidate merits a finding. Preserve source-only/provisional status and category-specific gaps; do not fill the document with irrelevant release-note items. Link to supporting validation or findings in the other documents.
+Include only candidates with a concrete current consumer and material benefit. Use a short table or finding block: capability/consumer, benefit, smallest adoption and cost, **adopt now / defer / skip**, and validation still needed. Keep evidence/confidence explicit; cross-reference related compatibility/debt work instead of duplicating it.
+
+Do not enumerate every rejected API or host improvement. Collapse capabilities without a useful local consumer into one screening sentence; preserve only meaningful defer/skip decisions that could affect a real workflow. With no worthwhile candidates, say so and stop after that coverage sentence and any material gap.
 
 ### Finding contract and final checks
 
-For each finding include:
-- Priority/category and affected extension(s), shared code, or TDR.
-- Pi change, baseline-to-target evidence (or stated attribution limit), and user-visible consequence or material benefit.
-- Concrete suggested fix, bounded remediation, or adoption plan; affected files/docs/tests; and validation performed or still required.
-- Materially different reasonable approaches, with trade-offs and a recommended option. Retaining the current implementation can be a valid alternative for optional adoption. Do not invent alternatives when only one is sensible.
-- Concise recommendation rationale based on safety/behavioral parity, supported APIs, reliability, maintenance burden, migration effort, and reversibility.
-- Confidence and remaining uncertainty; do not present hypotheses as confirmed defects or optional enhancements as required fixes.
+Use a descriptive title and normally three short bullets:
+- **Impact and timing:** affected extension/workflow, concrete consequence or benefit, practical impact and when to act/defer/revisit. Keep required fixes distinct from optional improvements.
+- **Evidence:** changed Pi contract and local consumer, baseline/target comparison or attribution limit, decisive source/probe result and confidence. Label source-only or unverified claims.
+- **Recommendation:** smallest bounded fix/adoption, affected code/docs/tests, remaining validation and rationale. Mention a meaningful alternative/trade-off in a clause when it changes the decision; do not invent alternatives or add a separate subsection for each criterion.
 
-Every actionable finding needs a fix or bounded improvement plan. Recommend rather than ask the user to choose an approach to finish the audit; seek clarification only for materially ambiguous inputs or authorization. Unchanged coverage rows are not findings and need no repeated fix proposal. Prioritize within each category, then recommend an action order across categories in the chat summary.
+Every actionable finding needs a plan, not just a warning. Recommend an approach without asking the user to choose merely to finish the audit. Order actions by urgency/impact and dependencies, not test counts or implementation order. Unchanged coverage rows need no fix proposal.
 
-Before finishing, check that every extension, documented limitation, relevant new API candidate, and TDR was assessed or explicitly marked incomplete; all upgrade findings passed the relevance gate; recommendations preserve documented safety constraints; alternatives were weighed where meaningful; and each report distinguishes observations, behavioral proof, and gaps. Verify all three files exist, sibling/inbound links resolve without the older sets, shared context and overall status agree, category-specific/current dispositions are accurate, relevant prior evidence/gaps survived consolidation, and final reconciled results have a single primary home. Only then remove older report sets and verify that only the newest remains, or identify why cleanup is blocked. If saving is incomplete, follow the explicit persistence-failure instructions in `SKILL.md` and retain the previous set. Finish with a concise summary, links to all three documents, recommended action order, and material gaps.
+Before publishing, verify:
+- Every extension, limitation, relevant API candidate and TDR was assessed or explicitly incomplete; findings pass the upgrade-relevance gate and preserve safeguards and acceptance criteria.
+- All three files exist; sibling/inbound links resolve without older sets; context/status and current dispositions agree; essential comparison/closure evidence survives consolidation; each finding has one primary home.
+- Triage and details agree on impact, timing and confidence. Remove repetition and boilerplate; retain only facts needed to decide, remediate or judge the evidence. Brevity must not conceal a safety issue, validation failure or coverage gap.
+
+Only then retire older sets and verify the newest is the sole retained set, or state why cleanup/persistence is blocked. Finish in roughly 150 words or less: immediate-action verdict, what to do next versus defer/accept, material uncertainty and links to all three reports. Do not reproduce report tables in chat.

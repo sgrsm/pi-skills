@@ -38,13 +38,27 @@ Arguments are natural-language instructions, not a custom command-line syntax.
 - Documented tests and host diagnostics, not just source inspection.
 - Web research through available HTTP tools or web search when useful.
 - Scout-first parallel investigation when policy and available tools permit, with reviewers reserved for deeper analysis.
-- Three linked category reports per run, plus a short chat summary with recommended action order.
+- Three linked category reports per run, plus a plain-language verdict in chat: whether anything needs attention now, what can wait, and what is reasonable to accept.
 
-Each finding includes evidence, a suggested fix or adoption plan, and a recommendation among materially different reasonable approaches. Unrelated pre-existing extension problems and speculative feature wishlists are excluded. Required fixes remain separate from optional improvements.
+Findings are short: practical impact and timing, decisive evidence, and a recommended next step. Alternatives appear only when their trade-off matters. Unrelated pre-existing problems, repeated methodology and speculative feature wishlists are excluded. Required fixes remain separate from optional improvements.
+
+## Read the result quickly
+
+Start with the chat verdict or **At a glance** at the top of the compatibility report. That summary covers all three categories, so you do not need to read every report to decide what matters. It names the affected workflow, explains practical impact, and recommends when to act:
+
+- **Do now:** fix or mitigate before continuing the affected workflow.
+- **Before [specific checkpoint]:** maintenance needed before something concrete, such as the next extension change.
+- **Can wait:** reasonable to defer within the assessed scope, with the cost/workaround and a revisit trigger stated.
+- **Accept for now:** retaining a low-value-to-fix limitation is recommended, with the trade-off explained. This is not approval on your behalf or a closed TDR.
+- **Verify first:** a specific missing check prevents a reliable decision; the summary explains the next check and any necessary precaution.
+
+Impact is described as **high**, **medium**, **low**, **maintenance-only**, or **unknown**, separately from timing and evidence confidence. For example, stale test expectations may block reliable validation and need fixing before the next code change without meaning ordinary Pi use is broken. Finding IDs are only cross-references, not severity scores.
 
 ## Reports
 
-One invocation runs one full audit and writes:
+The investigation and tests remain full; the output is a compact decision record. For a routine audit, reports aim for about **900 / 500 / 300 words or less**, respectively, with shorter quiet categories. Material findings or necessary evidence can justify more. Clean extensions are grouped, every TDR gets a short disposition, and rejected APIs are not listed one by one. No long appendices or historical retellings.
+
+One invocation writes:
 
 ```text
 extensions-audit/
@@ -56,7 +70,7 @@ extensions-audit/
 
 The timestamp uses datetime format `YYYYMMDD-HHMMSS` with a 24-hour clock; the timezone is recorded in each report. An unused suffix is added to the run-directory name if needed to avoid collisions.
 
-- **Compatibility:** required fixes, extension compatibility coverage, detailed assessment context, and validation results.
+- **Compatibility:** at-a-glance decisions, required fixes, compact validation results, and grouped coverage/gaps.
 - **Simplification and debt:** built-in replacement candidates, workaround/limitation improvements, and every TDR's disposition, including non-blocked records.
 - **API opportunities:** worthwhile optional uses of new host APIs, concrete benefits, adoption trade-offs, and recommendations.
 
