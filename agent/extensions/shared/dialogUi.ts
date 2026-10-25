@@ -63,10 +63,9 @@ const editorHintText = (theme: ExtensionUIContext["theme"]) =>
 	theme.fg("dim", `${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.input.newLine", "newline")}  ${keyHint("tui.select.cancel", "cancel")}\nExternal editor disabled in this cancellable dialog.`);
 
 /**
- * Fit title, editor and hints into `rows` lines for an overlay whose height the host caps at the terminal
- * height. The editor line holding the cursor is never dropped: chrome is shed first (spacer, second hint
- * line, hints, title) and only then is the editor itself windowed around its cursor line. A title cut short
- * is marked with an ellipsis.
+ * Fit title, editor and hints into `rows` lines. The editor line holding the cursor is never dropped:
+ * chrome is shed first (spacer, second hint line, hints, title), then the editor is windowed around its
+ * cursor line. A title cut short is marked with an ellipsis.
  */
 export function fitEditorDialogLines(rows: number, width: number, title: string[], editor: string[], hints: string[]): string[] {
 	const budget = Math.max(1, Math.floor(rows));
@@ -95,7 +94,8 @@ export function fitEditorDialogLines(rows: number, width: number, title: string[
  * Cancellable multiline editor. Without `options` it keeps the host's default (dock) presentation. With
  * `options.overlay` it is bounded to the terminal height, consumes wheel input and is completed by the
  * host callback like any other overlay, so stacked overlays (for example transcript search) keep focus.
- * Outside the TUI the basic input dialog is used and `options` are ignored.
+ * An optional layout budget also bounds an inline editor and keeps wheel input local, without changing
+ * the host presentation. Outside the TUI the basic input dialog is used; options and layout are ignored.
  */
 export function showCancellableEditor(
 	ctx: { mode: string; ui: ExtensionUIContext },
@@ -103,6 +103,7 @@ export function showCancellableEditor(
 	title: string,
 	prefill = "",
 	options?: CancellableCustomOptions,
+	layout?: { maxRows: (terminalRows: number) => number },
 ): Promise<string | undefined> {
 	if (ctx.mode !== "tui") {
 		// Pi 1.0 editor() has no signal, and leaves an RPC pending request on abort.
@@ -127,12 +128,12 @@ export function showCancellableEditor(
 		container.addChild(new Spacer(1));
 		container.addChild(editor);
 		container.addChild(hintText);
-		const overlay = options?.overlay === true;
+		const bounded = options?.overlay === true || layout !== undefined;
 		const component: Component & { focused: boolean; handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined } = {
 			get focused() { return editor.focused; },
 			set focused(value: boolean) { editor.focused = value; },
-			render: (width: number) => overlay
-				? fitEditorDialogLines(tui.terminal.rows, width, titleText.render(width), editor.render(width), hintText.render(width))
+			render: (width: number) => bounded
+				? fitEditorDialogLines(Math.min(tui.terminal.rows, layout?.maxRows(tui.terminal.rows) ?? tui.terminal.rows), width, titleText.render(width), editor.render(width), hintText.render(width))
 				: container.render(width),
 			invalidate: () => container.invalidate(),
 			handleInput(data: string) {
@@ -145,9 +146,8 @@ export function showCancellableEditor(
 				} else editor.handleInput(data);
 			},
 		};
-		// A wheel over an overlay would otherwise fall through to the transcript beneath it. Everything else
-		// (selection, link clicks) keeps the host default.
-		if (overlay) component.handleMouse = (event) => event.type === "wheel" ? { handled: true, render: false } : undefined;
+		// Wheel over a bounded dialog stays local. Other gestures keep the host default.
+		if (bounded) component.handleMouse = (event) => event.type === "wheel" ? { handled: true, render: false } : undefined;
 		return component;
 	}, options);
 }

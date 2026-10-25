@@ -7,8 +7,8 @@ import { Type } from "typebox";
 import { clearLegacyFooterStatus, FOOTER_STATUS_KEYS } from "../shared/footerStatus.ts";
 import { registerToolAvailability } from "../shared/toolAvailability.ts";
 import { getSessionDialogQueue, waitForDialog } from "../shared/dialogQueue.ts";
-import { boundedDialogDetails, showCancellableCustom, showCancellableEditor, type CancellableCustomOptions } from "../shared/dialogUi.ts";
-import { clarifyOverlayOptions, createClarifySelector, type ClarifyChoice, type ClarifySelection } from "./selector.ts";
+import { boundedDialogDetails, showCancellableCustom, showCancellableEditor } from "../shared/dialogUi.ts";
+import { clarifyDockHeight, createClarifySelector, type ClarifyChoice, type ClarifySelection } from "./selector.ts";
 
 export { renderClarifyOptionLines, styleClarifyOptionLine } from "./selector.ts";
 
@@ -71,9 +71,6 @@ const ClarifyParamsSchema = Type.Object({
 	),
 });
 
-/** Host presentation shared by Clarify's selector and answer editor (no handle access, by type). */
-const CLARIFY_OVERLAY_PRESENTATION: CancellableCustomOptions = { overlay: true, overlayOptions: clarifyOverlayOptions };
-
 function normalizeText(value: string | undefined): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.replace(/\s+/g, " ").trim();
@@ -120,13 +117,11 @@ async function showClarifySelector(
 		});
 	}
 
-	// A focused overlay owns keyboard and wheel input and is budgeted against its own bounds, so
-	// the transcript never competes for them. Completion stays with the host-supplied callback.
+	// Use the normal editor slot below the transcript, not an overlay covering the conversation.
 	return showCancellableCustom<ClarifySelection>(
 		ctx.ui,
 		signal,
 		(tui, theme, keybindings, done) => createClarifySelector({ tui, theme, keybindings, done, question, choices }),
-		CLARIFY_OVERLAY_PRESENTATION,
 	);
 }
 
@@ -323,9 +318,8 @@ export default function clarifyExtension(pi: ExtensionAPI, options: ClarifyExten
 					if (!selected) return cancelled();
 					if (selected.kind === "custom") {
 						const title = options.length === 0 ? question : `Custom instructions\n\n${question}`;
-						// Presented as an overlay like the selector, so the host completes it by its own handle and
-						// stacked overlays (transcript search) keep keyboard focus for the whole exchange.
-						const customAnswer = await showCancellableEditor(ctx, signal, title, params.customPrompt ?? "", CLARIFY_OVERLAY_PRESENTATION);
+						// Keep the answer in the same bounded editor slot as the selector.
+						const customAnswer = await showCancellableEditor(ctx, signal, title, params.customPrompt ?? "", undefined, { maxRows: clarifyDockHeight });
 						signal.throwIfAborted();
 						const trimmed = customAnswer?.trim();
 						if (!trimmed) return cancelled();

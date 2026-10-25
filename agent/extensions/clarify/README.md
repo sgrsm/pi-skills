@@ -100,6 +100,8 @@ In RPC clients, an obsolete dialog may remain visible after abort because Pi 1.0
 
 ## UI and status
 
+After updating the extension, run `/reload` to use the current presentation. No display setting is required.
+
 Footer status uses the shared helper at `../shared/footerStatus.ts` (`agent/extensions/shared/footerStatus.ts`) so clarify participates in the managed footer order and clears legacy status keys before writing its current state.
 
 When the terminal UI is available, possible footer states are:
@@ -114,23 +116,28 @@ The status is refreshed on session start and when `/clarify on|off` changes the 
 
 Interactive selector in TUI mode:
 
-- opens as a focused overlay titled `Clarify` that sizes itself to your terminal (up to the full screen) and shows the question, numbered options, and the selected option's description
+- appears in the normal input area below the conversation, not on top of it; the panel shows the question, numbered options, and the selected option's description while the conversation remains available above
 - non-selected options use the theme accent color; the selected option uses fixed blue `#0066CC` and bold text
-- keys follow your Pi keybindings: `↑` / `↓` navigate (wrapping), `Enter` selects, `Esc` cancels. Long questions scroll with `PgUp` / `PgDn` / `Home` / `End`; the on-screen help shows the keys you have configured. The scroll actions are the `tui.select.pageUp`/`pageDown` and `tui.editor.cursorLineStart`/`cursorLineEnd` bindings
-- in fullscreen, the mouse wheel scrolls the question while the pointer is over the dialog (including when it is already at the top or bottom, so it never scrolls the transcript beneath it); the wheel over the transcript outside the dialog behaves normally
+- keys follow your Pi keybindings: `↑` / `↓` navigate (wrapping), `Enter` selects, `Esc` cancels. In fullscreen, `PgUp` / `PgDn` scroll the conversation; use `Ctrl+PgUp` / `Ctrl+PgDn` to page through a long question, or `Home` / `End` to jump to its ends. Regular mode also accepts plain `PgUp` / `PgDn` for the question. The on-screen help reflects configured keys
+- in fullscreen, the mouse wheel scrolls the question while the pointer is over the panel (including at its top and bottom); the wheel over the conversation above the panel scrolls the conversation normally
 - in regular mode the terminal owns the wheel, so use the keyboard; Clarify no longer turns terminal mouse reporting on or off in either mode
-- on small or narrow terminals the dialog drops decoration (borders, title, status) before it drops content, and always keeps the selected option; every description line that fits is shown, and a description that cannot fit is cut with `…`
+- the panel uses at most half the terminal height, capped at 16 rows, and shrinks further on short screens. It favors readable question context over decoration; options and questions scroll within the available space, and a description that cannot fit is cut with `…`. On extremely short terminals Pi may clip the input area; enlarge the window if choices or the cursor disappear
 - choosing `Custom instructions` opens the cancellable in-Pi editor (see below)
 
 Custom-answer editor in TUI mode:
 
-- opens as the same kind of focused overlay as the selector, so the whole question and answer exchange keeps one consistent presentation. It shows the context, a multiline editor with your starter text, and `Enter` submit / newline / cancel hints; the external-editor shortcut is unavailable while it is open
-- the dialog fits the terminal: on a short screen the context text is shortened with `…` first, then the hints, and finally the editor shows only the lines around your cursor; the cursor stays visible and bracketed paste works as in the main editor
-- the mouse wheel over the dialog does not scroll the transcript beneath it; clicking or dragging works as the terminal and Pi normally do
+- replaces the selector in the same bounded input area. It shows the context when space permits, a multiline editor with your starter text, and submit / newline / cancel hints; the external-editor shortcut is unavailable while it is open. Long context is shortened with `…`; the full question remains in the conversation
+- on a short screen the panel shortens context with `…`, then drops hints, and finally shows only the editor lines around your cursor. Bracketed paste works as in the main editor. Extremely short terminals can still clip Pi's input area, as noted above
+- the mouse wheel over the panel does not scroll the conversation; clicking or dragging follows Pi and the terminal's normal behavior
 
-While a question or answer editor is open, that dialog has keyboard focus. If transcript search (fullscreen) is open, or you open it on top, search keeps or takes focus as you would expect: cancelling or finishing Clarify removes only its own dialog and focus goes back to the search box, never to the main editor behind it. Dragging over the dialog selects the dialog's text and clicking a link in the question follows Pi's normal link behavior.
+While a question or answer editor is open, it has keyboard focus. Answering or cancelling restores the normal input editor and any draft text. You can still review the conversation above it.
 
-**Known limitations:** the transcript-search shortcut is handled by Pi even while a dialog is open, so pressing it toggles search beneath or above the dialog. Mouse behavior was verified with fake terminals only; macOS/Ghostty trackpad and other live-terminal behavior with this overlay has not been tested. If wheel/trackpad scrolling is stuck after using an older version of this extension, restart Pi after updating; `/reload` alone does not restore terminal mouse modes.
+**Known limitations:**
+
+- On Pi 1.4.0, if transcript search or another overlay opens above an already displayed Clarify panel and the clarification is then aborted, Pi can focus the normal editor while leaving the overlay visible. For search, close it with the transcript-search shortcut (normally Ctrl+Shift+F) before typing, or close search before aborting. Search opened before the clarification is restored after the exchange.
+- Clarify uses Pi's input area, so a built-in picker such as `/model` or `/settings` may be replaced if a clarification arrives while that picker is open.
+- Some terminals do not send distinct Ctrl+PageUp/PageDown keys. Use the wheel in fullscreen, remap the question paging actions, or use regular mode if paging through the middle of a question is unavailable.
+- Mouse behavior is covered by fake-terminal checks, not live macOS/Ghostty trackpad testing. Clarify does not turn terminal mouse reporting on or off. If scrolling is stuck after an older extension version, restart Pi; `/reload` alone does not restore terminal mouse modes.
 
 Tool display states:
 

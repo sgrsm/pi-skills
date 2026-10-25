@@ -8,7 +8,7 @@
 
 `showCancellableCustom()` accepts optional host `custom()` options (for example `{ overlay: true, overlayOptions }`) and forwards them unchanged. The options type omits `onHandle`: completion always goes through the host's callback and a dialog never hides its own overlay handle, so a cancelled interaction removes only its own overlay, and a component that was never installed is still disposed exactly once.
 
-`showCancellableEditor()` takes the same optional options. Without them it keeps the host's default (input-area) presentation, which the permission prompts use. With `overlay: true` it fits the terminal height (shortening the title, then the hints, then showing the lines around the cursor) and does not let the wheel scroll the transcript beneath it. Outside the TUI the options are ignored.
+`showCancellableEditor()` takes the same optional options. Without them it keeps the host's default (input-area) presentation, which the permission prompts use. With `overlay: true` it fits the terminal height (shortening the title, then the hints, then showing the lines around the cursor) and does not let the wheel scroll the transcript beneath it. A separate optional sixth argument, `{ maxRows: (terminalRows) => number }`, bounds an inline editor too and keeps wheel input local without forwarding layout data to the host. Clarify uses that compact presentation. Outside the TUI the options and layout are ignored.
 
 Prompt layout, hidden-scope limits, and custom-answer input differ by mode and are described in the [permissions](../permissions/README.md#prompt-choices) and [clarify](../clarify/README.md#tool) guides.
 

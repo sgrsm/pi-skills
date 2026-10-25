@@ -117,13 +117,13 @@ const editorTitle = `Custom instructions\n\n${Array.from({ length: 40 }, (_, i) 
 const editorPrefill = Array.from({ length: 30 }, (_, i) => `prefill line ${i + 1} 界 😀`).join("\n");
 
 /** Install an editor through the harness, optionally on a terminal with a specific size. */
-async function openEditor(rows: number, columns: number, options?: Parameters<typeof showCancellableEditor>[4], prefill = editorPrefill) {
+async function openEditor(rows: number, columns: number, options?: Parameters<typeof showCancellableEditor>[4], prefill = editorPrefill, layout?: Parameters<typeof showCancellableEditor>[5]) {
 	const h = createDialogHarness();
 	const ctx = h.context(undefined, "tui");
 	const custom = ctx.ui.custom;
 	ctx.ui.custom = ((factory: any, opts: any) => custom((tui: any, theme: any, kb: any, done: any) =>
 		factory({ ...tui, terminal: { ...tui.terminal, rows, columns } }, theme, kb, done), opts)) as typeof ctx.ui.custom;
-	const result = showCancellableEditor(ctx, new AbortController().signal, editorTitle, prefill, options);
+	const result = showCancellableEditor(ctx, new AbortController().signal, editorTitle, prefill, options, layout);
 	await expectRequestCount(h.requests, 1);
 	const request = h.requests[0]!;
 	const component = request.component as Component & { focused?: boolean; handleMouse?(event: TuiMouseEvent): unknown };
@@ -154,6 +154,17 @@ test("the editor requests the host default presentation unless options are suppl
 	assert.deepEqual([h.requests[0]!.method, h.requests[0]!.options], ["input", undefined], "RPC still uses the basic input dialog");
 	h.requests[0]!.answer("typed");
 	assert.equal(await rpc, "typed");
+});
+
+test("an inline editor layout bounds output and wheel input without changing host options", async () => {
+	const { component, request, render, result } = await openEditor(24, 80, undefined, editorPrefill, { maxRows: () => 6 });
+	assert.equal(request.options, undefined, "layout is not forwarded as host presentation options");
+	assert.ok(render().length <= 6);
+	assert.ok(render().some((line) => line.includes(CURSOR_MARKER)), "cursor remains in the bounded editor");
+	assert.deepEqual(component.handleMouse?.(wheelEvent("wheel")), { handled: true, render: false });
+	assert.equal(component.handleMouse?.(wheelEvent("click")), undefined);
+	component.handleInput!("\r");
+	assert.equal(await result, editorPrefill);
 });
 
 test("host custom options cannot carry a handle callback that would hide the overlay", () => {

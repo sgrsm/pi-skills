@@ -23,10 +23,9 @@ type DialogComponent = Component & { dispose?(): void };
 /**
  * Public renderer fixture for contract and positive acceptance tests.
  * custom() installation/completion is a test adapter, not an actual host-method invocation.
- * It mirrors Pi 1.3 InteractiveMode.showExtensionCustom(): an overlay interaction retains its own
- * handle and completes with handle.hide() (identity-specific), never topmost tui.hideOverlay(), and
- * a non-overlay interaction replaces the editor slot. Production Clarify requests an overlay; the
- * adapter honors whatever options the extension passes. Compare it with the host close path after
+ * It mirrors Pi 1.4 InteractiveMode.showExtensionCustom(): an overlay completes with its own
+ * handle.hide(), while inline interactions form an editor-slot stack. Production Clarify is inline;
+ * the adapter honors either presentation. Compare it with the host close path after
  * upgrades; the bounded subprocess in clarify-host.test.ts exercises the actual host method.
  * Coverage and practical limits are documented in host-contract-coverage.md.
  */
@@ -66,31 +65,43 @@ export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = 
 	const editorContainer = new Container();
 	editorContainer.addChild(editor);
 	const transcript = new ScrollView(new Text("Transcript\n".repeat(100), 0, 0), { primary: true, follow: "end", scrollbar: "hidden" });
-	// Simplified Pi 1.0 fixed-dock composition built with public layout APIs.
+	// Simplified host fixed-dock composition built with public layout APIs.
 	const dock = new VStack([
 		{ component: editorContainer, shrink: 1, minSize: 3 },
 		{ component: new Text("Footer\nStats\nStatus", 0, 0), shrink: 1, minSize: 0 },
 	]);
-	if (tui instanceof TuiAltScreen) tui.setLayoutRoot(new VStack([
+	const root = new VStack([
 		{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
 		{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
-	]));
+	]);
+	if (tui instanceof TuiAltScreen) tui.setLayoutRoot(root);
 	else { tui.addChild(new Text("Transcript", 0, 0)); tui.addChild(editorContainer); }
 	tui.setFocus(editor);
-	const dialogs: Array<{ component: DialogComponent; options: CustomOptions; handle?: OverlayHandle; doneCalls: number }> = [];
+	const dialogs: Array<{ component: DialogComponent; options: CustomOptions; handle?: OverlayHandle; mounted: boolean; doneCalls: number }> = [];
+	const inline: DialogComponent[] = [];
+	const showTop = () => {
+		const top = inline.at(-1) ?? editor;
+		editorContainer.clear(); editorContainer.addChild(top); tui.setFocus(top);
+		tui.requestRender();
+	};
 	ctx.ui.custom = <T>(factory: Parameters<ExtensionUIContext["custom"]>[0], options?: CustomOptions): Promise<T> => new Promise((resolve, reject) => {
 		let component: DialogComponent | undefined;
 		let closed = false;
 		let overlayHandle: OverlayHandle | undefined;
-		const record = { options, doneCalls: 0 } as typeof dialogs[number];
+		const record = { options, mounted: false, doneCalls: 0 } as typeof dialogs[number];
 		const done = (value: unknown) => {
 			record.doneCalls++;
 			if (closed) return;
 			closed = true;
-			// Like Pi 1.3: remove this interaction's overlay, not the topmost one.
-			// Before installation the handle is undefined, so nothing is removed.
+			record.mounted = false;
 			if (options?.overlay) overlayHandle?.hide();
-			else { editorContainer.clear(); editorContainer.addChild(editor); tui.setFocus(editor); }
+			else {
+				const index = component ? inline.indexOf(component) : -1;
+				if (index >= 0) {
+					inline.splice(index, 1);
+					if (index === inline.length) showTop();
+				}
+			}
 			resolve(value as T);
 			try { component?.dispose?.(); } catch { /* the host ignores dispose errors */ }
 		};
@@ -98,12 +109,13 @@ export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = 
 			if (closed) return;
 			component = value;
 			record.component = component;
+			record.mounted = true;
 			if (options?.overlay) {
 				const overlayOptions = typeof options.overlayOptions === "function" ? options.overlayOptions() : options.overlayOptions;
 				overlayHandle = tui.showOverlay(component, overlayOptions);
 				record.handle = overlayHandle;
 				options?.onHandle?.(overlayHandle);
-			} else { editorContainer.clear(); editorContainer.addChild(component); tui.setFocus(component); }
+			} else { inline.push(component); showTop(); }
 			dialogs.push(record);
 			tui.renderNow();
 		}).catch(reject);
@@ -124,6 +136,22 @@ export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = 
 	return {
 		...h, ctx, toolCtx, terminal, tui, transcript, editor, dialogs, writes, copied, openedUrls, start, bindings,
 		input,
+		/** Locate the first rendered panel line; a fully clipped panel has no screen bounds. */
+		bounds(dialog: typeof dialogs[number]) {
+			if (!dialog.mounted) return undefined;
+			if (dialog.handle) return dialog.handle.getBounds();
+			const rendered = dialog.component.render(size.columns).map(stripVTControlCharacters);
+			const text = tui instanceof TuiAltScreen ? tui.getScreenLines().map(stripVTControlCharacters) : [];
+			const row = text.findIndex((line) => line.trimEnd() === rendered[0]?.trimEnd());
+			return row < 0 ? undefined : { row, col: 0, width: size.columns, height: rendered.length };
+		},
+		wheel(button = 65, alt = false) {
+			const text = tui instanceof TuiAltScreen ? tui.getScreenLines().map(stripVTControlCharacters) : [];
+			const row = text.findIndex((line) => /Context \d+-\d+|→|Custom instructions/.test(line));
+			assert.ok(row >= 0, "a panel row is visible for wheel hit-testing");
+			terminalInput(`\x1b[<${button | (alt ? 8 : 0)};2;${row + 1}M`);
+			tui.renderNow();
+		},
 		resize(columns: number, rows: number) { size.columns = columns; size.rows = rows; notifyResize(); tui.renderNow(); },
 		/** Hardware cursor cell (zero-based) of the most recent frame that positioned it. */
 		cursor(): { row: number; col: number } | undefined {
@@ -149,7 +177,7 @@ export function createUi(mode: "fullscreen" | "regular", uiOptions: UiOptions = 
 export function lines(dialog: { component: DialogComponent; handle?: OverlayHandle }, fallbackWidth = 80) {
 	return dialog.component.render(dialog.handle?.getBounds()?.width ?? fallbackWidth).map(stripVTControlCharacters);
 }
-/** Composed fullscreen screen text after the public renderer clipped/composited the overlay. */
+/** Composed fullscreen screen text after the public renderer laid out the transcript and dock. */
 export function screen(h: { tui: unknown }): string[] {
 	assert.ok(h.tui instanceof TuiAltScreen);
 	return h.tui.getScreenLines().map(stripVTControlCharacters);
@@ -164,10 +192,9 @@ export function contextStart(dialog: Parameters<typeof lines>[0]): number {
 export const SEARCH_KEY = "\x1b[102;6u";
 
 export const scrollingInputs = [
-	["PageDown", "\x1b[6~", "\x1b[H", 1],
-	["PageUp", "\x1b[5~", "\x1b[F", -1],
+	["Ctrl+PageDown", "\x1b[6;5~", "\x1b[H", 1],
+	["Ctrl+PageUp", "\x1b[5;5~", "\x1b[F", -1],
 	["Home", "\x1b[H", "\x1b[F", -1],
 	["End", "\x1b[F", "\x1b[H", 1],
-	["wheel", "\x1b[<65;10;10M", "\x1b[H", 1],
 ] as const;
 

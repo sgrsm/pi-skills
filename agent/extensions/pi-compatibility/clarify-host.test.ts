@@ -14,30 +14,32 @@ const commonScenarios = [
 	"selection restores focus, editor text and leaves mouse modes alone",
 	"queued cancellation and FIFO ordering",
 	"pre-install abort preserves an unrelated overlay below",
-	"custom answer exchange: overlay selector, then overlay editor, then result",
-	"custom answer: Escape cancels the editor overlay and restores the main editor",
+	"custom answer exchange: inline selector, then inline editor, then result",
+	"custom answer: Escape cancels the editor panel and restores the main editor",
 	"session reload/shutdown cancels displayed and queued interactions",
 ];
 const fullscreenScenarios = [
 	...commonScenarios,
-	"PageDown scrolls the question and not the transcript",
-	"PageUp scrolls the question and not the transcript",
+	"fullscreen paging scrolls the conversation while Clarify stays docked",
+	"Ctrl+PageDown scrolls the question and not the transcript",
+	"Ctrl+PageUp scrolls the question and not the transcript",
 	"Home scrolls the question and not the transcript",
 	"End scrolls the question and not the transcript",
 	"wheel scrolls the question and not the transcript",
 	"wheel over the dialog, including at both boundaries, never scrolls the transcript",
-	"resizes re-budget the real overlay and stay inside the terminal",
-	"abort with transcript search above removes only the clarify overlay",
+	"dock fits with widgets above and below the editor",
+	"resizes keep the dock compact below the visible conversation",
+	"abort under transcript search characterizes the inline host focus limitation",
 	"search opened first: the selector isolates focus and scroll, and Escape restores the search",
 	"dragging over the selector selects the dialog text, not the transcript beneath it",
-	"custom-answer editor abort with search above keeps the search focused",
+	"custom-answer abort under search characterizes the inline host focus limitation",
 	"search opened first: the whole custom-answer exchange ends back on the search",
-	"answer editor overlay: bounds, hardware cursor, footer and paste at real terminal sizes",
-	"answer editor overlay: wheel over it never scrolls the transcript",
+	"answer editor panel: bounds, hardware cursor, footer and paste at real terminal sizes",
+	"answer editor panel: wheel over it never scrolls the transcript",
 ];
 
 for (const mode of ["fullscreen", "regular"] as const) {
-	test(`actual InteractiveMode (${mode}) hosts the Clarify overlay selector through its public lifecycle`, { timeout: 90_000 }, async (t) => {
+	test(`actual InteractiveMode (${mode}) hosts the docked Clarify selector through its public lifecycle`, { timeout: 90_000 }, async (t) => {
 		await withTestScratchFixture(async (fixture) => {
 			const agentDir = `${fixture.root}/agent`;
 			await fixture.mkdir(agentDir);

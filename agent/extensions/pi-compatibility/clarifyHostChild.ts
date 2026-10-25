@@ -110,6 +110,11 @@ const contextStart = () => {
 	const match = /Context (\d+)-\d+\/40/.exec(flat(screenText()));
 	return match ? Number(match[1]) : undefined;
 };
+const wheelOverPanel = async (button = 65) => {
+	const row = screenText().findIndex((line) => /Context \d+-\d+|→|Custom instructions/.test(line));
+	if (row < 0) throw new Error("no panel row for wheel hit-testing");
+	await press(`\x1b[<${button};2;${row + 1}M`);
+};
 const transcriptRows = (lines = screenText()) => lines.filter((line) => /Transcript probe line/.test(line)).map((line) => line.trim()).join("|");
 const mouseWrites = () => writes.join("").match(mouseModes) ?? [];
 const focused = () => renderer.getFocusedComponent();
@@ -161,7 +166,7 @@ async function scenario(name: string, run: () => Promise<Facts | void>) {
 		await resize(80, 24);
 		const stale = alt !== undefined && / Clarify |Custom instructions/.test(flat(screenText()));
 		if (process.env.CLARIFY_HOST_TRACE) console.error(`  leftover Clarify on screen: ${stale}`);
-		if (stale) results.push({ name: `${name}: no stale overlay afterwards`, ok: false, error: "a Clarify overlay is still mounted after the scenario settled" });
+		if (stale) results.push({ name: `${name}: no stale panel afterwards`, ok: false, error: "a Clarify panel is still mounted after the scenario settled" });
 	}
 }
 const expect = (condition: unknown, message: string) => {
@@ -187,8 +192,21 @@ await scenario("selection restores focus, editor text and leaves mouse modes alo
 });
 
 if (mode === "fullscreen") {
+	await scenario("fullscreen paging scrolls the conversation while Clarify stays docked", async () => {
+		const { result } = await open(new AbortController());
+		const questionBefore = contextStart();
+		const before = transcriptRows();
+		await press("\x1b[5~");
+		expect(contextStart() === questionBefore, "PageUp leaves the question unchanged");
+		expect(transcriptRows() !== before, "PageUp scrolls the conversation above the panel");
+		const up = transcriptRows();
+		await press("\x1b[6~");
+		expect(contextStart() === questionBefore && transcriptRows() !== up, "PageDown also belongs to the conversation");
+		await press("\x1b"); await result;
+	});
+
 	for (const [name, key, initial, direction] of [
-		["PageDown", "\x1b[6~", "\x1b[H", 1], ["PageUp", "\x1b[5~", "\x1b[F", -1], ["Home", "\x1b[H", "\x1b[F", -1],
+		["Ctrl+PageDown", "\x1b[6;5~", "\x1b[H", 1], ["Ctrl+PageUp", "\x1b[5;5~", "\x1b[F", -1], ["Home", "\x1b[H", "\x1b[F", -1],
 		["End", "\x1b[F", "\x1b[H", 1], ["wheel", "\x1b[<65;10;10M", "\x1b[H", 1],
 	] as const) {
 		await scenario(`${name} scrolls the question and not the transcript`, async () => {
@@ -197,11 +215,12 @@ if (mode === "fullscreen") {
 			const { result } = await open(new AbortController());
 			await press(initial);
 			const questionBefore = contextStart();
-			await press(key);
+			if (name === "wheel") await wheelOverPanel();
+			else await press(key);
 			const questionAfter = contextStart();
 			expect(questionBefore !== undefined && questionAfter !== undefined && direction * (questionAfter - questionBefore) > 0, `question did not move: ${questionBefore} -> ${questionAfter}`);
 			await press("\x1b"); await result; await drain();
-			// The dialog covers the transcript while open, so compare the rows before open and after close.
+			// Opening the dock changes viewport height; compare the transcript again after it closes.
 			expect(transcriptRows() === transcriptBeforeOpen, "the dialog input scrolled the transcript underneath");
 			return { questionBefore, questionAfter };
 		});
@@ -211,20 +230,36 @@ if (mode === "fullscreen") {
 		const transcriptBeforeOpen = transcriptRows();
 		expect(transcriptBeforeOpen.length > 0, "transcript rows visible before the dialog opens");
 		const { result } = await open(new AbortController());
-		for (let i = 0; i < 40; i++) await press("\x1b[<64;40;12M"); // wheel up at the top boundary
+		for (let i = 0; i < 40; i++) await wheelOverPanel(64); // wheel up at the top boundary
 		expect(contextStart() === 1, "question at its top");
 		await press("\x1b[F");
 		const bottom = contextStart();
-		for (let i = 0; i < 40; i++) await press("\x1b[<65;40;12M"); // wheel down at the bottom boundary
+		for (let i = 0; i < 40; i++) await wheelOverPanel(); // wheel down at the bottom boundary
 		expect(contextStart() === bottom, "question stays at its bottom");
 		await press("\x1b"); await result; await drain();
 		expect(transcriptRows() === transcriptBeforeOpen, "boundary wheel input leaked to the transcript");
-		// Control: with no dialog the same wheel input does scroll the transcript.
-		await press("\x1b[<64;40;12M");
+		// Control: wheel over the conversation still scrolls it.
+		await press("\x1b[<64;2;2M");
 		expect(transcriptRows() !== transcriptBeforeOpen, "control: wheel scrolls the transcript when no dialog is open");
 	});
 
-	await scenario("resizes re-budget the real overlay and stay inside the terminal", async () => {
+	await scenario("dock fits with widgets above and below the editor", async () => {
+		hostCtx.ui.setWidget("clarify-host-above", ["Above editor widget"]);
+		hostCtx.ui.setWidget("clarify-host-below", ["Below editor widget"], { placement: "belowEditor" });
+		try {
+			const { result } = await open(new AbortController());
+			const lines = screenText();
+			expect(/Transcript probe line/.test(flat(lines)), "conversation remains visible with widgets");
+			expect(/Above editor widget/.test(flat(lines)) && /Below editor widget/.test(flat(lines)), "both widgets remain visible");
+			expect(/Esc cancel/.test(flat(lines)), "panel help is not clipped by the dock");
+			await press("\x1b"); await result;
+		} finally {
+			hostCtx.ui.setWidget("clarify-host-above", undefined);
+			hostCtx.ui.setWidget("clarify-host-below", undefined);
+		}
+	});
+
+	await scenario("resizes keep the dock compact below the visible conversation", async () => {
 		const { result } = await open(new AbortController());
 		const sizes: Array<[number, number]> = [[80, 24], [80, 12], [40, 12], [30, 8], [20, 5], [80, 3], [80, 24]];
 		const observed: Facts = {};
@@ -234,11 +269,15 @@ if (mode === "fullscreen") {
 			expect(lines.length === rows, `${columns}x${rows}: composed screen has ${lines.length} rows`);
 			const widest = Math.max(...lines.map((line) => visibleWidth(line)));
 			expect(widest <= columns, `${columns}x${rows}: widest composed line is ${widest} columns`);
-			expect(columns < 8 || /→/.test(flat(lines)), `${columns}x${rows}: selected option visible`);
+			expect(columns < 8 || rows < 8 || /→/.test(flat(lines)), `${columns}x${rows}: selected option visible`);
 			// Footer: the navigation help is the dialog's trailing content (it may wrap, and a border may follow) and is only shed on very short screens.
+			if (rows >= 12) {
+				expect(/Transcript probe line/.test(flat(lines)), `${columns}x${rows}: conversation remains above the dock`);
+				expect((focused() as Component).render(columns).length <= Math.floor(rows / 2), "panel uses at most half the terminal");
+			}
 			const occupied = lines.filter((line) => line.trim());
 			const helpAt = occupied.findIndex((line) => /navigate/.test(line));
-			if (rows >= 5) expect(helpAt >= 0 && occupied.length - helpAt <= 5, `${columns}x${rows}: help footer closes the dialog: ${JSON.stringify(occupied.slice(-6))}`);
+			if (rows >= 14) expect(helpAt >= 0 && occupied.length - helpAt <= 9, `${columns}x${rows}: help footer closes the dialog: ${JSON.stringify(occupied.slice(-6))}`);
 			observed[`${columns}x${rows}`] = helpAt < 0 ? "no help" : occupied.length - helpAt;
 		}
 		expect(/Esc cancel/.test(flat(screenText())), "full help (Esc cancel) visible again after growing back");
@@ -246,7 +285,7 @@ if (mode === "fullscreen") {
 		return observed;
 	});
 
-	await scenario("abort with transcript search above removes only the clarify overlay", async () => {
+	await scenario("abort under transcript search characterizes the inline host focus limitation", async () => {
 		const controller = new AbortController();
 		const { result, previous } = await open(controller);
 		const selectorFocus = focused();
@@ -256,10 +295,10 @@ if (mode === "fullscreen") {
 		controller.abort();
 		expect((await result).details.answerType === "cancelled", "cancelled result");
 		await drain();
-		expect(focused() === searchFocus, "search keeps focus after the owned overlay is removed");
-		await press("\x1b"); // close search
+		expect(focused() === baselineFocus, "known Pi inline limitation: the editor takes focus while search remains visible");
+		await press(searchKey); // close the unfocused search
 		expect(focused() === baselineFocus, "focus returns to the editor after search closes");
-		expect(!/Context line \d+-\d+\/40/.test(flat(screenText())), "no stale clarify overlay left mounted");
+		expect(!/Context line \d+-\d+\/40/.test(flat(screenText())), "no stale clarify panel left mounted");
 	});
 
 	await scenario("search opened first: the selector isolates focus and scroll, and Escape restores the search", async () => {
@@ -272,13 +311,13 @@ if (mode === "fullscreen") {
 		expect(focused() !== searchFocus, "the newly installed selector takes focus from the search");
 		await press("\x1b[H");
 		const start = contextStart();
-		await press("\x1b[6~");
-		expect(start !== undefined && contextStart()! > start, "PageDown reaches the dialog");
+		await press("\x1b[6;5~");
+		expect(start !== undefined && contextStart()! > start, "Ctrl+PageDown reaches the panel");
 		const afterKey = contextStart();
-		await press("\x1b[<65;40;12M");
+		await wheelOverPanel();
 		expect(contextStart()! > afterKey!, "wheel reaches the dialog");
 		await press("\x1b[F");
-		for (let i = 0; i < 20; i++) await press("\x1b[<65;40;12M"); // bottom boundary
+		for (let i = 0; i < 20; i++) await wheelOverPanel(); // bottom boundary
 		await press("\x1b");
 		expect((await result).details.answerType === "cancelled", "cancelled");
 		await drain();
@@ -347,7 +386,7 @@ await scenario("pre-install abort preserves an unrelated overlay below", async (
 	expect(focused() === baselineFocus, "focus returns to the editor");
 });
 
-await scenario("custom answer exchange: overlay selector, then overlay editor, then result", async () => {
+await scenario("custom answer exchange: inline selector, then inline editor, then result", async () => {
 	const { result } = await open(new AbortController(), "Pick", [{ label: "First" }], true);
 	await chooseCustom(1);
 	expect(focused() !== baselineFocus, "the custom-answer editor took over");
@@ -358,7 +397,7 @@ await scenario("custom answer exchange: overlay selector, then overlay editor, t
 	expect(focused() === baselineFocus, "focus restored after the custom answer");
 });
 
-await scenario("custom answer: Escape cancels the editor overlay and restores the main editor", async () => {
+await scenario("custom answer: Escape cancels the editor panel and restores the main editor", async () => {
 	hostCtx.ui.setEditorText("keep me");
 	const { result } = await open(new AbortController(), "Pick", [{ label: "First" }], true);
 	await chooseCustom(1);
@@ -370,7 +409,7 @@ await scenario("custom answer: Escape cancels the editor overlay and restores th
 });
 
 if (mode === "fullscreen") {
-	await scenario("custom-answer editor abort with search above keeps the search focused", async () => {
+	await scenario("custom-answer abort under search characterizes the inline host focus limitation", async () => {
 		const controller = new AbortController();
 		const { result } = await open(controller, "Pick", [{ label: "First" }], true);
 		await chooseCustom(1);
@@ -382,10 +421,10 @@ if (mode === "fullscreen") {
 		controller.abort();
 		expect((await result).details.answerType === "cancelled", "cancelled");
 		await drain();
-		expect(focused() === searchFocus, "no stale focus: search keeps the keyboard after the editor is removed");
-		expect(!/Custom instructions/.test(flat(screenText())), "only the editor overlay was removed; none is left mounted");
-		await press("\x1b");
-		expect(focused() === baselineFocus, "closing search restores the main editor");
+		expect(focused() === baselineFocus, "known Pi inline limitation: editor receives focus under the visible search");
+		expect(!/Custom instructions/.test(flat(screenText())), "only the editor panel was removed; none is left mounted");
+		await press(searchKey);
+		expect(focused() === baselineFocus, "closing search leaves the main editor focused");
 	});
 
 	await scenario("search opened first: the whole custom-answer exchange ends back on the search", async () => {
@@ -393,7 +432,7 @@ if (mode === "fullscreen") {
 		const searchFocus = focused();
 		const focusTrail: unknown[] = [];
 		const setFocus = renderer.setFocus.bind(renderer);
-		renderer.setFocus = (component) => { focusTrail.push(component); setFocus(component); };
+		renderer.setFocus = (component) => { setFocus(component); focusTrail.push(focused()); };
 		try {
 			const { result } = await open(new AbortController(), "Pick", [{ label: "First" }], true);
 			await chooseCustom(1);
@@ -407,7 +446,7 @@ if (mode === "fullscreen") {
 		expect(focused() === baselineFocus, "closing search restores the editor");
 	});
 
-	await scenario("answer editor overlay: bounds, hardware cursor, footer and paste at real terminal sizes", async () => {
+	await scenario("answer editor panel: bounds, hardware cursor, footer and paste at real terminal sizes", async () => {
 		const { result } = await open(new AbortController(), longQuestion, [{ label: "First" }], true);
 		await chooseCustom(1);
 		await press("\x1b[200~ pasted\x1b[201~");
@@ -419,6 +458,7 @@ if (mode === "fullscreen") {
 			expect(lines.length === rows, `${columns}x${rows}: composed screen has ${lines.length} rows`);
 			expect(Math.max(...lines.map((line) => visibleWidth(line))) <= columns, `${columns}x${rows}: no line wider than the terminal`);
 			const position = cursor();
+			if (rows < 8) continue; // Host chrome may clip the entire dock on tiny terminals.
 			expect(position !== undefined && position.row >= 0 && position.row < rows && position.col <= columns, `${columns}x${rows}: hardware cursor ${JSON.stringify(position)} inside the screen`);
 			expect(columns < 12 || /pasted/.test(lines[position!.row]!), `${columns}x${rows}: the cursor row shows the text being edited: ${JSON.stringify(lines[position!.row])}`);
 			if (rows >= 14 && columns >= 40) {
@@ -433,11 +473,11 @@ if (mode === "fullscreen") {
 		return observed;
 	});
 
-	await scenario("answer editor overlay: wheel over it never scrolls the transcript", async () => {
+	await scenario("answer editor panel: wheel over it never scrolls the transcript", async () => {
 		const transcriptBefore = transcriptRows();
 		const { result } = await open(new AbortController(), "Short", [{ label: "First" }], true);
 		await chooseCustom(1);
-		for (let i = 0; i < 10; i++) { await press("\x1b[<64;40;12M"); await press("\x1b[<65;40;12M"); }
+		for (let i = 0; i < 10; i++) { await wheelOverPanel(64); await wheelOverPanel(); }
 		await press("\x1b");
 		expect((await result).details.answerType === "cancelled", "cancelled");
 		await drain();
@@ -453,7 +493,7 @@ await scenario("session reload/shutdown cancels displayed and queued interaction
 	expect((await displayed).details.answerType === "cancelled" && (await queued).details.answerType === "cancelled", "both cancelled");
 	await drain();
 	expect(focused() === baselineFocus, "focus restored");
-	expect(!/Context line \d+-\d+\/40/.test(flat(screenText())) || mode === "regular", "no stale overlay");
+	expect(!/Context line \d+-\d+\/40/.test(flat(screenText())) || mode === "regular", "no stale panel");
 });
 
 const mouseDuringRun = mouseWrites().length;

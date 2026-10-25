@@ -2,17 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { CURSOR_MARKER, Text, TuiAltScreen, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { clarifyOverlayHeight, clarifyOverlayOptions } from "../clarify/selector.ts";
+import { clarifyDockHeight } from "../clarify/selector.ts";
 import { flushDialogs } from "../shared/dialogTestHarness.ts";
 import { showCancellableCustom } from "../shared/dialogUi.ts";
 import { contextStart, createUi, lines, screen, scrollingInputs, SEARCH_KEY } from "./clarifyUiFixture.ts";
 
-// Clarify's selector is a focused host overlay (supported ctx.ui.custom({ overlay: true })), not a
-// dock replacement. These tests use the public fullscreen/regular renderers with fake terminals.
-// Lifecycle assertions go through a copied custom() adapter that mirrors Pi 1.3's close path; the
+// Clarify replaces the normal editor slot with a bounded panel below the transcript.
+// These tests use the public fullscreen/regular renderers with fake terminals.
+// Lifecycle assertions go through a copied custom() adapter that mirrors Pi 1.4's close path; the
 // bounded actual-host subprocess in clarify-host.test.ts covers the real InteractiveMode.
 /** Collapse whitespace so assertions survive wrapping at any width. */
 const flat = (text: string[]) => text.join(" ").replace(/\s+/g, " ");
+const plain = (line: string) => stripVTControlCharacters(line.replace(/\x1b_pi:[^\x07]*\x07/g, "")).trimEnd();
 const cleanup = (t: test.TestContext, h: ReturnType<typeof createUi>, abort: AbortController) =>
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
 const mouseModes = /\x1b\[\?100[0236][hl]/;
@@ -28,9 +29,9 @@ for (const mode of ["fullscreen", "regular"] as const) {
 			cleanup(t, h, abort);
 			h.writes.length = 0; // Exclude renderer startup/shutdown mouse-mode writes.
 			const { result, dialog } = await h.open(abort);
-			assert.deepEqual(dialog.options?.overlay, true, "selector is a supported host overlay");
-			assert.deepEqual(typeof dialog.options?.overlayOptions === "function" ? dialog.options.overlayOptions() : dialog.options?.overlayOptions, clarifyOverlayOptions());
-			assert.equal(dialog.handle?.isFocused(), true);
+			assert.notEqual(dialog.options?.overlay, true, "selector uses the editor slot");
+			assert.equal(dialog.handle, undefined, "no overlay is mounted");
+			assert.equal(h.tui.getFocusedComponent(), dialog.component);
 			assert.doesNotMatch(h.writes.join(""), mouseModes, "opening clarify must leave mouse reporting alone");
 			if (completion === "selection") h.input("\r");
 			else if (completion === "escape") h.input("\x1b");
@@ -38,7 +39,7 @@ for (const mode of ["fullscreen", "regular"] as const) {
 			assert.equal((await result).details.answerType, completion === "selection" ? "option" : "cancelled");
 			h.tui.renderNow();
 			assert.equal(dialog.doneCalls, 1);
-			assert.equal(dialog.handle?.getBounds(), undefined, "overlay removed by host completion");
+			assert.equal(dialog.mounted, false, "panel removed by host completion");
 			assert.equal(h.tui.getFocusedComponent(), h.editor);
 			assert.doesNotMatch(h.writes.join(""), mouseModes, "closing clarify must leave mouse reporting alone");
 			if (mode === "fullscreen") {
@@ -53,7 +54,7 @@ for (const mode of ["fullscreen", "regular"] as const) {
 }
 
 for (const [name, key, initialKey, direction] of scrollingInputs) {
-	test(`fullscreen overlay routes ${name} to the question, not the transcript`, async (t) => {
+	test(`fullscreen dock routes ${name} to the question, not the transcript`, async (t) => {
 		const h = createUi("fullscreen");
 		const abort = new AbortController();
 		cleanup(t, h, abort);
@@ -78,9 +79,9 @@ test("wheel uses the normalized delta: the configured line count, and the host's
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort);
 	const start = contextStart(dialog);
-	h.input(wheel()); // fixture wheelScrollLines: 3
+	h.wheel(); // fixture wheelScrollLines: 3
 	assert.equal(contextStart(dialog), start + 3);
-	h.input(wheel(10, 10, 64));
+	h.wheel(64);
 	assert.equal(contextStart(dialog), start);
 
 	// SGR button bit 8 is the Alt modifier; the host multiplies the delta and the selector must follow it.
@@ -92,7 +93,7 @@ test("wheel uses the normalized delta: the configured line count, and the host's
 	const handleMouse = altDialog.component.handleMouse!.bind(altDialog.component);
 	altDialog.component.handleMouse = (event) => { seen.push(event); return handleMouse(event); };
 	const before = contextStart(altDialog);
-	alt.input(wheel(10, 10, 65 | 8));
+	alt.wheel(65, true);
 	assert.equal(seen.length, 1);
 	assert.deepEqual([seen[0]!.alt, seen[0]!.wheelDelta], [true, 15], "the host delivers an Alt-multiplied delta");
 	assert.equal(contextStart(altDialog) - before, 15, "the question scrolls by exactly that delta");
@@ -109,7 +110,7 @@ for (const boundary of ["top", "bottom"] as const) {
 		h.transcript.scrollTo(30);
 		h.tui.renderNow();
 		const transcriptBefore = h.transcript.scrollTop;
-		for (let i = 0; i < 3; i++) h.input(wheel(10, 10, boundary === "top" ? 64 : 65));
+		for (let i = 0; i < 3; i++) h.wheel(boundary === "top" ? 64 : 65);
 		assert.equal(contextStart(dialog), questionBefore, "no further question scrolling is possible");
 		assert.equal(h.transcript.scrollTop, transcriptBefore, "boundary wheel must not leak to the transcript");
 	});
@@ -120,8 +121,8 @@ test("pointer events over the dialog are consumed; wheel outside the dialog stil
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort, [{ label: "Only" }], false, "Short question");
-	const bounds = dialog.handle!.getBounds()!;
-	assert.ok(bounds.row > 1, "short dialog is centered with transcript visible above it");
+	const bounds = h.bounds(dialog)!;
+	assert.ok(bounds.row > 1, "short panel is below the transcript");
 	h.transcript.scrollTo(30);
 	h.tui.renderNow();
 	const before = h.transcript.scrollTop;
@@ -130,7 +131,7 @@ test("pointer events over the dialog are consumed; wheel outside the dialog stil
 	assert.equal(dialog.doneCalls, 0, "a click inside does not complete or dismiss the dialog");
 	assert.equal(h.transcript.scrollTop, before);
 	h.input(wheel(5, 1)); // pointer above the dialog bounds
-	assert.notEqual(h.transcript.scrollTop, before, "pointer outside the overlay keeps normal transcript wheel behavior");
+	assert.notEqual(h.transcript.scrollTop, before, "pointer over the transcript keeps normal wheel behavior");
 });
 
 for (const handling of ["handled", "unhandled", "raw-only"] as const) {
@@ -222,10 +223,10 @@ test("regular-mode clarify is keyboard-complete with no mouse toggles", async (t
 	assert.doesNotMatch(h.writes.join(""), mouseModes);
 });
 
-// Layout: the overlay uses the full terminal height (maxHeight 100%, no margin); render() only receives the width.
+// Layout: the inline component bounds its natural height; the host may clip the dock on tiny terminals.
 const sizes = [[80, 24], [120, 40], [80, 12], [40, 10], [30, 8], [24, 6], [20, 5], [12, 4], [8, 3], [5, 2], [1, 1], [80, 1], [3, 30]] as const;
 for (const [columns, rows] of sizes) {
-	test(`overlay layout stays inside ${columns}x${rows} with wide characters and long text`, async (t) => {
+	test(`dock layout stays inside ${columns}x${rows} with wide characters and long text`, async (t) => {
 		const h = createUi("fullscreen", { columns, rows });
 		const abort = new AbortController();
 		cleanup(t, h, abort);
@@ -234,19 +235,21 @@ for (const [columns, rows] of sizes) {
 			{ label: `First ${"界".repeat(40)}`, description: "Long 😀 description 界界界 ".repeat(30) },
 			...manyOptions.slice(0, 9),
 		], true, wide);
-		const bounds = dialog.handle!.getBounds()!;
-		assert.ok(bounds, "mounted");
-		assert.ok(bounds.height <= clarifyOverlayHeight(rows), `${bounds.height} rows within the overlay budget`);
-		assert.ok(bounds.row >= 0 && bounds.row + bounds.height <= rows, "inside terminal rows");
-		assert.ok(bounds.col >= 0 && bounds.col + bounds.width <= columns, "inside terminal columns");
-		const rendered = dialog.component.render(bounds.width);
-		assert.equal(rendered.length, bounds.height, "the host did not need to clip the component");
-		for (const line of rendered) assert.ok(visibleWidth(line) <= bounds.width, `line fits width ${bounds.width}`);
+		const rendered = dialog.component.render(columns);
+		assert.ok(rendered.length <= clarifyDockHeight(rows), "component respects its own height budget");
+		for (const line of rendered) assert.ok(visibleWidth(line) <= columns, `line fits width ${columns}`);
 		const text = screen(h);
 		assert.ok(text.length <= rows);
 		for (const line of text) assert.ok(visibleWidth(line) <= columns);
+		if (rows >= 8) {
+			const bounds = h.bounds(dialog);
+			assert.ok(bounds, "panel actually appears in the composed screen");
+			assert.ok(bounds.row + rendered.length <= rows, "all panel rows fit before the footer");
+			assert.deepEqual(text.slice(bounds.row, bounds.row + rendered.length).map((line) => line.trimEnd()),
+				rendered.map((line) => stripVTControlCharacters(line).trimEnd()), "no panel content is clipped by host layout");
+		}
 		// Below ~8 columns even the arrow prefix cannot be shown; bounds are still enforced above.
-		if (columns >= 8) {
+		if (columns >= 8 && rows >= 8) {
 			assert.ok(text.some((line) => line.includes("→")), "selected option stays visible");
 			h.input("\x1b[B");
 			assert.ok(screen(h).some((line) => line.includes("→")), "selected option still visible after navigation");
@@ -261,7 +264,7 @@ test("help and context status remain visible at 80x24 and in a narrow terminal",
 		cleanup(t, h, abort);
 		await h.open(abort);
 		const text = flat(screen(h));
-		assert.match(text, /navigate/);
+		assert.match(text, /↑\/↓/);
 		assert.match(text, /Enter select/);
 		assert.match(text, /Esc cancel/);
 		assert.match(text, /Context \d+-\d+\/40/);
@@ -275,24 +278,24 @@ test("height-only and width-only resizes re-budget the layout without leaving st
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort, [{ label: "A" }, { label: "B" }], false);
-	const height = () => dialog.handle!.getBounds()!.height;
+	const height = () => dialog.component.render(h.terminal.columns).length;
 	const tall = height();
-	assert.equal(tall, clarifyOverlayHeight(24), "40-line question fills the available height");
-	h.input("\x1b[6~");
+	assert.equal(tall, clarifyDockHeight(24), "40-line question fills the available height");
+	h.input("\x1b[6;5~");
 	const scrolled = contextStart(dialog);
 	h.resize(80, 12); // height only, same width: a width-keyed cache would be stale
-	assert.equal(height(), clarifyOverlayHeight(12));
+	assert.equal(height(), clarifyDockHeight(12));
 	assert.ok(screen(h).length <= 12);
 	h.resize(40, 12); // width only
-	assert.equal(dialog.handle!.getBounds()!.width, 40, "width follows the terminal on resize");
+	assert.equal(h.bounds(dialog)!.width, 40, "width follows the terminal on resize");
 	for (const line of screen(h)) assert.ok(visibleWidth(line) <= 40);
 	h.resize(80, 24);
 	assert.equal(height(), tall);
 	assert.ok(contextStart(dialog) >= 1 && contextStart(dialog) <= scrolled + 2, "scroll position stays clamped and usable");
 	h.resize(80, 3);
-	assert.equal(height(), clarifyOverlayHeight(3));
+	assert.equal(height(), clarifyDockHeight(3));
 	h.input("\x1b[B");
-	assert.ok(screen(h).some((line) => line.includes("→ 2. B")), "tiny height still shows the selected option");
+	assert.ok(lines(dialog).some((line) => line.includes("→ 2. B")), "tiny panel keeps the selected option even if host chrome clips the dock");
 	h.resize(80, 24);
 	assert.match(screen(h).join("\n"), /navigate/);
 });
@@ -319,24 +322,24 @@ test("many choices keep the selected option visible and wrap around", async (t) 
 });
 
 test("description detail is not capped: every row that fits is shown, otherwise it is marked", async (t) => {
-	const h = createUi("fullscreen", { columns: 60, rows: 30 });
+	const h = createUi("fullscreen", { columns: 120, rows: 40 });
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort, [{ label: "Detailed", description: longDescription }], false, "Short question");
 	const text = flat(screen(h));
 	for (let i = 1; i <= 10; i++) assert.match(text, new RegExp(`Detail sentence ${i} explains`), `sentence ${i} visible (fits)`);
 	assert.doesNotMatch(text, /…/);
-	const rowsUsed = dialog.handle!.getBounds()!.height;
-	assert.ok(rowsUsed > 12 && rowsUsed < 30, "dialog grows to the content rather than a fixed cap");
+	const rowsUsed = h.bounds(dialog)!.height;
+	assert.ok(rowsUsed > 8 && rowsUsed <= 16, "panel grows only within its compact cap");
 	h.resize(60, 14);
 	const clipped = flat(screen(h));
 	assert.match(clipped, /Detail sentence 1 explains/);
 	assert.match(clipped, /↳/);
 	assert.match(clipped, /…/, "clipping is marked");
-	assert.ok(dialog.handle!.getBounds()!.height <= clarifyOverlayHeight(14));
+	assert.ok(h.bounds(dialog)!.height <= clarifyDockHeight(14));
 });
 
-test("repeated interactions use fresh state and leave no stale overlay or focus", async (t) => {
+test("repeated interactions use fresh state and leave no stale panel or focus", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
@@ -352,7 +355,7 @@ test("repeated interactions use fresh state and leave no stale overlay or focus"
 		assert.ok(["option", "cancelled"].includes((await result).details.answerType));
 		h.tui.renderNow();
 		assert.equal(dialog.doneCalls, 1);
-		assert.equal(dialog.handle!.getBounds(), undefined);
+		assert.equal(dialog.mounted, false);
 		assert.equal(h.tui.getFocusedComponent(), h.editor);
 	}
 	assert.equal(h.dialogs.length, 4);
@@ -373,7 +376,7 @@ test("queued cancellation never installs and leaves the displayed selector usabl
 	queued.abort();
 	assert.equal((await second).details.answerType, "cancelled");
 	assert.equal(h.dialogs.length, 1);
-	assert.equal(dialog.handle?.isFocused(), true);
+	assert.equal(h.tui.getFocusedComponent(), dialog.component);
 	h.input("\r");
 	assert.equal((await result).details.answerType, "option");
 });
@@ -391,14 +394,14 @@ test("FIFO: the second selector installs only after the first completes", async 
 	assert.equal((await result).details.selectedIndex, 2);
 	await flushDialogs();
 	assert.equal(h.dialogs.length, 2, "second selector installed after the first exchange completed");
-	assert.equal(dialog.handle?.getBounds(), undefined);
-	assert.equal(h.dialogs[1]!.handle?.isFocused(), true);
+	assert.equal(dialog.mounted, false);
+	assert.equal(h.tui.getFocusedComponent(), h.dialogs[1]!.component);
 	h.input("\x1b");
 	assert.equal((await second).details.answerType, "cancelled");
 });
 
 for (const stacking of ["search above", "unrelated overlay above", "unrelated overlay below"] as const) {
-	test(`displayed cancellation with ${stacking} removes only the owned overlay`, async (t) => {
+	test(`displayed cancellation with ${stacking} removes the panel and characterizes host focus`, async (t) => {
 		const h = createUi("fullscreen");
 		const abort = new AbortController();
 		cleanup(t, h, abort);
@@ -421,11 +424,11 @@ for (const stacking of ["search above", "unrelated overlay above", "unrelated ov
 		assert.equal((await result).details.answerType, "cancelled");
 		h.tui.renderNow();
 		assert.equal(dialog.doneCalls, 1);
-		assert.equal(dialog.handle?.getBounds(), undefined, "owned overlay removed, not left mounted");
+		assert.equal(dialog.mounted, false, "owned panel removed, not left mounted");
 		if (remaining) assert.ok(remaining.getBounds(), "unrelated overlay survived");
-		assert.equal(h.tui.getFocusedComponent(), expectedFocus, "focus lands on the right component");
+		assert.equal(h.tui.getFocusedComponent(), other ? expectedFocus : h.editor, "Pi restores the editor when a panel closes under an overlay");
 		if (stacking === "unrelated overlay above") {
-			// The surviving overlay above stays usable and the dead dialog cannot receive input.
+			// The unrelated overlay stays mounted but loses focus; late dialog input cannot complete again.
 			dialog.component.handleInput?.("\r");
 			await flushDialogs();
 			assert.equal(dialog.doneCalls, 1);
@@ -505,7 +508,7 @@ for (const reason of ["shutdown", "reload"] as const) {
 		h.tui.renderNow();
 		assert.equal(h.dialogs.length, 1, "queued selector never installed");
 		assert.equal(dialog.doneCalls, 1);
-		assert.equal(dialog.handle?.getBounds(), undefined);
+		assert.equal(dialog.mounted, false);
 		assert.equal(h.tui.getFocusedComponent(), h.editor);
 		dialog.component.handleInput?.("\r");
 		await flushDialogs();
@@ -528,7 +531,7 @@ test("late input and late abort after completion are ignored (exactly-once)", as
 	assert.equal(h.tui.getFocusedComponent(), h.editor);
 });
 
-test("the custom-answer exchange stays serialized: overlay selector, then overlay editor, then result", async (t) => {
+test("the custom-answer exchange stays serialized: inline selector, then inline editor, then result", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
@@ -537,12 +540,12 @@ test("the custom-answer exchange stays serialized: overlay selector, then overla
 	h.input("\r");
 	await flushDialogs();
 	h.tui.renderNow();
-	assert.equal(dialog.handle?.getBounds(), undefined, "selector overlay closed before the editor");
+	assert.equal(dialog.mounted, false, "selector panel closed before the editor");
 	assert.equal(h.dialogs.length, 2);
 	const editor = h.dialogs[1]!;
-	assert.equal(editor.options?.overlay, true, "the custom-answer editor is a host overlay too");
-	assert.deepEqual(typeof editor.options?.overlayOptions === "function" ? editor.options.overlayOptions() : editor.options?.overlayOptions, clarifyOverlayOptions());
-	assert.equal(editor.handle?.isFocused(), true);
+	assert.notEqual(editor.options?.overlay, true, "the answer editor uses the same inline presentation");
+	assert.equal(editor.handle, undefined);
+	assert.equal(h.tui.getFocusedComponent(), editor.component);
 	const answer = h.start(abort); // a second question waits for the editor exchange to finish
 	await flushDialogs();
 	assert.equal(h.dialogs.length, 2);
@@ -551,7 +554,7 @@ test("the custom-answer exchange stays serialized: overlay selector, then overla
 	assert.equal(done.details.answerType, "custom");
 	assert.equal(done.details.answer, "line one\nline two");
 	h.tui.renderNow();
-	assert.equal(editor.handle?.getBounds(), undefined, "editor overlay removed by host completion");
+	assert.equal(editor.mounted, false, "editor panel removed by host completion");
 	await flushDialogs();
 	assert.equal(h.dialogs.length, 3, "queued question installs after the exchange");
 	h.input("\x1b");
@@ -561,7 +564,7 @@ test("the custom-answer exchange stays serialized: overlay selector, then overla
 
 // ---- Stage-by-stage focus: the whole displayed exchange (selector, then editor) with search stacked ----
 
-test("answer editor cancelled while transcript search is above it: search keeps focus and the main editor stays unfocused", async (t) => {
+test("answer editor cancelled under search characterizes the host focus limitation", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
@@ -574,9 +577,9 @@ test("answer editor cancelled while transcript search is above it: search keeps 
 	assert.equal((await result).details.answerType, "cancelled");
 	h.tui.renderNow();
 	assert.equal(dialog.doneCalls, 1);
-	assert.equal(dialog.handle?.getBounds(), undefined, "owned editor overlay removed, not left mounted");
-	assert.equal(h.tui.getFocusedComponent(), search, "no stale focus: search, not the main editor, owns the keyboard");
-	h.input("\x1b"); // close search
+	assert.equal(dialog.mounted, false, "owned editor panel removed, not left mounted");
+	assert.equal(h.tui.getFocusedComponent(), h.editor, "known Pi inline limitation: editor takes focus while search stays visible");
+	h.input(SEARCH_KEY); // close the unfocused search with its shortcut
 	assert.equal(h.tui.getFocusedComponent(), h.editor, "closing search then restores the main editor");
 });
 
@@ -588,8 +591,8 @@ test("search opened before the exchange is restored after it, and never owns the
 	const search = h.tui.getFocusedComponent();
 	assert.notEqual(search, h.editor);
 	const { result, selector, dialog } = await h.openEditor(abort);
-	assert.equal(selector.handle?.getBounds(), undefined, "selector overlay already closed");
-	assert.equal(dialog.handle?.isFocused(), true, "the editor, not the search below it, owns the keyboard while displayed");
+	assert.equal(selector.mounted, false, "selector panel already closed");
+	assert.equal(h.tui.getFocusedComponent(), dialog.component, "the editor, not the search below it, owns the keyboard while displayed");
 	h.input("\r");
 	assert.equal((await result).details.answerType, "custom");
 	h.tui.renderNow();
@@ -606,7 +609,7 @@ test("between selector and editor the focus never lands on the main editor while
 	const search = h.tui.getFocusedComponent();
 	const focusTrail: unknown[] = [];
 	const setFocus = h.tui.setFocus.bind(h.tui);
-	h.tui.setFocus = (component) => { focusTrail.push(component); setFocus(component); };
+	h.tui.setFocus = (component) => { setFocus(component); focusTrail.push(h.tui.getFocusedComponent()); };
 	const { result } = await h.openEditor(abort);
 	assert.ok(!focusTrail.includes(h.editor), "the main editor was never focused during the exchange");
 	abort.abort();
@@ -627,88 +630,94 @@ test("search opened before the selector installs: dialog isolates focus and scro
 	h.tui.renderNow();
 	const transcriptBefore = h.transcript.scrollTop;
 	const { result, dialog } = await h.open(abort);
-	assert.equal(dialog.handle?.isFocused(), true, "the newly installed dialog takes focus from the search");
+	assert.equal(h.tui.getFocusedComponent(), dialog.component, "the newly installed dialog takes focus from the search");
 	assert.notEqual(h.tui.getFocusedComponent(), search);
 	h.input("\x1b[H");
 	const start = contextStart(dialog);
-	h.input("\x1b[6~");
-	assert.ok(contextStart(dialog) > start, "PageDown reaches the dialog");
+	h.input("\x1b[6;5~");
+	assert.ok(contextStart(dialog) > start, "Ctrl+PageDown reaches the panel");
 	const afterKey = contextStart(dialog);
-	h.input(wheel());
+	h.wheel();
 	assert.ok(contextStart(dialog) > afterKey, "wheel reaches the dialog");
 	h.input("\x1b[F");
-	for (let i = 0; i < 3; i++) h.input(wheel(10, 10, 65)); // at the bottom boundary
+	for (let i = 0; i < 3; i++) h.wheel(); // at the bottom boundary
 	assert.equal(h.transcript.scrollTop, transcriptBefore, "neither keys nor wheel (even at a boundary) leak to the transcript beneath");
 	h.input("\x1b");
 	assert.equal((await result).details.answerType, "cancelled");
 	h.tui.renderNow();
-	assert.equal(dialog.handle?.getBounds(), undefined);
+	assert.equal(dialog.mounted, false);
 	assert.equal(h.tui.getFocusedComponent(), search, "Escape closes only the dialog and restores the search");
 	h.input("\x1b");
 	assert.equal(h.tui.getFocusedComponent(), h.editor);
 });
 
 test("the host's search shortcut still toggles search beneath a displayed dialog without moving dialog focus", async (t) => {
-	// The host handles this shortcut before deferring input to a focused overlay; it is host behavior to keep.
+	// The host handles its search shortcut before passing input to the inline panel.
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	h.input(SEARCH_KEY);
 	const { result, dialog } = await h.open(abort);
 	h.input(SEARCH_KEY); // closes the search below the dialog
-	assert.equal(dialog.handle?.isFocused(), true, "the dialog keeps focus");
+	assert.equal(h.tui.getFocusedComponent(), dialog.component, "the dialog keeps focus");
 	h.input("\x1b");
 	assert.equal((await result).details.answerType, "cancelled");
 	h.tui.renderNow();
 	assert.equal(h.tui.getFocusedComponent(), h.editor, "with the search gone, focus returns to the main editor");
 });
 
-// ---- The answer editor overlay: bounds, cursor, paste, pointer ----
+// ---- The answer editor panel: bounds, cursor, paste, pointer ----
 
 const editorSizes = [[80, 24], [120, 40], [80, 12], [40, 10], [30, 8], [20, 6], [20, 5], [12, 4], [8, 3], [8, 2], [5, 1], [80, 1], [3, 30]] as const;
 for (const [columns, rows] of editorSizes) {
-	test(`answer editor overlay stays inside ${columns}x${rows}, keeps the cursor visible and the footer when it fits`, async (t) => {
+	test(`answer editor panel stays inside ${columns}x${rows}, keeps the cursor visible and the footer when it fits`, async (t) => {
 		const h = createUi("fullscreen", { columns, rows });
 		const abort = new AbortController();
 		cleanup(t, h, abort);
 		const { dialog } = await h.openEditor(abort);
 		for (const char of "界x") h.input(char);
-		const bounds = dialog.handle!.getBounds()!;
-		assert.ok(bounds, "mounted");
-		assert.ok(bounds.height <= clarifyOverlayHeight(rows), `${bounds.height} rows within the overlay budget`);
-		assert.ok(bounds.row >= 0 && bounds.row + bounds.height <= rows && bounds.col >= 0 && bounds.col + bounds.width <= columns, "inside the terminal");
-		const rendered = dialog.component.render(bounds.width);
-		assert.equal(rendered.length, bounds.height, "the host did not need to clip the editor");
-		for (const line of rendered) assert.ok(visibleWidth(line.replaceAll(CURSOR_MARKER, "")) <= bounds.width);
+		const rendered = dialog.component.render(columns);
+		assert.ok(rendered.length <= clarifyDockHeight(rows), "editor output is bounded before host layout");
+		for (const line of rendered) assert.ok(visibleWidth(line.replaceAll(CURSOR_MARKER, "")) <= columns);
 		const text = screen(h);
 		for (const line of text) assert.ok(visibleWidth(line) <= columns);
-		// The hardware cursor is placed on the editor's cursor cell, inside the overlay, on the typed text.
+		if (rows < 8) return; // Pi may clip the whole editor slot behind host chrome at these sizes.
+		const bounds = h.bounds(dialog);
+		assert.ok(bounds, "answer panel actually appears on screen");
+		assert.ok(bounds.row + rendered.length <= rows, "answer panel fits before the footer");
+		assert.deepEqual(text.slice(bounds.row, bounds.row + rendered.length).map((line) => line.trimEnd()),
+			rendered.map(plain), "the editor is not clipped");
 		const cursor = h.cursor();
+
 		assert.ok(cursor, "the hardware cursor is positioned");
 		assert.ok(cursor.row >= bounds.row && cursor.row < bounds.row + bounds.height, `cursor row ${cursor.row} inside rows ${bounds.row}..${bounds.row + bounds.height - 1}`);
-		assert.ok(cursor.col >= bounds.col && cursor.col <= bounds.col + bounds.width, "cursor column inside the overlay");
+		assert.ok(cursor.col >= bounds.col && cursor.col <= bounds.col + bounds.width, "cursor column inside the panel");
 		if (columns >= 8) assert.match(text[cursor.row]!, /line two|界x|x/, "the cursor row shows the text being edited");
 		const flatText = flat(text);
 		if (rows >= 14 && columns >= 40) {
 			assert.match(flatText, /Custom instructions/);
 			assert.match(flatText, /enter submit/i);
 			assert.match(flatText, /cancel/);
-			assert.match(flatText, /External editor disabled/);
+			// The second hint is optional in the compact panel.
 		}
 	});
 }
 
-test("answer editor: resizing re-budgets the overlay and keeps the cursor inside it", async (t) => {
+test("answer editor: resizing re-budgets the panel and keeps the cursor inside it", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.openEditor(abort);
 	for (const [columns, rows] of [[80, 12], [30, 6], [80, 24], [20, 4], [80, 24]] as const) {
 		h.resize(columns, rows);
-		const bounds = dialog.handle!.getBounds()!;
-		assert.ok(bounds.height <= rows && bounds.row + bounds.height <= rows, `${columns}x${rows} bounds`);
-		const cursor = h.cursor()!;
-		assert.ok(cursor.row >= bounds.row && cursor.row < bounds.row + bounds.height, `${columns}x${rows} cursor row`);
+		assert.ok(dialog.component.render(columns).length <= clarifyDockHeight(rows));
+		if (rows >= 8) {
+			const bounds = h.bounds(dialog);
+			assert.ok(bounds, "resized panel is visible");
+			assert.ok(bounds.row + bounds.height <= rows, `${columns}x${rows} bounds`);
+			const cursor = h.cursor()!;
+			assert.ok(cursor.row >= bounds.row && cursor.row < bounds.row + bounds.height, `${columns}x${rows} cursor row`);
+		}
 	}
 });
 
@@ -738,7 +747,7 @@ test("answer editor: escape cancels it and restores the main editor; the externa
 	h.input("\x1b");
 	assert.equal((await result).details.answerType, "cancelled");
 	h.tui.renderNow();
-	assert.equal(dialog.handle?.getBounds(), undefined);
+	assert.equal(dialog.mounted, false);
 	assert.equal(h.tui.getFocusedComponent(), h.editor);
 });
 
@@ -747,15 +756,15 @@ test("answer editor: wheel over it never scrolls the transcript, even over its b
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.openEditor(abort, "Short question");
-	const bounds = dialog.handle!.getBounds()!;
-	assert.ok(bounds.row > 1, "the short editor dialog is centered with transcript visible above it");
+	const bounds = h.bounds(dialog)!;
+	assert.ok(bounds.row > 1, "the editor panel is below the transcript");
 	h.transcript.scrollTo(30);
 	h.tui.renderNow();
 	const before = h.transcript.scrollTop;
 	for (const y of [bounds.row + 1, bounds.row + bounds.height]) for (const button of [64, 65]) h.input(wheel(bounds.col + 3, y, button));
-	assert.equal(h.transcript.scrollTop, before, "wheel input over the editor overlay is consumed");
+	assert.equal(h.transcript.scrollTop, before, "wheel input over the editor panel is consumed");
 	h.input(wheel(5, 1));
-	assert.notEqual(h.transcript.scrollTop, before, "wheel above the overlay keeps normal transcript behavior");
+	assert.notEqual(h.transcript.scrollTop, before, "wheel above the panel keeps normal transcript behavior");
 });
 
 // ---- Non-wheel pointer gestures follow the host default over the selector ----
@@ -804,7 +813,7 @@ test("a click or drag that does nothing special still never completes, dismisses
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort, [{ label: "Only" }], false, "Short question");
-	const bounds = dialog.handle!.getBounds()!;
+	const bounds = h.bounds(dialog)!;
 	const before = screen(h).join("\n");
 	h.input(sgr(0, bounds.col + 2, bounds.row + 2));
 	h.input(sgr(0, bounds.col + 2, bounds.row + 2, true));
@@ -812,10 +821,10 @@ test("a click or drag that does nothing special still never completes, dismisses
 	h.input(sgr(2, bounds.col + 2, bounds.row + 2, true));
 	assert.equal(dialog.doneCalls, 0);
 	assert.equal(screen(h).join("\n"), before, "the dialog content is unchanged");
-	assert.equal(dialog.handle?.isFocused(), true);
+	assert.equal(h.tui.getFocusedComponent(), dialog.component);
 });
 
-test("TUI selector is the only overlay presentation; RPC/no-UI paths are unchanged", async () => {
+test("TUI selector uses the inline presentation; RPC/no-UI paths are unchanged", async () => {
 	const ui = createUi("fullscreen");
 	try {
 		const rpc = { ...ui.toolCtx, mode: "rpc" as const };
@@ -829,18 +838,18 @@ test("TUI selector is the only overlay presentation; RPC/no-UI paths are unchang
 	} finally { ui.tui.stop({ preserveScreen: true }); }
 });
 
-// Renderer sanity: the overlay's text is plain-width safe even without the host clipping it.
+// Renderer sanity: the panel's text is plain-width safe even without the host clipping it.
 test("rendered selector lines carry no raw mouse or cursor control sequences", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	cleanup(t, h, abort);
 	const { dialog } = await h.open(abort);
-	const raw = dialog.component.render(dialog.handle!.getBounds()!.width).join("\n");
+	const raw = dialog.component.render(h.bounds(dialog)!.width).join("\n");
 	assert.equal(stripVTControlCharacters(raw).includes("\x1b"), false);
 	assert.doesNotMatch(raw, /\x1b\[\?100/);
 });
 
-// Adapter-faithfulness controls. The adapter mirrors Pi 1.3 showExtensionCustom():
+// Adapter-faithfulness controls. The adapter mirrors Pi 1.4 showExtensionCustom():
 // an overlay interaction completes by hiding its own handle, never the topmost overlay.
 // These are copied-adapter checks; clarify-host.test.ts independently exercises the real host.
 // See host-contract-coverage.md for the distinction and practical limits.
@@ -849,7 +858,7 @@ const probeComponent = (label: string) => ({
 	label, disposed: 0, render: () => [label], invalidate() {}, dispose() { this.disposed++; },
 });
 
-test("adapter lifecycle contract (Pi 1.3 close path): normal mounted completion removes the owned overlay and disposes once", async (t) => {
+test("adapter lifecycle contract (Pi 1.4 close path): normal mounted completion removes the owned overlay and disposes once", async (t) => {
 	const h = createUi("fullscreen");
 	t.after(() => h.tui.stop({ preserveScreen: true }));
 	const component = probeComponent("owned");
@@ -866,7 +875,7 @@ test("adapter lifecycle contract (Pi 1.3 close path): normal mounted completion 
 });
 
 for (const timing of ["inside the factory", "in a microtask before installation"] as const) {
-	test(`adapter lifecycle contract (Pi 1.3 close path): completion ${timing} preserves an unrelated overlay`, async (t) => {
+	test(`adapter lifecycle contract (Pi 1.4 close path): completion ${timing} preserves an unrelated overlay`, async (t) => {
 		const h = createUi("fullscreen");
 		t.after(() => h.tui.stop({ preserveScreen: true }));
 		const unrelated = new Text("Unrelated overlay", 0, 0);
@@ -888,23 +897,26 @@ for (const timing of ["inside the factory", "in a microtask before installation"
 	});
 }
 
-test("adapter lifecycle contract (Pi 1.3 close path): cancelled owned overlay is removed while stacked search keeps focus", async (t) => {
+test("adapter lifecycle contract (Pi 1.4 close path): cancelled owned overlay leaves stacked search focused", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
-	const { result, dialog } = await h.open(abort);
-	h.input("\x1b[102;6u");
+	const result = showCancellableCustom<string>(h.ctx.ui, abort.signal, () => probeComponent("owned"), { overlay: true });
+	await flushDialogs();
+	const dialog = h.dialogs.at(-1)!;
+	assert.ok(dialog.handle?.getBounds(), "this control mounts an actual overlay");
+	h.input(SEARCH_KEY);
 	const search = h.tui.getFocusedComponent();
-	assert.notEqual(search, dialog.component, "search must actually be above the custom overlay");
+	assert.notEqual(search, dialog.component);
 	abort.abort();
-	assert.equal((await result).details.answerType, "cancelled");
+	await assert.rejects(result, { name: "AbortError" });
 	h.tui.renderNow();
-	assert.equal(dialog.handle?.getBounds(), undefined, "owned overlay must no longer be mounted");
-	assert.equal(h.tui.getFocusedComponent(), search, "unrelated search must retain focus");
+	assert.equal(dialog.handle?.getBounds(), undefined, "only the owned overlay was removed");
+	assert.equal(h.tui.getFocusedComponent(), search, "overlay-mode completion preserves search focus");
 	assert.equal(dialog.doneCalls, 1);
 });
 
-test("adapter lifecycle contract (Pi 1.3 close path): abort before installation preserves unrelated overlays", async (t) => {
+test("adapter lifecycle contract (Pi 1.4 close path): abort before installation preserves unrelated overlays", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
@@ -928,7 +940,7 @@ test("adapter lifecycle contract (Pi 1.3 close path): abort before installation 
 	assert.equal(h.tui.getFocusedComponent(), unrelated, "unrelated overlay must keep focus");
 });
 
-test("adapter lifecycle contract (Pi 1.3 close path): showCancellableCustom pre-install abort disposes once and preserves unrelated overlay", async (t) => {
+test("adapter lifecycle contract (Pi 1.4 close path): showCancellableCustom pre-install abort disposes once and preserves unrelated overlay", async (t) => {
 	const h = createUi("fullscreen");
 	const abort = new AbortController();
 	t.after(() => { abort.abort(); h.tui.stop({ preserveScreen: true }); });
@@ -949,25 +961,4 @@ test("adapter lifecycle contract (Pi 1.3 close path): showCancellableCustom pre-
 });
 
 
-// The selector budgets its layout with clarifyOverlayHeight(rows) because render() only receives a
-// width. Tie that arithmetic to the real renderers' overlay layout so a host change shows up here.
-for (const mode of ["fullscreen", "regular"] as const) {
-	test(`clarifyOverlayHeight matches the ${mode} renderer's overlay layout for every terminal height`, (t) => {
-		for (const rows of [1, 2, 3, 4, 5, 10, 24, 43, 60]) {
-			for (const columns of [1, 7, 80, 200]) {
-				const h = createUi(mode, { columns, rows });
-				const tall: Component = { render: (width) => Array.from({ length: 300 }, (_, i) => `${i}`.padEnd(width, "x").slice(0, width)), invalidate() {} };
-				const handle = h.tui.showOverlay(tall, clarifyOverlayOptions());
-				h.tui.renderNow();
-				const bounds = handle.getBounds();
-				handle.hide();
-				h.tui.stop({ preserveScreen: true });
-				assert.ok(bounds, `${columns}x${rows} mounted`);
-				assert.equal(bounds.height, clarifyOverlayHeight(rows), `${columns}x${rows} height`);
-				assert.equal(bounds.width, columns, `${columns}x${rows} width`);
-				assert.deepEqual([bounds.row, bounds.col], [0, 0], `${columns}x${rows} is placed inside the terminal`);
-			}
-		}
-		t.diagnostic("overlay budget verified against the public renderer");
-	});
-}
+

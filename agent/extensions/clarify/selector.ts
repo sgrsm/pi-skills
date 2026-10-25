@@ -1,9 +1,9 @@
 import {
+	matchesKey,
 	truncateToWidth,
 	wrapTextWithAnsi,
 	type Component,
 	type KeybindingsManager,
-	type OverlayOptions,
 	type SelectItem,
 	type TUI,
 	type TuiMouseEvent,
@@ -31,19 +31,12 @@ const CLARIFY_MAX_VISIBLE_OPTIONS = 8;
 const MAX_HELP_LINES = 3;
 
 /**
- * Overlay placement shared by the host call and the layout budget. A component's render()
- * receives only a width, so the available height is derived from the terminal rows with the same
- * rule the host applies to `clarifyOverlayOptions()`. Percentage sizes are resolved against the
- * current terminal on every render, so resizes need no re-registration; a fixed margin would
- * not follow resizes (overlayOptions is resolved once) and would push the dialog off tiny screens.
+ * custom() receives a width but no editor-slot height. Keep both Clarify stages to at most
+ * half the terminal (16 rows on large screens), leaving room for the transcript and host chrome.
+ * Tiny terminals degrade to one content row; the host may still clip the surrounding dock.
  */
-export function clarifyOverlayOptions(): OverlayOptions {
-	return { anchor: "center", width: "100%", maxHeight: "100%" };
-}
-
-/** Rows the host allows an overlay placed with `clarifyOverlayOptions()` on a terminal with `rows` rows. */
-export function clarifyOverlayHeight(rows: number): number {
-	return Math.max(1, Math.floor(rows));
+export function clarifyDockHeight(rows: number): number {
+	return Math.max(1, Math.min(16, Math.floor(rows / 2), Math.floor(rows) - 6));
 }
 
 function fgHex(hex: string, text: string): string {
@@ -141,10 +134,9 @@ export interface ClarifySelectorInput {
 }
 
 /**
- * Clarify's overlay selector. Layout is budgeted against the overlay's available rows and the
- * width passed to render(). Wheel input arrives as normalized mouse events and is always consumed
- * over the dialog; other pointer gestures follow the host default. Completion happens only through
- * `done`; the host owns overlay removal.
+ * Clarify's editor-slot selector. Bound its natural height so the conversation remains above it.
+ * Consume normalized wheel input only over the panel; other gestures follow the host default.
+ * Completion happens only through `done`; the host restores the normal editor.
  */
 export function createClarifySelector(input: ClarifySelectorInput): Component {
 	const { tui, theme, keybindings, done, question, choices } = input;
@@ -176,6 +168,17 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 		done(result);
 	};
 
+	// Fullscreen intercepts viewport paging before an inline component. Keep those keys for the
+	// transcript and use the editor's alternate Ctrl+PageUp/PageDown bindings for the question.
+	const pageKeys = (direction: "Up" | "Down") => {
+		const keys = [...keybindings.getKeys(`tui.select.page${direction}`), ...keybindings.getKeys(`tui.editor.page${direction}`)];
+		const viewport = tui.mode === "regular" ? [] : keybindings.getKeys(`tui.altScreen.page${direction}`);
+		return [...new Set(keys)].filter((key) => !viewport.includes(key));
+	};
+	const pageLabel = (direction: "Up" | "Down") => {
+		const key = pageKeys(direction)[0];
+		return key ? key.split("+").map((part) => KEY_LABELS[part] ?? part).join("+") : "unbound";
+	};
 	const helpText = (scrollable: boolean) => {
 		const parts = [
 			`${keyLabel(keybindings, "tui.select.up")}/${keyLabel(keybindings, "tui.select.down")} navigate`,
@@ -183,9 +186,9 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 			`${keyLabel(keybindings, "tui.select.cancel")} cancel`,
 		];
 		if (scrollable) {
-			const keys = ["tui.select.pageUp", "tui.select.pageDown", "tui.editor.cursorLineStart", "tui.editor.cursorLineEnd"] as const;
+			const keys = [pageLabel("Up"), pageLabel("Down"), keyLabel(keybindings, "tui.editor.cursorLineStart"), keyLabel(keybindings, "tui.editor.cursorLineEnd")];
 			const wheel = tui.mode === "regular" ? "" : " or wheel";
-			parts.push(`${keys.map((key) => keyLabel(keybindings, key)).join("/")}${wheel} scroll context`);
+			parts.push(`${keys.join("/")}${wheel} scroll context`);
 		}
 		return parts.join(" • ");
 	};
@@ -196,11 +199,15 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 		const description = descriptionRows(choices[selectedIndex]?.description, innerWidth);
 		const help = wrapTextWithAnsi(helpText(scrollHint), innerWidth).slice(0, MAX_HELP_LINES);
 
-		// Richest chrome that still leaves the selected option plus one more row of content.
+		// Prefer several readable context rows to decoration; on short screens keep a usable choice.
+		const preferredContent = Math.min(questionLines.length, 3) + Math.min(items.length, 3) + Math.min(description.length, 2);
+		const readableContent = Math.min(questionLines.length, 3) + 1 + Math.min(description.length, 1);
 		const minimumContent = 1 + (questionLines.length > 0 ? 1 : 0);
 		const chromeRows = (chrome: Chrome) => (chrome.border ? 2 : 0) + (chrome.title ? 1 : 0) + (chrome.status ? 1 : 0)
 			+ (chrome.help === "full" ? help.length : chrome.help === "one" ? 1 : 0);
-		const chrome = CHROME_TIERS.find((candidate) => height - chromeRows(candidate) >= minimumContent + 1)
+		const chrome = CHROME_TIERS.find((candidate) => candidate.help !== "none" && height - chromeRows(candidate) >= preferredContent)
+			?? CHROME_TIERS.find((candidate) => candidate.help !== "none" && height - chromeRows(candidate) >= readableContent)
+			?? CHROME_TIERS.find((candidate) => height - chromeRows(candidate) >= minimumContent + 1)
 			?? CHROME_TIERS[CHROME_TIERS.length - 1]!;
 		const budget = Math.max(1, height - chromeRows(chrome));
 
@@ -215,8 +222,9 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 		shrink("question", Math.min(questionLines.length, 3));
 		shrink("options", Math.min(wantOptions, 3));
 		shrink("description", Math.min(description.length, 2));
-		shrink("question", Math.min(questionLines.length, 1));
 		shrink("options", 1);
+		shrink("description", Math.min(description.length, 1));
+		shrink("question", Math.min(questionLines.length, 1));
 		shrink("description", 0);
 		if (used() > budget) alloc.position = false;
 		shrink("question", 0);
@@ -226,7 +234,7 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 
 	return {
 		render(width: number): string[] {
-			const height = clarifyOverlayHeight(tui.terminal.rows);
+			const height = clarifyDockHeight(tui.terminal.rows);
 			const key = `${width}x${height}`;
 			if (cache?.key === key) return cache.lines;
 
@@ -254,7 +262,8 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 
 			const row = (text: string) => truncateToWidth(` ${text}`, width);
 			const rule = () => theme.fg("accent", "─".repeat(width));
-			const helpRows = chrome.help === "full" ? help : chrome.help === "one" ? help.slice(0, 1) : [];
+			const compactHelp = `${keyLabel(keybindings, "tui.select.up")}/${keyLabel(keybindings, "tui.select.down")} · ${keyLabel(keybindings, "tui.select.confirm")} select · ${keyLabel(keybindings, "tui.select.cancel")} cancel`;
+			const helpRows = chrome.help === "full" ? help : chrome.help === "one" ? [truncateToWidth(compactHelp, innerWidth)] : [];
 			const lines = [
 				...(chrome.border ? [rule()] : []),
 				...(chrome.title ? [row(theme.fg("accent", theme.bold("Clarify")))] : []),
@@ -278,8 +287,8 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 			if (keybindings.matches(data, "tui.select.confirm")) return finish(choices[selectedIndex]?.selection);
 			if (keybindings.matches(data, "tui.select.up")) selectedIndex = selectedIndex === 0 ? choices.length - 1 : selectedIndex - 1;
 			else if (keybindings.matches(data, "tui.select.down")) selectedIndex = selectedIndex === choices.length - 1 ? 0 : selectedIndex + 1;
-			else if (keybindings.matches(data, "tui.select.pageUp")) scrollBy(-Math.max(1, questionViewport - 1));
-			else if (keybindings.matches(data, "tui.select.pageDown")) scrollBy(Math.max(1, questionViewport - 1));
+			else if (pageKeys("Up").some((key) => matchesKey(data, key))) scrollBy(-Math.max(1, questionViewport - 1));
+			else if (pageKeys("Down").some((key) => matchesKey(data, key))) scrollBy(Math.max(1, questionViewport - 1));
 			else if (keybindings.matches(data, "tui.editor.cursorLineStart")) scrollOffset = 0;
 			else if (keybindings.matches(data, "tui.editor.cursorLineEnd")) scrollOffset = maxScroll();
 			else return;
@@ -287,10 +296,8 @@ export function createClarifySelector(input: ClarifySelectorInput): Component {
 		},
 
 		handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-			// Consume wheel input only, including at a scroll boundary, so it never falls through to the
-			// transcript beneath the overlay. Press/drag/release/click are left to the host: text selection
-			// then covers the composited dialog (the host selects from the screen while an overlay is shown)
-			// and OSC 8 link clicks keep working.
+			// Keep wheel input over the panel local, including at a scroll boundary. Leave other
+			// pointer gestures to the host (link activation and terminal/host text selection).
 			if (event.type !== "wheel") return undefined;
 			if (finished) return { handled: true, render: false };
 			const delta = Math.trunc(event.wheelDelta ?? 0);
